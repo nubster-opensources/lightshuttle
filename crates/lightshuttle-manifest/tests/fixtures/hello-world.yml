@@ -1,0 +1,12 @@
+project:
+  name: hello
+resources:
+  db:
+    postgres:
+      version: "16"
+  app:
+    container:
+      image: alpine
+      command: ["sh", "-c", "echo $DATABASE_URL"]
+      env:
+        DATABASE_URL: ${resources.db.url}

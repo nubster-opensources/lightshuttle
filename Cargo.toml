@@ -20,10 +20,11 @@ categories = ["development-tools", "command-line-utilities"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_yml = "0.0.12"
-schemars = "0.8"
+serde_norway = "0.9"
+schemars = { version = "0.8", features = ["indexmap2"] }
 thiserror = "2"
 anyhow = "1"
+indexmap = { version = "2", features = ["serde"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "process"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

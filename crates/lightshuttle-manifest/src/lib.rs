@@ -1,11 +1,27 @@
 //! Manifest types, parser, interpolation and JSON Schema generation for
 //! LightShuttle.
 //!
-//! This crate is a placeholder for the v0.0.1 bootstrap. The real
-//! manifest model, parser and `schemars` derives land in a follow-up
-//! pull request that closes the manifest spec implementation.
+//! The crate is a structural layer above `serde_yml`. It exposes a
+//! strongly-typed model of the `lightshuttle.yml` manifest, an
+//! interpolation engine that resolves `${...}` expressions against an
+//! environment plus the runtime properties of dependent resources, and a
+//! validation pass that catches naming, dependency and reference issues
+//! before any runtime work is attempted.
 //!
-//! See [`docs/spec/manifest-v0.md`][spec] in the main repository for
-//! the specification this crate targets.
+//! See [`docs/spec/manifest-v0.md`][spec] in the main repository for the
+//! specification this crate implements.
 //!
 //! [spec]: https://github.com/nubster-opensources/lightshuttle/blob/main/docs/spec/manifest-v0.md
+
+pub use crate::error::{ManifestError, Result};
+pub use crate::interpolate::{InterpolationContext, Interpolator, Reference};
+pub use crate::model::{
+    Command, ContainerConfig, DockerfileConfig, Healthcheck, Manifest, PortMapping, PostgresConfig,
+    Project, RedisConfig, ResourceKind, Version, Volume,
+};
+
+mod error;
+pub mod interpolate;
+pub mod model;
+mod parse;
+mod validate;

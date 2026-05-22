@@ -1,0 +1,31 @@
+project:
+  name: my-app
+  version: "0.1.0"
+
+resources:
+  cache:
+    redis:
+      version: "7"
+
+  api_db:
+    postgres:
+      version: "16"
+
+  api:
+    container:
+      image: my-org/api:1.0
+      env:
+        DATABASE_URL: ${resources.api_db.url}
+        REDIS_URL: ${resources.cache.url}
+        LOG_LEVEL: ${env.LOG_LEVEL:-info}
+      ports:
+        - 8080
+
+  frontend:
+    dockerfile:
+      context: ./apps/frontend
+      target: dev
+      env:
+        API_URL: http://${resources.api.host}:8080
+      ports:
+        - 3000
