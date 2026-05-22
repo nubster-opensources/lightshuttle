@@ -16,3 +16,8 @@ categories = ["development-tools", "config", "parser-implementations"]
 workspace = true
 
 [dependencies]
+serde.workspace = true
+serde_yml.workspace = true
+schemars.workspace = true
+thiserror.workspace = true
+indexmap.workspace = true

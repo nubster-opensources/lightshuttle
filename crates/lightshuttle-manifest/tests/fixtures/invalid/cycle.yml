@@ -1,0 +1,11 @@
+project:
+  name: cyc
+resources:
+  a:
+    container:
+      image: alpine
+      depends_on: [b]
+  b:
+    container:
+      image: alpine
+      depends_on: [a]
