@@ -1,0 +1,12 @@
+msrv = "1.88"
+
+doc-valid-idents = [
+    "..",
+    "LightShuttle",
+    "Encelade",
+    "Nubster",
+    "OpenTelemetry",
+    "PostgreSQL",
+    "Kubernetes",
+    "GitHub",
+]

@@ -1,0 +1,18 @@
+[package]
+name = "lightshuttle-manifest"
+description = "Manifest types, parser, and JSON Schema for LightShuttle"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["lightshuttle", "manifest", "yaml", "schema"]
+categories = ["development-tools", "config", "parser-implementations"]
+
+[lints]
+workspace = true
+
+[dependencies]
