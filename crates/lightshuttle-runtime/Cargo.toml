@@ -1,0 +1,18 @@
+[package]
+name = "lightshuttle-runtime"
+description = "Container runtime backends and lifecycle manager for LightShuttle"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["lightshuttle", "docker", "container", "orchestrator", "lifecycle"]
+categories = ["development-tools", "asynchronous"]
+
+[lints]
+workspace = true
+
+[dependencies]

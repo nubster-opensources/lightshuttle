@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/lightshuttle",
+    "crates/lightshuttle-manifest",
+    "crates/lightshuttle-runtime",
+    "xtask",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/nubster-opensources/lightshuttle"
+homepage = "https://github.com/nubster-opensources/lightshuttle"
+authors = ["Encelade Technologies"]
+keywords = ["orchestrator", "dev-tools", "docker", "polyglot"]
+categories = ["development-tools", "command-line-utilities"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yml = "0.0.12"
+schemars = "0.8"
+thiserror = "2"
+anyhow = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "process"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+bollard = "0.18"
+clap = { version = "4", features = ["derive"] }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
