@@ -6,12 +6,12 @@ use crate::model::Manifest;
 impl Manifest {
     /// Parse a manifest from a YAML string.
     ///
-    /// Runs structural decoding through `serde_yml` followed by semantic
+    /// Runs structural decoding through `serde_norway` followed by semantic
     /// validation (naming rules, dependency graph, references).
     ///
     /// Returns the parsed manifest or the first error encountered.
     pub fn parse(yaml: &str) -> Result<Self> {
-        let manifest: Self = serde_yml::from_str(yaml).map_err(ManifestError::from)?;
+        let manifest: Self = serde_norway::from_str(yaml).map_err(ManifestError::from)?;
         manifest.validate()?;
         Ok(manifest)
     }
@@ -23,6 +23,6 @@ impl Manifest {
     /// through `parse` then `to_yaml` then `parse` yields an equal
     /// [`Manifest`].
     pub fn to_yaml(&self) -> Result<String> {
-        serde_yml::to_string(self).map_err(ManifestError::from)
+        serde_norway::to_string(self).map_err(ManifestError::from)
     }
 }

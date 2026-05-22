@@ -20,7 +20,7 @@ categories = ["development-tools", "command-line-utilities"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_yml = "0.0.12"
+serde_norway = "0.9"
 schemars = { version = "0.8", features = ["indexmap2"] }
 thiserror = "2"
 anyhow = "1"

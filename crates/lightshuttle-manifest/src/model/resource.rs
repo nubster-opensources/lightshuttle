@@ -101,7 +101,7 @@ impl<'de> Deserialize<'de> for ResourceKind {
     {
         // Each resource entry is a YAML map with exactly one key whose
         // name selects the variant.
-        let entries: BTreeMap<String, serde_yml::Value> = BTreeMap::deserialize(deserializer)?;
+        let entries: BTreeMap<String, serde_norway::Value> = BTreeMap::deserialize(deserializer)?;
 
         let mut iter = entries.into_iter();
         let (kind, value) = iter
@@ -114,16 +114,16 @@ impl<'de> Deserialize<'de> for ResourceKind {
         }
 
         match kind.as_str() {
-            "postgres" => serde_yml::from_value(value)
+            "postgres" => serde_norway::from_value(value)
                 .map(Self::Postgres)
                 .map_err(|e| DeError::custom(e.to_string())),
-            "redis" => serde_yml::from_value(value)
+            "redis" => serde_norway::from_value(value)
                 .map(Self::Redis)
                 .map_err(|e| DeError::custom(e.to_string())),
-            "container" => serde_yml::from_value(value)
+            "container" => serde_norway::from_value(value)
                 .map(Self::Container)
                 .map_err(|e| DeError::custom(e.to_string())),
-            "dockerfile" => serde_yml::from_value(value)
+            "dockerfile" => serde_norway::from_value(value)
                 .map(Self::Dockerfile)
                 .map_err(|e| DeError::custom(e.to_string())),
             other => Err(DeError::custom(format!("unknown resource kind `{other}`"))),

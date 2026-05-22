@@ -10,7 +10,7 @@ pub type Result<T> = std::result::Result<T, ManifestError>;
 pub enum ManifestError {
     /// The YAML payload could not be parsed at the syntactic level.
     #[error("failed to parse YAML")]
-    Yaml(#[from] serde_yml::Error),
+    Yaml(#[from] serde_norway::Error),
 
     /// A name (project, resource, database) does not match the expected
     /// pattern.
