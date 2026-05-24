@@ -94,28 +94,41 @@ pub type LogChunkStream = Pin<Box<dyn Stream<Item = Result<LogChunk>> + Send>>;
 pub trait ContainerRuntime: Send + Sync {
     /// Start a container according to `spec`. Pulls the image if not
     /// already present locally.
-    #[allow(async_fn_in_trait)]
-    async fn start(&self, spec: &ContainerSpec) -> Result<ContainerId>;
+    fn start(
+        &self,
+        spec: &ContainerSpec,
+    ) -> impl std::future::Future<Output = Result<ContainerId>> + Send;
 
     /// Stop a container, sending `SIGTERM` and then `SIGKILL` after
     /// `grace`. Idempotent: stopping an already stopped container is a
     /// no-op.
-    #[allow(async_fn_in_trait)]
-    async fn stop(&self, id: &ContainerId, grace: Duration) -> Result<()>;
+    fn stop(
+        &self,
+        id: &ContainerId,
+        grace: Duration,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Report the current status of a container.
-    #[allow(async_fn_in_trait)]
-    async fn inspect(&self, id: &ContainerId) -> Result<ContainerStatus>;
+    fn inspect(
+        &self,
+        id: &ContainerId,
+    ) -> impl std::future::Future<Output = Result<ContainerStatus>> + Send;
 
     /// Block until the container reports a healthy status or `timeout`
     /// elapses. Returns [`crate::RuntimeError::Timeout`] in the latter
     /// case.
-    #[allow(async_fn_in_trait)]
-    async fn wait_healthy(&self, id: &ContainerId, timeout: Duration) -> Result<()>;
+    fn wait_healthy(
+        &self,
+        id: &ContainerId,
+        timeout: Duration,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Stream logs from a container. When `follow` is true the stream
     /// stays open and emits new chunks as they arrive; when false the
     /// stream completes after the existing logs are drained.
-    #[allow(async_fn_in_trait)]
-    async fn logs(&self, id: &ContainerId, follow: bool) -> Result<LogChunkStream>;
+    fn logs(
+        &self,
+        id: &ContainerId,
+        follow: bool,
+    ) -> impl std::future::Future<Output = Result<LogChunkStream>> + Send;
 }
