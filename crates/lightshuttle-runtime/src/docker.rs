@@ -1,6 +1,7 @@
 //! Docker container runtime backed by the `bollard` crate.
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::pin::Pin;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -8,8 +9,9 @@ use bollard::Docker;
 use bollard::container::{
     Config, CreateContainerOptions, LogOutput, LogsOptions, StopContainerOptions,
 };
-use bollard::image::CreateImageOptions;
+use bollard::image::{BuildImageOptions, CreateImageOptions};
 use bollard::models::{HealthConfig, HostConfig, PortBinding as BollardPortBinding};
+use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 
 use crate::error::{Result, RuntimeError};
@@ -60,6 +62,83 @@ impl DockerRuntime {
         }
         Ok(())
     }
+
+    async fn build_image(
+        &self,
+        context: &str,
+        dockerfile: &str,
+        build_args: &HashMap<String, String>,
+        target: Option<&str>,
+        tag: &str,
+    ) -> Result<()> {
+        let context_owned = context.to_owned();
+        let tar_bytes =
+            tokio::task::spawn_blocking(move || build_tar_archive(Path::new(&context_owned)))
+                .await
+                .map_err(|join_err| {
+                    RuntimeError::InvalidSpec(format!("tar build task panicked: {join_err}"))
+                })?
+                .map_err(|io_err| {
+                    RuntimeError::InvalidSpec(format!("failed to build tar archive: {io_err}"))
+                })?;
+
+        let options = BuildImageOptions::<String> {
+            dockerfile: dockerfile.to_owned(),
+            t: tag.to_owned(),
+            rm: true,
+            buildargs: build_args.clone(),
+            target: target.unwrap_or("").to_owned(),
+            ..Default::default()
+        };
+
+        let mut stream = self
+            .client
+            .build_image(options, None, Some(Bytes::from(tar_bytes)));
+        while let Some(event) = stream.next().await {
+            event.map_err(RuntimeError::Build)?;
+        }
+        Ok(())
+    }
+}
+
+/// Build a tar archive from `context`, respecting `.dockerignore`
+/// patterns found within. Returns the raw tar bytes (uncompressed).
+fn build_tar_archive(context: &Path) -> std::io::Result<Vec<u8>> {
+    use ignore::WalkBuilder;
+
+    let mut buf: Vec<u8> = Vec::new();
+    {
+        let mut builder = tar::Builder::new(&mut buf);
+        builder.follow_symlinks(false);
+
+        let walker = WalkBuilder::new(context)
+            .add_custom_ignore_filename(".dockerignore")
+            .git_ignore(false)
+            .git_exclude(false)
+            .git_global(false)
+            .hidden(false)
+            .build();
+
+        for entry in walker {
+            let entry = entry.map_err(|e| std::io::Error::other(format!("walk error: {e}")))?;
+            let path = entry.path();
+            let relative = match path.strip_prefix(context) {
+                Ok(p) if !p.as_os_str().is_empty() => p,
+                _ => continue,
+            };
+            let Some(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_dir() {
+                builder.append_dir(relative, path)?;
+            } else if file_type.is_file() {
+                let mut file = std::fs::File::open(path)?;
+                builder.append_file(relative, &mut file)?;
+            }
+        }
+        builder.finish()?;
+    }
+    Ok(buf)
 }
 
 impl ContainerRuntime for DockerRuntime {
@@ -69,12 +148,16 @@ impl ContainerRuntime for DockerRuntime {
                 self.ensure_image(image).await?;
                 image.clone()
             }
-            ImageSource::Build { .. } => {
-                return Err(RuntimeError::InvalidSpec(
-                    "dockerfile builds are not yet implemented in this runtime; \
-                     planned for a follow-up PR within v0.1.0"
-                        .to_owned(),
-                ));
+            ImageSource::Build {
+                context,
+                dockerfile,
+                build_args,
+                target,
+                tag,
+            } => {
+                self.build_image(context, dockerfile, build_args, target.as_deref(), tag)
+                    .await?;
+                tag.clone()
             }
         };
 
