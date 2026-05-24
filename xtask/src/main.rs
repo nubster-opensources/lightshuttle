@@ -39,8 +39,8 @@ fn schema_cmd(args: &[String]) -> Result<()> {
     let target = PathBuf::from(SCHEMA_PATH);
 
     let schema = lightshuttle_manifest::schema();
-    let mut generated = serde_json::to_string_pretty(&schema)
-        .context("failed to serialise schema as JSON")?;
+    let mut generated =
+        serde_json::to_string_pretty(&schema).context("failed to serialise schema as JSON")?;
     generated.push('\n');
 
     if check {

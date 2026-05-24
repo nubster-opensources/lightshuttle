@@ -9,8 +9,7 @@ const HELLO_WORLD: &str = include_str!("fixtures/hello-world.yml");
 const REAL_WORLD: &str = include_str!("fixtures/real-world.yml");
 
 fn validate(fixture: &str, label: &str) {
-    let schema_value =
-        serde_json::to_value(schema()).expect("schema serialisable to JSON value");
+    let schema_value = serde_json::to_value(schema()).expect("schema serialisable to JSON value");
     let validator = JSONSchema::compile(&schema_value).expect("schema compiles");
 
     let manifest = Manifest::parse(fixture).expect("fixture parses");
