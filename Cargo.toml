@@ -36,6 +36,7 @@ futures = "0.3"
 tar = "0.4"
 ignore = "0.4"
 bytes = "1"
+humantime = "2"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

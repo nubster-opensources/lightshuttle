@@ -15,6 +15,8 @@ use lightshuttle_runtime::{
 fn small_image_spec(name: &str) -> ContainerSpec {
     ContainerSpec {
         name: name.to_owned(),
+        project: "lightshuttle_it".to_owned(),
+        resource: name.to_owned(),
         image: ImageSource::Pull("alpine:3.20".to_owned()),
         env: HashMap::new(),
         ports: Vec::new(),
@@ -64,6 +66,8 @@ async fn builds_and_runs_a_dockerfile_resource() {
     let runtime = DockerRuntime::connect().expect("Docker daemon reachable");
     let spec = ContainerSpec {
         name: "lightshuttle_it_build_run".to_owned(),
+        project: "lightshuttle_it".to_owned(),
+        resource: "build_run".to_owned(),
         image: ImageSource::Build {
             context: context.path().to_string_lossy().into_owned(),
             dockerfile: "Dockerfile".to_owned(),
