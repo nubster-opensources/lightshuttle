@@ -27,8 +27,8 @@ pub use crate::runtime::{
     ContainerId, ContainerRuntime, ContainerStatus, LogChunk, LogChunkStream, LogStream,
 };
 pub use crate::spec::{
-    ContainerSpec, HealthcheckSpec, ImageSource, PortBinding, VolumeBinding, VolumeSource,
-    from_resource,
+    ContainerSpec, HealthcheckSpec, ImageSource, PortBinding, ResolvedResource, ResourceOutputs,
+    VolumeBinding, VolumeSource, from_resource,
 };
 
 mod docker;

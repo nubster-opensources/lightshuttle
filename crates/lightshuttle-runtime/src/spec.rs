@@ -4,12 +4,37 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use indexmap::IndexMap;
 use lightshuttle_manifest::{
     Command, ContainerConfig, DockerfileConfig, Healthcheck, PortMapping, PostgresConfig,
     RedisConfig, ResourceKind, Volume,
 };
 
 use crate::error::{Result, RuntimeError};
+
+/// Properties a managed resource exposes to its dependents.
+///
+/// Keys follow the conventions documented in
+/// `docs/spec/manifest-v0.md`:
+///
+/// - `host`, `port`, `database`, `user`, `password`, `url` for
+///   `postgres`.
+/// - `host`, `port`, `password`, `url` for `redis`.
+/// - `host`, `ports` (comma-separated) for `container` and
+///   `dockerfile`.
+pub type ResourceOutputs = IndexMap<String, String>;
+
+/// A [`ContainerSpec`] together with the outputs the resource exposes
+/// to its dependents at runtime.
+#[derive(Debug, Clone)]
+pub struct ResolvedResource {
+    /// Container specification consumed by the runtime.
+    pub spec: ContainerSpec,
+    /// Properties exposed to dependents (resolved into LSH_* env vars
+    /// and substituted into `${resources.<name>.<property>}`
+    /// expressions).
+    pub outputs: ResourceOutputs,
+}
 
 const DEFAULT_PG_VERSION: &str = "16";
 const DEFAULT_PG_USER: &str = "postgres";
@@ -123,7 +148,7 @@ pub fn from_resource(
     project: &str,
     resource_name: &str,
     kind: &ResourceKind,
-) -> Result<ContainerSpec> {
+) -> Result<ResolvedResource> {
     let name = format!("{project}_{resource_name}");
     match kind {
         ResourceKind::Postgres(c) => spec_postgres(name, project, resource_name, c),
@@ -133,12 +158,13 @@ pub fn from_resource(
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn spec_postgres(
     name: String,
     project: &str,
     resource_name: &str,
     c: &PostgresConfig,
-) -> Result<ContainerSpec> {
+) -> Result<ResolvedResource> {
     let version = c.version.as_deref().unwrap_or(DEFAULT_PG_VERSION);
     let image = c
         .image
@@ -185,25 +211,42 @@ fn spec_postgres(
             })
         });
 
-    Ok(ContainerSpec {
-        name,
+    let spec = ContainerSpec {
+        name: name.clone(),
         project: project.to_owned(),
         resource: resource_name.to_owned(),
         image: ImageSource::Pull(image),
-        env,
+        env: env.clone(),
         ports,
         volumes,
         command: None,
         healthcheck,
-    })
+    };
+
+    let mut outputs = ResourceOutputs::new();
+    outputs.insert("host".to_owned(), name.clone());
+    outputs.insert("port".to_owned(), port.to_string());
+    let user_out = env.get("POSTGRES_USER").cloned().unwrap_or_default();
+    let pwd_out = env.get("POSTGRES_PASSWORD").cloned().unwrap_or_default();
+    let db_out = env.get("POSTGRES_DB").cloned().unwrap_or_default();
+    outputs.insert("user".to_owned(), user_out.clone());
+    outputs.insert("password".to_owned(), pwd_out.clone());
+    outputs.insert("database".to_owned(), db_out.clone());
+    outputs.insert(
+        "url".to_owned(),
+        format!("postgres://{user_out}:{pwd_out}@{name}:{port}/{db_out}"),
+    );
+
+    Ok(ResolvedResource { spec, outputs })
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn spec_redis(
     name: String,
     project: &str,
     resource_name: &str,
     c: &RedisConfig,
-) -> Result<ContainerSpec> {
+) -> Result<ResolvedResource> {
     let version = c.version.as_deref().unwrap_or(DEFAULT_REDIS_VERSION);
     let image = c
         .image
@@ -242,8 +285,9 @@ fn spec_redis(
             })
         });
 
-    Ok(ContainerSpec {
-        name,
+    let password_out = c.password.clone().unwrap_or_default();
+    let spec = ContainerSpec {
+        name: name.clone(),
         project: project.to_owned(),
         resource: resource_name.to_owned(),
         image: ImageSource::Pull(image),
@@ -252,15 +296,29 @@ fn spec_redis(
         volumes,
         command: Some(command),
         healthcheck,
-    })
+    };
+
+    let mut outputs = ResourceOutputs::new();
+    outputs.insert("host".to_owned(), name.clone());
+    outputs.insert("port".to_owned(), port.to_string());
+    outputs.insert("password".to_owned(), password_out.clone());
+    let url = if password_out.is_empty() {
+        format!("redis://{name}:{port}")
+    } else {
+        format!("redis://:{password_out}@{name}:{port}")
+    };
+    outputs.insert("url".to_owned(), url);
+
+    Ok(ResolvedResource { spec, outputs })
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn spec_container(
     name: String,
     project: &str,
     resource_name: &str,
     c: &ContainerConfig,
-) -> Result<ContainerSpec> {
+) -> Result<ResolvedResource> {
     let env: HashMap<String, String> = c.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
     let ports = c
@@ -276,8 +334,13 @@ fn spec_container(
     let command = c.command.as_ref().map(parse_command);
     let healthcheck = c.healthcheck.as_ref().map(parse_healthcheck).transpose()?;
 
-    Ok(ContainerSpec {
-        name,
+    let ports_csv: String = ports
+        .iter()
+        .map(|p| p.container_port.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let spec = ContainerSpec {
+        name: name.clone(),
         project: project.to_owned(),
         resource: resource_name.to_owned(),
         image: ImageSource::Pull(c.image.clone()),
@@ -286,15 +349,22 @@ fn spec_container(
         volumes,
         command,
         healthcheck,
-    })
+    };
+
+    let mut outputs = ResourceOutputs::new();
+    outputs.insert("host".to_owned(), name);
+    outputs.insert("ports".to_owned(), ports_csv);
+
+    Ok(ResolvedResource { spec, outputs })
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn spec_dockerfile(
     name: String,
     project: &str,
     resource_name: &str,
     c: &DockerfileConfig,
-) -> Result<ContainerSpec> {
+) -> Result<ResolvedResource> {
     let tag = format!("lightshuttle/{name}:dev");
 
     let env: HashMap<String, String> = c.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
@@ -318,8 +388,13 @@ fn spec_dockerfile(
     let command = c.command.as_ref().map(parse_command);
     let healthcheck = c.healthcheck.as_ref().map(parse_healthcheck).transpose()?;
 
-    Ok(ContainerSpec {
-        name,
+    let ports_csv: String = ports
+        .iter()
+        .map(|p| p.container_port.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let spec = ContainerSpec {
+        name: name.clone(),
         project: project.to_owned(),
         resource: resource_name.to_owned(),
         image: ImageSource::Build {
@@ -334,7 +409,13 @@ fn spec_dockerfile(
         volumes,
         command,
         healthcheck,
-    })
+    };
+
+    let mut outputs = ResourceOutputs::new();
+    outputs.insert("host".to_owned(), name);
+    outputs.insert("ports".to_owned(), ports_csv);
+
+    Ok(ResolvedResource { spec, outputs })
 }
 
 fn volume_to_binding(volume: Option<&Volume>, target: &str) -> Vec<VolumeBinding> {

@@ -6,16 +6,19 @@ use std::collections::{HashMap, HashSet};
 use lightshuttle_manifest::Manifest;
 
 use crate::lifecycle::error::LifecycleError;
-use crate::spec::{ContainerSpec, from_resource};
+use crate::spec::{ContainerSpec, ResolvedResource, ResourceOutputs, from_resource};
 
-/// A single resource to manage, with its resolved [`ContainerSpec`] and
-/// explicit dependencies.
+/// A single resource to manage, with its resolved [`ContainerSpec`],
+/// its exposed outputs and its explicit dependencies.
 #[derive(Debug, Clone)]
 pub struct PlanNode {
     /// Resource name as declared in the manifest.
     pub name: String,
     /// Container specification derived from the manifest.
     pub spec: ContainerSpec,
+    /// Outputs the resource exposes to its dependents (host, port,
+    /// password, url, ...).
+    pub outputs: ResourceOutputs,
     /// Names of resources this one depends on.
     pub depends_on: Vec<String>,
 }
@@ -35,23 +38,23 @@ impl LifecyclePlan {
     pub fn from_manifest(manifest: &Manifest) -> Result<Self, LifecycleError> {
         let project = manifest.project.name.as_str();
 
-        // Build edges and collect spec for every resource.
-        let mut specs: HashMap<String, ContainerSpec> = HashMap::new();
+        // Build edges and collect spec + outputs for every resource.
+        let mut resolved: HashMap<String, ResolvedResource> = HashMap::new();
         let mut deps: HashMap<String, Vec<String>> = HashMap::new();
         for (name, kind) in &manifest.resources {
-            let spec =
+            let r =
                 from_resource(project, name, kind).map_err(|source| LifecycleError::SpecBuild {
                     resource: name.clone(),
                     source,
                 })?;
-            specs.insert(name.clone(), spec);
+            resolved.insert(name.clone(), r);
             deps.insert(name.clone(), kind.depends_on().to_vec());
         }
 
         // Verify every dependency points to an existing resource.
         for (name, dependencies) in &deps {
             for dependency in dependencies {
-                if !specs.contains_key(dependency) {
+                if !resolved.contains_key(dependency) {
                     return Err(LifecycleError::UnknownResource(format!(
                         "`{dependency}` (depended on by `{name}`)"
                     )));
@@ -60,8 +63,10 @@ impl LifecyclePlan {
         }
 
         // Kahn's algorithm for topological sort.
-        let mut in_degree: HashMap<String, usize> =
-            specs.keys().map(|name| (name.clone(), 0_usize)).collect();
+        let mut in_degree: HashMap<String, usize> = resolved
+            .keys()
+            .map(|name| (name.clone(), 0_usize))
+            .collect();
         for dependencies in deps.values() {
             for dependency in dependencies {
                 *in_degree.entry(dependency.clone()).or_insert(0) += 1;
@@ -87,7 +92,7 @@ impl LifecyclePlan {
         // We invert: deps come before their dependents.
         // in_degree counts how many incoming dependency edges (= how
         // many of my own dependencies) each node has.
-        let mut in_count: HashMap<String, usize> = specs
+        let mut in_count: HashMap<String, usize> = resolved
             .keys()
             .map(|name| (name.clone(), deps.get(name).map_or(0, Vec::len)))
             .collect();
@@ -100,7 +105,7 @@ impl LifecyclePlan {
         // Deterministic order: sort by name.
         ready.sort();
 
-        let mut sorted: Vec<String> = Vec::with_capacity(specs.len());
+        let mut sorted: Vec<String> = Vec::with_capacity(resolved.len());
         while let Some(node) = ready.pop() {
             sorted.push(node.clone());
             if let Some(dependents) = reverse.get(&node) {
@@ -117,9 +122,11 @@ impl LifecyclePlan {
             }
         }
 
-        if sorted.len() != specs.len() {
-            let unresolved: Vec<&String> =
-                specs.keys().filter(|name| !sorted.contains(name)).collect();
+        if sorted.len() != resolved.len() {
+            let unresolved: Vec<&String> = resolved
+                .keys()
+                .filter(|name| !sorted.contains(name))
+                .collect();
             return Err(LifecycleError::Cycle(format!(
                 "{unresolved:?} involved in a cycle"
             )));
@@ -134,11 +141,13 @@ impl LifecyclePlan {
         let nodes: Vec<PlanNode> = sorted
             .into_iter()
             .map(|name| {
-                let spec = specs.remove(&name).expect("spec indexed by name");
+                let ResolvedResource { spec, outputs } =
+                    resolved.remove(&name).expect("spec indexed by name");
                 let dependencies = deps.remove(&name).unwrap_or_default();
                 PlanNode {
                     name,
                     spec,
+                    outputs,
                     depends_on: dependencies,
                 }
             })
