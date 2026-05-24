@@ -33,6 +33,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 bollard = "0.18"
 clap = { version = "4", features = ["derive"] }
 futures = "0.3"
+tar = "0.4"
+ignore = "0.4"
+bytes = "1"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

@@ -5,6 +5,7 @@
 //! the standard CI run.
 
 use std::collections::HashMap;
+use std::io::Write;
 use std::time::Duration;
 
 use lightshuttle_runtime::{
@@ -45,18 +46,30 @@ async fn start_inspect_stop_alpine() {
 
 #[tokio::test]
 #[ignore = "requires a running Docker daemon"]
-async fn build_variant_is_currently_unsupported() {
-    use lightshuttle_runtime::RuntimeError;
+async fn builds_and_runs_a_dockerfile_resource() {
+    let context = tempfile::tempdir().expect("temp dir created");
+
+    // Minimal Dockerfile: small image, instant exit.
+    let dockerfile_path = context.path().join("Dockerfile");
+    let mut dockerfile = std::fs::File::create(&dockerfile_path).expect("Dockerfile created");
+    writeln!(dockerfile, "FROM alpine:3.20").expect("write line");
+    writeln!(dockerfile, "CMD [\"sh\", \"-c\", \"sleep 5\"]").expect("write line");
+    drop(dockerfile);
+
+    // Verify that .dockerignore filtering does not break the build:
+    // include one ignored file plus an entry in .dockerignore.
+    std::fs::write(context.path().join("noisy.tmp"), b"junk").expect("noisy file written");
+    std::fs::write(context.path().join(".dockerignore"), b"*.tmp\n").expect("ignore written");
 
     let runtime = DockerRuntime::connect().expect("Docker daemon reachable");
     let spec = ContainerSpec {
-        name: "lightshuttle_it_build".to_owned(),
+        name: "lightshuttle_it_build_run".to_owned(),
         image: ImageSource::Build {
-            context: ".".to_owned(),
+            context: context.path().to_string_lossy().into_owned(),
             dockerfile: "Dockerfile".to_owned(),
             build_args: HashMap::new(),
             target: None,
-            tag: "lightshuttle/it_build:dev".to_owned(),
+            tag: "lightshuttle/it_build_run:dev".to_owned(),
         },
         env: HashMap::new(),
         ports: Vec::new(),
@@ -65,12 +78,13 @@ async fn build_variant_is_currently_unsupported() {
         healthcheck: None,
     };
 
-    let err = runtime
+    let id = runtime
         .start(&spec)
         .await
-        .expect_err("build should error in v0.1");
-    assert!(
-        matches!(err, RuntimeError::InvalidSpec(_)),
-        "expected InvalidSpec error, got {err:?}"
-    );
+        .expect("dockerfile resource builds and starts");
+
+    runtime
+        .stop(&id, Duration::from_secs(2))
+        .await
+        .expect("container stops cleanly");
 }
