@@ -53,6 +53,31 @@ takes place.
 
 The file **MUST** be UTF-8 encoded and **MUST** parse as valid YAML 1.2.
 
+## Editor integration
+
+The JSON Schema corresponding to this specification is published at
+`docs/spec/manifest-v0.schema.json` in the LightShuttle repository.
+Editors that follow the `yaml-language-server` convention pick it up
+automatically when the manifest starts with the modeline:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/nubster-opensources/lightshuttle/main/docs/spec/manifest-v0.schema.json
+project:
+  name: my-app
+# ...
+```
+
+With the modeline in place, Visual Studio Code (with the YAML
+extension), IntelliJ-family IDEs and neovim through
+`yaml-language-server` provide autocompletion of fields, inline
+validation of values and hover documentation taken from the Rust
+doc comments.
+
+The schema is regenerated from the Rust types of the
+`lightshuttle-manifest` crate by `cargo xtask schema` and the
+continuous integration pipeline rejects any change that lets the
+on-disk schema drift from the model.
+
 ## Top-level structure
 
 ```yaml

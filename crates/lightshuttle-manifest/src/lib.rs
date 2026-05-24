@@ -19,9 +19,11 @@ pub use crate::model::{
     Command, ContainerConfig, DockerfileConfig, Healthcheck, Manifest, PortMapping, PostgresConfig,
     Project, RedisConfig, ResourceKind, Version, Volume,
 };
+pub use crate::schema::schema;
 
 mod error;
 pub mod interpolate;
 pub mod model;
 mod parse;
+mod schema;
 mod validate;

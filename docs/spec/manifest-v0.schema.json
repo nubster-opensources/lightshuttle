@@ -1,0 +1,528 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Manifest",
+  "description": "Top-level `lightshuttle.yml` model.",
+  "type": "object",
+  "required": [
+    "project",
+    "resources"
+  ],
+  "properties": {
+    "lightshuttle": {
+      "description": "Optional manifest version discriminator. Absent means `v0`.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Version"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "project": {
+      "description": "Project metadata.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/Project"
+        }
+      ]
+    },
+    "resources": {
+      "description": "Declared resources, keyed by name.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/ResourceKind"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "Command": {
+      "description": "Entry point override.\n\nThe short string form is convenient for one-liners; the list form is required when arguments need precise quoting.",
+      "anyOf": [
+        {
+          "description": "Single command line, shell-style.",
+          "type": "string"
+        },
+        {
+          "description": "Explicit argument list.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "ContainerConfig": {
+      "description": "Configuration of a container resource pulled from a registry.",
+      "type": "object",
+      "required": [
+        "image"
+      ],
+      "properties": {
+        "command": {
+          "description": "Override of the image entrypoint.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Command"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "depends_on": {
+          "description": "Names of resources this container explicitly depends on.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "description": "Environment variables injected into the container. Values support interpolation.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "healthcheck": {
+          "description": "Optional healthcheck.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Healthcheck"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "image": {
+          "description": "Full image reference, including the tag.",
+          "type": "string"
+        },
+        "ports": {
+          "description": "Port mappings.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PortMapping"
+          }
+        },
+        "volumes": {
+          "description": "Volume mappings, in `\"host:container\"` or `\"named:container\"` form.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "working_dir": {
+          "description": "Override of the image working directory.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "DockerfileConfig": {
+      "description": "Configuration of a resource built locally from a Dockerfile.",
+      "type": "object",
+      "required": [
+        "context"
+      ],
+      "properties": {
+        "build_args": {
+          "description": "Build-time arguments.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "command": {
+          "description": "Override of the image entrypoint.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Command"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "context": {
+          "description": "Build context, relative to the manifest file.",
+          "type": "string"
+        },
+        "depends_on": {
+          "description": "Names of resources this build explicitly depends on.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dockerfile": {
+          "description": "Dockerfile path within the context. Defaults to `\"Dockerfile\"`.",
+          "default": "Dockerfile",
+          "type": "string"
+        },
+        "env": {
+          "description": "Environment variables injected at runtime. Values support interpolation.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "healthcheck": {
+          "description": "Optional healthcheck.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Healthcheck"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ports": {
+          "description": "Port mappings.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PortMapping"
+          }
+        },
+        "target": {
+          "description": "Multi-stage build target.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "volumes": {
+          "description": "Volume mappings.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "working_dir": {
+          "description": "Override of the image working directory.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Healthcheck": {
+      "description": "Per-resource healthcheck configuration.\n\nThe field semantics mirror those used by Docker Compose so that developers already familiar with `docker-compose.yml` translate their knowledge directly to LightShuttle manifests.",
+      "type": "object",
+      "required": [
+        "test"
+      ],
+      "properties": {
+        "interval": {
+          "description": "Interval between consecutive checks. Default `\"5s\"`.",
+          "default": "5s",
+          "type": "string"
+        },
+        "retries": {
+          "description": "Number of consecutive failed checks required to mark the resource as unhealthy. Default `5`.",
+          "default": 5,
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "start_period": {
+          "description": "Grace period after the resource starts during which check failures are not counted. Default `\"5s\"`.",
+          "default": "5s",
+          "type": "string"
+        },
+        "test": {
+          "description": "Command to run. The first element should be `\"CMD\"` or `\"CMD-SHELL\"`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeout": {
+          "description": "Maximum time a single check is allowed to run before being considered failed. Default `\"3s\"`.",
+          "default": "3s",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "PortMapping": {
+      "description": "Port mapping for a container.\n\nThe short integer form exposes a single container port that the runtime mirrors on the host. The string form supports the full Compose syntax (`\"host:container\"`, `\"bind:host:container\"`).",
+      "anyOf": [
+        {
+          "description": "Short form: just the container port. Host port mirrors it.",
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0.0
+        },
+        {
+          "description": "Full form: `\"9090:9090\"` or `\"127.0.0.1:9090:9090\"`.",
+          "type": "string"
+        }
+      ]
+    },
+    "PostgresConfig": {
+      "description": "Configuration of a PostgreSQL resource.",
+      "type": "object",
+      "properties": {
+        "database": {
+          "description": "Initial database name. Defaults to the resource name when unset.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "depends_on": {
+          "description": "Names of resources this PostgreSQL instance explicitly depends on.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "healthcheck": {
+          "description": "Override of the default `pg_isready` healthcheck.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Healthcheck"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "image": {
+          "description": "Explicit image reference. Takes precedence over `version` when both are set.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "password": {
+          "description": "Superuser password. Generated by the runtime when unset.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "port": {
+          "description": "Container port. Defaults to `5432` when unset.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "minimum": 0.0
+        },
+        "user": {
+          "description": "Superuser name. Defaults to `\"postgres\"` when unset.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "description": "Major version. Expanded into `postgres:<version>-alpine` by the runtime when `image` is unset.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "volume": {
+          "description": "Persistent volume configuration. Defaults to an auto-named volume when unset.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Volume"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Project": {
+      "description": "Project section of the manifest.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "description": {
+          "description": "Free-form description shown in the dashboard.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Project name, used as a prefix in runtime resource names.",
+          "type": "string"
+        },
+        "version": {
+          "description": "Free-form version label. Informational only.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RedisConfig": {
+      "description": "Configuration of a Redis resource.",
+      "type": "object",
+      "properties": {
+        "depends_on": {
+          "description": "Names of resources this Redis instance explicitly depends on.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "healthcheck": {
+          "description": "Override of the default `redis-cli PING` healthcheck.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Healthcheck"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "image": {
+          "description": "Explicit image reference.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "password": {
+          "description": "Authentication password. An empty string disables authentication.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "port": {
+          "description": "Container port. Defaults to `6379` when unset.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "minimum": 0.0
+        },
+        "version": {
+          "description": "Major version. Expanded into `redis:<version>-alpine` when `image` is unset.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "volume": {
+          "description": "Persistent volume configuration. Defaults to an auto-named volume when unset.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Volume"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResourceKind": {
+      "description": "Kind-specific configuration of a resource.\n\nThe variant is selected by the YAML key under the resource entry (externally tagged shape):\n\n```yaml api_db: postgres:    # ← variant is ResourceKind::Postgres version: \"16\" ```\n\nSerde's default external tagging produces a YAML tag (`!postgres ...`) rather than a map entry, so this enum implements `Serialize` and `Deserialize` manually to keep the manifest format identical to the specification.",
+      "oneOf": [
+        {
+          "description": "PostgreSQL resource.",
+          "type": "object",
+          "required": [
+            "postgres"
+          ],
+          "properties": {
+            "postgres": {
+              "$ref": "#/definitions/PostgresConfig"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Redis resource.",
+          "type": "object",
+          "required": [
+            "redis"
+          ],
+          "properties": {
+            "redis": {
+              "$ref": "#/definitions/RedisConfig"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Container pulled from a registry.",
+          "type": "object",
+          "required": [
+            "container"
+          ],
+          "properties": {
+            "container": {
+              "$ref": "#/definitions/ContainerConfig"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Container built locally from a Dockerfile.",
+          "type": "object",
+          "required": [
+            "dockerfile"
+          ],
+          "properties": {
+            "dockerfile": {
+              "$ref": "#/definitions/DockerfileConfig"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Version": {
+      "description": "Manifest specification version.",
+      "oneOf": [
+        {
+          "description": "The `v0` specification.",
+          "type": "string",
+          "enum": [
+            "v0"
+          ]
+        }
+      ]
+    },
+    "Volume": {
+      "description": "Volume specification.\n\n`true` requests an auto-named persistent volume, `false` opts out (the data is lost on `down`), and a string supplies an explicit named volume.",
+      "anyOf": [
+        {
+          "description": "Boolean form: enable or disable an auto-named persistent volume.",
+          "type": "boolean"
+        },
+        {
+          "description": "String form: explicit named volume.",
+          "type": "string"
+        }
+      ]
+    }
+  }
+}
