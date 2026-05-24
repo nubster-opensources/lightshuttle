@@ -10,12 +10,19 @@
 //!   resource declaration, with the v0 defaults already applied
 //!   (image expansion, database name derivation, random password
 //!   generation, healthcheck materialisation).
+//! - A [`LifecycleManager`] that consumes a [`LifecyclePlan`] and a
+//!   runtime, then orchestrates startup (topological, parallel where
+//!   possible, gated on healthchecks), supervises the running stack
+//!   and rolls everything down on signal.
 //!
 //! See `docs/spec/manifest-v0.md` in the main repository for the
 //! manifest specification this runtime consumes.
 
 pub use crate::docker::DockerRuntime;
 pub use crate::error::{Result, RuntimeError};
+pub use crate::lifecycle::{
+    LifecycleError, LifecycleEvent, LifecycleManager, LifecyclePlan, NodeStatus, PlanNode,
+};
 pub use crate::runtime::{
     ContainerId, ContainerRuntime, ContainerStatus, LogChunk, LogChunkStream, LogStream,
 };
@@ -26,5 +33,6 @@ pub use crate::spec::{
 
 mod docker;
 mod error;
+mod lifecycle;
 mod runtime;
 mod spec;
