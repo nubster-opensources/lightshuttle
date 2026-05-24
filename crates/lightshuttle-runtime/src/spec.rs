@@ -27,6 +27,12 @@ const HEALTHCHECK_DEFAULT_START_PERIOD: Duration = Duration::from_secs(5);
 pub struct ContainerSpec {
     /// Container name, of the form `<project>_<resource>`.
     pub name: String,
+    /// Project name as declared in the manifest. Used as a Docker
+    /// label for discovery by `ps` and `down`.
+    pub project: String,
+    /// Resource name as declared in the manifest. Used as a Docker
+    /// label so the CLI can find a single resource by name.
+    pub resource: String,
     /// How the container image is obtained.
     pub image: ImageSource,
     /// Environment variables to inject into the container.
@@ -120,14 +126,19 @@ pub fn from_resource(
 ) -> Result<ContainerSpec> {
     let name = format!("{project}_{resource_name}");
     match kind {
-        ResourceKind::Postgres(c) => spec_postgres(name, resource_name, c),
-        ResourceKind::Redis(c) => spec_redis(name, c),
-        ResourceKind::Container(c) => spec_container(name, c),
-        ResourceKind::Dockerfile(c) => spec_dockerfile(name, c),
+        ResourceKind::Postgres(c) => spec_postgres(name, project, resource_name, c),
+        ResourceKind::Redis(c) => spec_redis(name, project, resource_name, c),
+        ResourceKind::Container(c) => spec_container(name, project, resource_name, c),
+        ResourceKind::Dockerfile(c) => spec_dockerfile(name, project, resource_name, c),
     }
 }
 
-fn spec_postgres(name: String, resource_name: &str, c: &PostgresConfig) -> Result<ContainerSpec> {
+fn spec_postgres(
+    name: String,
+    project: &str,
+    resource_name: &str,
+    c: &PostgresConfig,
+) -> Result<ContainerSpec> {
     let version = c.version.as_deref().unwrap_or(DEFAULT_PG_VERSION);
     let image = c
         .image
@@ -176,6 +187,8 @@ fn spec_postgres(name: String, resource_name: &str, c: &PostgresConfig) -> Resul
 
     Ok(ContainerSpec {
         name,
+        project: project.to_owned(),
+        resource: resource_name.to_owned(),
         image: ImageSource::Pull(image),
         env,
         ports,
@@ -185,7 +198,12 @@ fn spec_postgres(name: String, resource_name: &str, c: &PostgresConfig) -> Resul
     })
 }
 
-fn spec_redis(name: String, c: &RedisConfig) -> Result<ContainerSpec> {
+fn spec_redis(
+    name: String,
+    project: &str,
+    resource_name: &str,
+    c: &RedisConfig,
+) -> Result<ContainerSpec> {
     let version = c.version.as_deref().unwrap_or(DEFAULT_REDIS_VERSION);
     let image = c
         .image
@@ -226,6 +244,8 @@ fn spec_redis(name: String, c: &RedisConfig) -> Result<ContainerSpec> {
 
     Ok(ContainerSpec {
         name,
+        project: project.to_owned(),
+        resource: resource_name.to_owned(),
         image: ImageSource::Pull(image),
         env: HashMap::new(),
         ports,
@@ -235,7 +255,12 @@ fn spec_redis(name: String, c: &RedisConfig) -> Result<ContainerSpec> {
     })
 }
 
-fn spec_container(name: String, c: &ContainerConfig) -> Result<ContainerSpec> {
+fn spec_container(
+    name: String,
+    project: &str,
+    resource_name: &str,
+    c: &ContainerConfig,
+) -> Result<ContainerSpec> {
     let env: HashMap<String, String> = c.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
     let ports = c
@@ -253,6 +278,8 @@ fn spec_container(name: String, c: &ContainerConfig) -> Result<ContainerSpec> {
 
     Ok(ContainerSpec {
         name,
+        project: project.to_owned(),
+        resource: resource_name.to_owned(),
         image: ImageSource::Pull(c.image.clone()),
         env,
         ports,
@@ -262,7 +289,12 @@ fn spec_container(name: String, c: &ContainerConfig) -> Result<ContainerSpec> {
     })
 }
 
-fn spec_dockerfile(name: String, c: &DockerfileConfig) -> Result<ContainerSpec> {
+fn spec_dockerfile(
+    name: String,
+    project: &str,
+    resource_name: &str,
+    c: &DockerfileConfig,
+) -> Result<ContainerSpec> {
     let tag = format!("lightshuttle/{name}:dev");
 
     let env: HashMap<String, String> = c.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
@@ -288,6 +320,8 @@ fn spec_dockerfile(name: String, c: &DockerfileConfig) -> Result<ContainerSpec> 
 
     Ok(ContainerSpec {
         name,
+        project: project.to_owned(),
+        resource: resource_name.to_owned(),
         image: ImageSource::Build {
             context: c.context.clone(),
             dockerfile: c.dockerfile.clone(),

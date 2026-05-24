@@ -18,7 +18,7 @@
 //! See `docs/spec/manifest-v0.md` in the main repository for the
 //! manifest specification this runtime consumes.
 
-pub use crate::docker::DockerRuntime;
+pub use crate::docker::{DockerRuntime, LABEL_PROJECT, LABEL_RESOURCE, ManagedContainer};
 pub use crate::error::{Result, RuntimeError};
 pub use crate::lifecycle::{
     LifecycleError, LifecycleEvent, LifecycleManager, LifecyclePlan, NodeStatus, PlanNode,

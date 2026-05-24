@@ -7,7 +7,8 @@ use std::time::{Duration, Instant, SystemTime};
 
 use bollard::Docker;
 use bollard::container::{
-    Config, CreateContainerOptions, LogOutput, LogsOptions, StopContainerOptions,
+    Config, CreateContainerOptions, ListContainersOptions, LogOutput, LogsOptions,
+    StopContainerOptions,
 };
 use bollard::image::{BuildImageOptions, CreateImageOptions};
 use bollard::models::{HealthConfig, HostConfig, PortBinding as BollardPortBinding};
@@ -61,6 +62,47 @@ impl DockerRuntime {
             })?;
         }
         Ok(())
+    }
+
+    /// List every container labelled with `lightshuttle.project=<project>`,
+    /// including stopped ones. Used by the CLI to implement `ps` and
+    /// `down` without relying on in-memory state.
+    pub async fn list_managed(&self, project: &str) -> Result<Vec<ManagedContainer>> {
+        let label_filter = format!("{LABEL_PROJECT}={project}");
+        let mut filters: HashMap<String, Vec<String>> = HashMap::new();
+        filters.insert("label".to_owned(), vec![label_filter]);
+        let options = ListContainersOptions {
+            all: true,
+            filters,
+            ..Default::default()
+        };
+        let summaries = self
+            .client
+            .list_containers(Some(options))
+            .await
+            .map_err(|source| RuntimeError::Inspect {
+                id: format!("project={project}"),
+                source,
+            })?;
+
+        let mut out = Vec::with_capacity(summaries.len());
+        for summary in summaries {
+            let Some(id) = summary.id else { continue };
+            let resource = summary
+                .labels
+                .as_ref()
+                .and_then(|labels| labels.get(LABEL_RESOURCE))
+                .cloned()
+                .unwrap_or_else(|| "<unknown>".to_owned());
+            let status = parse_summary_state(summary.state.as_deref());
+            out.push(ManagedContainer {
+                id: ContainerId::new(id),
+                resource,
+                status,
+            });
+        }
+        out.sort_by(|a, b| a.resource.cmp(&b.resource));
+        Ok(out)
     }
 
     async fn build_image(
@@ -165,6 +207,7 @@ impl ContainerRuntime for DockerRuntime {
         let exposed_ports = build_exposed_ports(&spec.ports);
         let env = build_env(&spec.env);
         let healthcheck = spec.healthcheck.as_ref().map(build_healthcheck);
+        let labels = build_labels(&spec.project, &spec.resource);
 
         let config = Config {
             image: Some(image_ref),
@@ -173,6 +216,7 @@ impl ContainerRuntime for DockerRuntime {
             host_config: Some(host_config),
             exposed_ports: Some(exposed_ports),
             healthcheck,
+            labels: Some(labels),
             ..Default::default()
         };
 
@@ -308,6 +352,40 @@ fn split_image_ref(image: &str) -> (&str, &str) {
 
 fn build_env(env: &HashMap<String, String>) -> Vec<String> {
     env.iter().map(|(k, v)| format!("{k}={v}")).collect()
+}
+
+fn build_labels(project: &str, resource: &str) -> HashMap<String, String> {
+    let mut labels = HashMap::with_capacity(2);
+    labels.insert(LABEL_PROJECT.to_owned(), project.to_owned());
+    labels.insert(LABEL_RESOURCE.to_owned(), resource.to_owned());
+    labels
+}
+
+/// Docker label key set on every container managed by LightShuttle to
+/// carry the manifest project name.
+pub const LABEL_PROJECT: &str = "lightshuttle.project";
+
+/// Docker label key set on every container to carry the manifest
+/// resource name.
+pub const LABEL_RESOURCE: &str = "lightshuttle.resource";
+
+/// One entry returned by [`DockerRuntime::list_managed`].
+#[derive(Debug, Clone)]
+pub struct ManagedContainer {
+    /// Container identifier.
+    pub id: ContainerId,
+    /// Resource name as declared in the manifest.
+    pub resource: String,
+    /// Current lifecycle status.
+    pub status: ContainerStatus,
+}
+
+fn parse_summary_state(state: Option<&str>) -> ContainerStatus {
+    match state {
+        Some("running") => ContainerStatus::Running,
+        Some("exited" | "dead") => ContainerStatus::Stopped { exit_code: None },
+        _ => ContainerStatus::Starting,
+    }
 }
 
 #[allow(clippy::zero_sized_map_values)]
