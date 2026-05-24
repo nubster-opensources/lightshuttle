@@ -11,3 +11,5 @@ workspace = true
 
 [dependencies]
 anyhow.workspace = true
+lightshuttle-manifest = { version = "0.0.1", path = "../crates/lightshuttle-manifest" }
+serde_json.workspace = true

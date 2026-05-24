@@ -57,6 +57,15 @@ jobs:
           key: ${{ matrix.os }}
       - run: cargo test --workspace --all-features --no-fail-fast
 
+  schema:
+    name: JSON Schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo xtask schema --check
+
   supply-chain:
     name: Supply chain
     runs-on: ubuntu-latest

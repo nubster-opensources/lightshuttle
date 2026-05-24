@@ -9,4 +9,5 @@ doc-valid-idents = [
     "PostgreSQL",
     "Kubernetes",
     "GitHub",
+    "IntelliJ",
 ]
