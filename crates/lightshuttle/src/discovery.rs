@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow};
 
 /// File name searched for during upward discovery.
-pub const MANIFEST_FILENAME: &str = "lightshuttle.yml";
+pub(crate) const MANIFEST_FILENAME: &str = "lightshuttle.yml";
 
 /// Resolve the manifest path.
 ///
@@ -15,7 +15,7 @@ pub const MANIFEST_FILENAME: &str = "lightshuttle.yml";
 /// current working directory up to the filesystem root looking for a
 /// `lightshuttle.yml` file. The first match wins, in the spirit of
 /// `cargo` looking for `Cargo.toml`.
-pub fn resolve_manifest(override_path: Option<&Path>) -> Result<PathBuf> {
+pub(crate) fn resolve_manifest(override_path: Option<&Path>) -> Result<PathBuf> {
     if let Some(path) = override_path {
         if path.is_file() {
             return Ok(path.to_path_buf());

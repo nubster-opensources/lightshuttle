@@ -13,7 +13,7 @@ use super::{ExitOutcome, load_manifest};
 ///
 /// Does not depend on a running `up`; queries Docker directly by
 /// label so it works after a hard kill of the manager.
-pub async fn run(file: &Path, grace: Duration) -> Result<ExitOutcome> {
+pub(crate) async fn run(file: &Path, grace: Duration) -> Result<ExitOutcome> {
     let manifest = load_manifest(file)?;
     let project = &manifest.project.name;
 

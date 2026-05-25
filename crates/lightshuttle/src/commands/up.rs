@@ -10,7 +10,7 @@ use tracing::info;
 use super::{ExitOutcome, load_manifest};
 
 /// Boot the stack, supervise it, and stop it cleanly on signal.
-pub async fn run(file: &Path, grace: Duration) -> Result<ExitOutcome> {
+pub(crate) async fn run(file: &Path, grace: Duration) -> Result<ExitOutcome> {
     let manifest = load_manifest(file)?;
     let plan = LifecyclePlan::from_manifest(&manifest)?;
     let runtime = DockerRuntime::connect()?;

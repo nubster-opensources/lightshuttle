@@ -12,12 +12,12 @@ use std::path::Path;
 
 use anyhow::Result;
 
-pub mod down;
-pub mod logs;
-pub mod manifest;
-pub mod ps;
-pub mod up;
-pub mod validate;
+pub(crate) mod down;
+pub(crate) mod logs;
+pub(crate) mod manifest;
+pub(crate) mod ps;
+pub(crate) mod up;
+pub(crate) mod validate;
 
 /// Translates command results into the right exit code.
 ///
@@ -26,7 +26,7 @@ pub mod validate;
 /// This enum carries only the outcomes that succeed at the runtime
 /// layer.
 #[derive(Debug, Clone, Copy)]
-pub enum ExitOutcome {
+pub(crate) enum ExitOutcome {
     Success,
     RuntimeError,
 }
@@ -34,7 +34,7 @@ pub enum ExitOutcome {
 impl ExitOutcome {
     /// POSIX exit code for this outcome.
     #[must_use]
-    pub fn code(self) -> i32 {
+    pub(crate) fn code(self) -> i32 {
         match self {
             Self::Success => 0,
             Self::RuntimeError => 2,
@@ -43,7 +43,7 @@ impl ExitOutcome {
 }
 
 /// Common helper: load and parse the manifest at `path`.
-pub fn load_manifest(path: &Path) -> Result<lightshuttle_manifest::Manifest> {
+pub(crate) fn load_manifest(path: &Path) -> Result<lightshuttle_manifest::Manifest> {
     let yaml = std::fs::read_to_string(path)?;
     Ok(lightshuttle_manifest::Manifest::parse(&yaml)?)
 }

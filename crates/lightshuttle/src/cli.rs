@@ -11,19 +11,19 @@ use clap::{Parser, Subcommand};
     version,
     about = "Lightweight dev orchestrator for polyglot teams"
 )]
-pub struct Cli {
+pub(crate) struct Cli {
     /// Path to the manifest. Overrides the upward discovery.
     #[arg(long, short = 'f', global = true)]
-    pub file: Option<PathBuf>,
+    pub(crate) file: Option<PathBuf>,
 
     /// Subcommand to run.
     #[command(subcommand)]
-    pub command: Command,
+    pub(crate) command: Command,
 }
 
 /// All recognised subcommands.
 #[derive(Debug, Subcommand)]
-pub enum Command {
+pub(crate) enum Command {
     /// Boot the stack and supervise it until interrupted.
     Up {
         /// SIGTERM-to-SIGKILL grace window per resource at shutdown.

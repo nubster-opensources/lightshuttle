@@ -13,7 +13,7 @@ use super::{ExitOutcome, load_manifest};
 /// rejects every condition we would warn about, so `strict` has no
 /// observable effect yet but is kept on the API surface so it stays
 /// available the day a soft warning is introduced.
-pub fn run(file: &Path, _strict: bool) -> Result<ExitOutcome> {
+pub(crate) fn run(file: &Path, _strict: bool) -> Result<ExitOutcome> {
     let manifest = load_manifest(file)?;
     info!(
         resources = manifest.resources.len(),
