@@ -2,7 +2,7 @@
 
 > Lightweight dev orchestrator for polyglot teams: typed `docker-compose` successor with built-in dashboard, OpenTelemetry and production export.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 [![Status](https://img.shields.io/badge/status-pre--alpha-orange)](#status)
 [![Made with Rust](https://img.shields.io/badge/made%20with-Rust-orange?logo=rust)](https://www.rust-lang.org/)
 
@@ -59,6 +59,17 @@ Until then, feel free to open a discussion if you want to give early feedback on
 
 ## License
 
-LightShuttle is distributed under the terms of the [MIT license](./LICENSE).
+Licensed under either of:
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT License ([LICENSE-MIT](LICENSE-MIT))
+
+at your option.
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual-licensed as above, without any additional terms or conditions.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details, including the Contributor License Agreement (CLA).
 
 Copyright © Encelade Technologies.
