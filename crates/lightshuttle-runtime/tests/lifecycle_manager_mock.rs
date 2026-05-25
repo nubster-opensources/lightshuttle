@@ -20,6 +20,7 @@ struct MockRuntime {
     fail_on: Arc<Mutex<Option<String>>>,
     start_order: Arc<Mutex<Vec<String>>>,
     stop_order: Arc<Mutex<Vec<String>>>,
+    started_specs: Arc<Mutex<Vec<ContainerSpec>>>,
 }
 
 struct MockContainer {
@@ -36,6 +37,7 @@ impl MockRuntime {
             fail_on: Arc::new(Mutex::new(None)),
             start_order: Arc::new(Mutex::new(Vec::new())),
             stop_order: Arc::new(Mutex::new(Vec::new())),
+            started_specs: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -53,6 +55,7 @@ impl ContainerRuntime for MockRuntime {
             )));
         }
         self.start_order.lock().unwrap().push(spec.name.clone());
+        self.started_specs.lock().unwrap().push(spec.clone());
         let id = ContainerId::new(format!("mock-{}", spec.name));
         self.state.lock().unwrap().insert(
             id.as_str().to_owned(),
@@ -294,4 +297,89 @@ resources:
     assert!(kinds.contains(&"stack_started"), "got: {kinds:?}");
     assert!(kinds.contains(&"stopped"), "got: {kinds:?}");
     assert!(kinds.contains(&"stack_stopped"), "got: {kinds:?}");
+}
+
+#[tokio::test]
+async fn resolves_dependency_outputs_in_env() {
+    let plan = build_plan(
+        r"
+project:
+  name: app
+resources:
+  api_db:
+    postgres:
+      version: '16'
+  api:
+    container:
+      image: alpine
+      env:
+        DATABASE_URL: ${resources.api_db.url}
+      depends_on: [api_db]
+",
+    );
+    let runtime = MockRuntime::new();
+    let specs_capture = Arc::clone(&runtime.started_specs);
+    let (manager, _events) = LifecycleManager::new(plan, runtime);
+
+    manager.start_all().await.expect("start_all succeeds");
+    let specs = specs_capture.lock().unwrap().clone();
+    let api_spec = specs
+        .iter()
+        .find(|s| s.name == "app_api")
+        .expect("api spec captured");
+    let url = api_spec
+        .env
+        .get("DATABASE_URL")
+        .expect("DATABASE_URL env present");
+    assert!(
+        url.starts_with("postgres://"),
+        "DATABASE_URL should be resolved to a real url, got `{url}`"
+    );
+    assert!(
+        url.contains("@app_api_db:5432/api_db"),
+        "DATABASE_URL should point at the db host/db, got `{url}`"
+    );
+}
+
+#[tokio::test]
+async fn auto_injects_lsh_env_vars() {
+    let plan = build_plan(
+        r"
+project:
+  name: app
+resources:
+  api_db:
+    postgres:
+      version: '16'
+  api:
+    container:
+      image: alpine
+      depends_on: [api_db]
+",
+    );
+    let runtime = MockRuntime::new();
+    let specs_capture = Arc::clone(&runtime.started_specs);
+    let (manager, _events) = LifecycleManager::new(plan, runtime);
+
+    manager.start_all().await.expect("start_all succeeds");
+    let specs = specs_capture.lock().unwrap().clone();
+    let api_spec = specs
+        .iter()
+        .find(|s| s.name == "app_api")
+        .expect("api spec captured");
+
+    assert_eq!(
+        api_spec.env.get("LSH_API_DB_HOST").map(String::as_str),
+        Some("app_api_db")
+    );
+    assert_eq!(
+        api_spec.env.get("LSH_API_DB_PORT").map(String::as_str),
+        Some("5432")
+    );
+    assert_eq!(
+        api_spec.env.get("LSH_API_DB_DATABASE").map(String::as_str),
+        Some("api_db")
+    );
+    assert!(api_spec.env.contains_key("LSH_API_DB_URL"));
+    assert!(api_spec.env.contains_key("LSH_API_DB_PASSWORD"));
 }

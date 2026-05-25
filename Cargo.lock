@@ -996,6 +996,7 @@ dependencies = [
  "bytes",
  "futures",
  "ignore",
+ "indexmap 2.14.0",
  "lightshuttle-manifest",
  "tar",
  "tempfile",

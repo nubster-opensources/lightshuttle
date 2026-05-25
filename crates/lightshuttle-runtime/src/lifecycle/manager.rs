@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use lightshuttle_manifest::{InterpolationContext, Interpolator};
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, info, warn};
 
@@ -13,7 +14,7 @@ use crate::lifecycle::error::LifecycleError;
 use crate::lifecycle::plan::LifecyclePlan;
 use crate::lifecycle::status::{LifecycleEvent, NodeStatus};
 use crate::runtime::{ContainerId, ContainerRuntime};
-use crate::spec::ContainerSpec;
+use crate::spec::{ContainerSpec, ResourceOutputs};
 
 /// Default healthcheck timeout, applied when the manifest does not
 /// provide one of its own. Kept conservative for v0.1.
@@ -24,6 +25,8 @@ const DEFAULT_HEALTHCHECK_TIMEOUT: Duration = Duration::from_secs(60);
 struct NodeHandle {
     status_tx: Arc<watch::Sender<NodeStatus>>,
     status_rx: watch::Receiver<NodeStatus>,
+    outputs_tx: Arc<watch::Sender<Option<ResourceOutputs>>>,
+    outputs_rx: watch::Receiver<Option<ResourceOutputs>>,
     container_id: Arc<Mutex<Option<ContainerId>>>,
 }
 
@@ -44,12 +47,15 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let mut nodes: HashMap<String, NodeHandle> = HashMap::new();
         for node in plan.nodes() {
-            let (tx, rx) = watch::channel(NodeStatus::Pending);
+            let (status_tx, status_rx) = watch::channel(NodeStatus::Pending);
+            let (outputs_tx, outputs_rx) = watch::channel(None);
             nodes.insert(
                 node.name.clone(),
                 NodeHandle {
-                    status_tx: Arc::new(tx),
-                    status_rx: rx,
+                    status_tx: Arc::new(status_tx),
+                    status_rx,
+                    outputs_tx: Arc::new(outputs_tx),
+                    outputs_rx,
                     container_id: Arc::new(Mutex::new(None)),
                 },
             );
@@ -72,26 +78,37 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
             Vec::with_capacity(self.plan.nodes().len());
 
         for node in self.plan.nodes() {
-            let dep_receivers: HashMap<String, watch::Receiver<NodeStatus>> = node
-                .depends_on
-                .iter()
-                .map(|dep| {
-                    let handle = self
-                        .nodes
-                        .get(dep)
-                        .ok_or_else(|| LifecycleError::UnknownResource(dep.clone()))?;
-                    Ok::<_, LifecycleError>((dep.clone(), handle.status_rx.clone()))
-                })
-                .collect::<Result<_, _>>()?;
+            let mut dep_status_rxs: HashMap<String, watch::Receiver<NodeStatus>> = HashMap::new();
+            let mut dep_outputs_rxs: HashMap<String, watch::Receiver<Option<ResourceOutputs>>> =
+                HashMap::new();
+            for dep in &node.depends_on {
+                let handle = self
+                    .nodes
+                    .get(dep)
+                    .ok_or_else(|| LifecycleError::UnknownResource(dep.clone()))?;
+                dep_status_rxs.insert(dep.clone(), handle.status_rx.clone());
+                dep_outputs_rxs.insert(dep.clone(), handle.outputs_rx.clone());
+            }
 
             let node_handle = self.nodes[&node.name].clone();
             let spec = node.spec.clone();
+            let own_outputs = node.outputs.clone();
             let name = node.name.clone();
             let runtime = Arc::clone(&self.runtime);
             let event_tx = self.event_tx.clone();
 
             let task = tokio::spawn(async move {
-                start_one(name, spec, runtime, node_handle, dep_receivers, event_tx).await
+                start_one(
+                    name,
+                    spec,
+                    own_outputs,
+                    runtime,
+                    node_handle,
+                    dep_status_rxs,
+                    dep_outputs_rxs,
+                    event_tx,
+                )
+                .await
             });
             handles.push(task);
         }
@@ -177,16 +194,19 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
     }
 }
 
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn start_one<R: ContainerRuntime + 'static>(
     name: String,
     spec: ContainerSpec,
+    own_outputs: ResourceOutputs,
     runtime: Arc<R>,
     handle: NodeHandle,
-    dep_receivers: HashMap<String, watch::Receiver<NodeStatus>>,
+    dep_status_rxs: HashMap<String, watch::Receiver<NodeStatus>>,
+    mut dep_outputs_rxs: HashMap<String, watch::Receiver<Option<ResourceOutputs>>>,
     event_tx: mpsc::UnboundedSender<LifecycleEvent>,
 ) -> Result<(), LifecycleError> {
     // 1. Wait for every dependency to become ready.
-    for (dep_name, mut rx) in dep_receivers {
+    for (dep_name, mut rx) in dep_status_rxs {
         loop {
             let status = rx.borrow_and_update().clone();
             if status.is_ready() {
@@ -217,9 +237,45 @@ async fn start_one<R: ContainerRuntime + 'static>(
         }
     }
 
-    // 2. Start the container.
+    // 2. Collect dependency outputs.
+    let mut dep_outputs: HashMap<String, ResourceOutputs> = HashMap::new();
+    for (dep_name, rx) in &mut dep_outputs_rxs {
+        loop {
+            if let Some(out) = rx.borrow_and_update().clone() {
+                dep_outputs.insert(dep_name.clone(), out);
+                break;
+            }
+            if rx.changed().await.is_err() {
+                let reason = format!("dependency `{dep_name}` outputs channel closed");
+                let _ = handle.status_tx.send(NodeStatus::Failed {
+                    reason: reason.clone(),
+                });
+                return Err(LifecycleError::DependencyFailed {
+                    resource: name,
+                    dependency: dep_name.clone(),
+                    reason,
+                });
+            }
+        }
+    }
+
+    // 3. Resolve interpolations and inject LSH_<DEP>_<PROP> env vars.
+    let resolved_spec = match interpolate_and_inject(spec, &dep_outputs) {
+        Ok(s) => s,
+        Err(reason) => {
+            let _ = handle.status_tx.send(NodeStatus::Failed {
+                reason: reason.clone(),
+            });
+            return Err(LifecycleError::Start {
+                resource: name,
+                source: RuntimeError::InvalidSpec(reason),
+            });
+        }
+    };
+
+    // 4. Start the container.
     let _ = handle.status_tx.send(NodeStatus::Starting);
-    let id = match runtime.start(&spec).await {
+    let id = match runtime.start(&resolved_spec).await {
         Ok(id) => id,
         Err(source) => {
             let _ = handle.status_tx.send(NodeStatus::Failed {
@@ -249,9 +305,10 @@ async fn start_one<R: ContainerRuntime + 'static>(
         container_id: id.to_string(),
     });
 
-    // 3. Wait for the healthcheck.
+    // 5. Wait for the healthcheck.
     match runtime.wait_healthy(&id, DEFAULT_HEALTHCHECK_TIMEOUT).await {
         Ok(()) => {
+            let _ = handle.outputs_tx.send(Some(own_outputs));
             let _ = handle.status_tx.send(NodeStatus::Healthy);
             let _ = event_tx.send(LifecycleEvent::ResourceHealthy { name: name.clone() });
             Ok(())
@@ -284,6 +341,50 @@ async fn start_one<R: ContainerRuntime + 'static>(
             })
         }
     }
+}
+
+/// Apply two-pass interpolation to `spec`: resolve every
+/// `${resources.<name>.<property>}` against `dep_outputs`, then inject
+/// `LSH_<DEP>_<PROPERTY>` automatic environment variables.
+///
+/// Returns the resolved spec or a human-readable diagnostic when an
+/// interpolation references an unknown resource or property.
+fn interpolate_and_inject(
+    mut spec: ContainerSpec,
+    dep_outputs: &HashMap<String, ResourceOutputs>,
+) -> std::result::Result<ContainerSpec, String> {
+    let mut ctx = InterpolationContext::from_env();
+    for (name, outputs) in dep_outputs {
+        ctx = ctx.with_resource(name.clone(), outputs.clone());
+    }
+    let interpolator = Interpolator::new(&ctx);
+
+    // Resolve env values.
+    let mut resolved_env = std::collections::HashMap::with_capacity(spec.env.len());
+    for (k, v) in spec.env.drain() {
+        let resolved = interpolator.resolve(&v).map_err(|e| e.to_string())?;
+        resolved_env.insert(k, resolved);
+    }
+
+    // Inject LSH_<DEP>_<PROPERTY> variables.
+    for (dep_name, outputs) in dep_outputs {
+        let dep_upper = dep_name.to_uppercase().replace('-', "_");
+        for (prop, value) in outputs {
+            let prop_upper = prop.to_uppercase().replace('-', "_");
+            let key = format!("LSH_{dep_upper}_{prop_upper}");
+            resolved_env.entry(key).or_insert_with(|| value.clone());
+        }
+    }
+    spec.env = resolved_env;
+
+    // Resolve command arguments.
+    if let Some(args) = spec.command.as_mut() {
+        for arg in args.iter_mut() {
+            *arg = interpolator.resolve(arg).map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(spec)
 }
 
 #[cfg(unix)]
