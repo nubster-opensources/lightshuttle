@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-LightShuttle follows [Semantic Versioning](https://semver.org/). During the 0.x phase, only the latest minor release receives security fixes.
+LightShuttle follows the [semver policy](docs/SEMVER_POLICY.md). During the 0.x phase, only the latest minor release receives security fixes.
 
 | Version | Supported          |
 | ------- | ------------------ |

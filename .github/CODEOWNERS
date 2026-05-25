@@ -1,0 +1,8 @@
+# CODEOWNERS for LightShuttle.
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# Every path in this repository is owned by the BDFL (see docs/GOVERNANCE.md).
+# This guarantees that no pull request can be merged without an explicit
+# review request reaching @pierrick-fonquerne.
+
+* @pierrick-fonquerne
