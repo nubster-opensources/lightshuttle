@@ -7,7 +7,7 @@ use lightshuttle_runtime::{ContainerStatus, LogChunk, LogStream, ManagedContaine
 
 /// Render a `ps`-style tabular view of the managed containers.
 #[must_use]
-pub fn format_ps(containers: &[ManagedContainer]) -> String {
+pub(crate) fn format_ps(containers: &[ManagedContainer]) -> String {
     if containers.is_empty() {
         return "(no managed containers found for this project)\n".to_owned();
     }
@@ -64,7 +64,7 @@ fn status_label(status: &ContainerStatus) -> String {
 
 /// Write a log chunk to stdout or stderr depending on its origin
 /// stream. Falls back to stdout on any error.
-pub fn write_log_chunk(chunk: &LogChunk) {
+pub(crate) fn write_log_chunk(chunk: &LogChunk) {
     let payload: &[u8] = &chunk.bytes;
     let _ = match chunk.stream {
         LogStream::Stdout => std::io::stdout().write_all(payload),

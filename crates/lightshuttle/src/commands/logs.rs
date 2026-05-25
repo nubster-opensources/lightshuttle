@@ -10,7 +10,7 @@ use super::{ExitOutcome, load_manifest};
 use crate::output::write_log_chunk;
 
 /// Stream logs of a single resource.
-pub async fn run(file: &Path, resource: &str, follow: bool) -> Result<ExitOutcome> {
+pub(crate) async fn run(file: &Path, resource: &str, follow: bool) -> Result<ExitOutcome> {
     let manifest = load_manifest(file)?;
     let project = &manifest.project.name;
 
