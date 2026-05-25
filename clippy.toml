@@ -2,12 +2,18 @@ msrv = "1.88"
 
 doc-valid-idents = [
     "..",
-    "LightShuttle",
     "Encelade",
+    "GitHub",
+    "Hexeract",
+    "IntelliJ",
+    "Kafka",
+    "Kubernetes",
+    "LightShuttle",
+    "MySQL",
+    "NATS",
     "Nubster",
     "OpenTelemetry",
     "PostgreSQL",
-    "Kubernetes",
-    "GitHub",
-    "IntelliJ",
+    "RabbitMQ",
+    "SQLite",
 ]
