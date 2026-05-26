@@ -15,7 +15,7 @@ rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/nubster-opensources/lightshuttle"
 homepage = "https://github.com/nubster-opensources/lightshuttle"
-authors = ["Encelade Technologies"]
+authors = ["Nubster"]
 keywords = ["orchestrator", "dev-tools", "docker", "polyglot"]
 categories = ["development-tools", "command-line-utilities"]
 

@@ -2,7 +2,6 @@ msrv = "1.88"
 
 doc-valid-idents = [
     "..",
-    "Encelade",
     "GitHub",
     "Hexeract",
     "IntelliJ",
