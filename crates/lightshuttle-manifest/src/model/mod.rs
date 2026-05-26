@@ -2,6 +2,7 @@
 
 pub mod command;
 pub mod container;
+pub mod dashboard;
 pub mod dockerfile;
 pub mod healthcheck;
 pub mod manifest;
@@ -13,6 +14,7 @@ pub mod volume;
 
 pub use command::Command;
 pub use container::ContainerConfig;
+pub use dashboard::DashboardConfig;
 pub use dockerfile::DockerfileConfig;
 pub use healthcheck::Healthcheck;
 pub use manifest::{Manifest, Project, Version};

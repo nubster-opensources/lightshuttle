@@ -4,6 +4,7 @@ use indexmap::IndexMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use super::dashboard::DashboardConfig;
 use super::resource::ResourceKind;
 
 /// Top-level `lightshuttle.yml` model.
@@ -16,6 +17,10 @@ pub struct Manifest {
 
     /// Project metadata.
     pub project: Project,
+
+    /// Optional local dashboard settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dashboard: Option<DashboardConfig>,
 
     /// Declared resources, keyed by name.
     pub resources: IndexMap<String, ResourceKind>,

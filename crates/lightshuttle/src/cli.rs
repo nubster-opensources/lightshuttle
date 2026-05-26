@@ -29,6 +29,12 @@ pub(crate) enum Command {
         /// SIGTERM-to-SIGKILL grace window per resource at shutdown.
         #[arg(long, default_value = "10s")]
         grace: humantime::Duration,
+
+        /// Override the local control plane port. Defaults to
+        /// `dashboard.port` from the manifest, or a random free port
+        /// picked by the OS.
+        #[arg(long, value_parser = clap::value_parser!(u16).range(1..))]
+        control_port: Option<u16>,
     },
 
     /// Stop every container managed by this project.
