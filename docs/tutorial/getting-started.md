@@ -82,6 +82,11 @@ makes the binary feel like a native command. We deliberately did
 the legacy [GNU lsh][gnu-lsh] SSH client still packaged on some Linux
 distributions, but you can opt in if your environment is free of it.
 
+> A future `lightshuttle alias install` subcommand will automate the
+> detection and the rc-file edit described below. Tracked as
+> [issue #40](https://github.com/nubster-opensources/lightshuttle/issues/40)
+> for v0.2.0. Until it ships, follow the manual procedure.
+
 [gnu-lsh]: https://www.lysator.liu.se/~nisse/lsh/
 
 ### Check availability
