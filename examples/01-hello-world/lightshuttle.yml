@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/nubster-opensources/lightshuttle/main/docs/spec/manifest-v0.schema.json
+project:
+  name: hello-world
+
+resources:
+  db:
+    postgres:
+      version: "16"

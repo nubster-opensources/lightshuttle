@@ -24,6 +24,46 @@ LightShuttle is sponsored by [Encelade Technologies](https://encelade.tech).
 
 The repository is intentionally public from day one to capture the name and make the design discussion visible. **Do not depend on it yet**, anything can change until v0.1.0.
 
+## Quickstart
+
+> Pre-alpha. The CLI works but everything below may change before v0.1.0.
+
+**Prerequisites:** Docker Desktop or a Docker Engine daemon running locally, plus a Rust toolchain (`rustup` is the recommended installer).
+
+Install LightShuttle from the cloned repository (it is not on crates.io yet):
+
+```sh
+git clone https://github.com/nubster-opensources/lightshuttle.git
+cd lightshuttle
+cargo install --path crates/lightshuttle
+```
+
+Once published, the install command will simply be `cargo install lightshuttle`.
+
+> Typing `lightshuttle` is verbose. If your shell has no `lsh` already (check with `command -v lsh`), see the [optional shell alias](docs/tutorial/getting-started.md#optional-shell-alias-lsh) section of the tutorial.
+
+Create a `lightshuttle.yml` file at the root of your project:
+
+```yaml
+# lightshuttle.yml
+project:
+  name: hello
+resources:
+  db:
+    postgres:
+      version: "16"
+```
+
+Boot the stack:
+
+```sh
+$ lightshuttle up
+```
+
+The orchestrator validates the manifest, pulls the image, starts Postgres, waits for the healthcheck to pass and supervises the container until you press `Ctrl+C`. Shutdown is coordinated and idempotent.
+
+For a complete walkthrough see [`docs/tutorial/getting-started.md`](docs/tutorial/getting-started.md). Runnable manifests live in [`examples/`](examples/).
+
 ## Why LightShuttle
 
 `docker-compose` is the de facto local stack runner for polyglot teams, but it suffers from real ergonomic gaps that LightShuttle aims to close:
