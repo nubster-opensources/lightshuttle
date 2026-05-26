@@ -976,6 +976,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightshuttle-control"
+version = "0.1.0"
+
+[[package]]
 name = "lightshuttle-manifest"
 version = "0.1.0"
 dependencies = [
