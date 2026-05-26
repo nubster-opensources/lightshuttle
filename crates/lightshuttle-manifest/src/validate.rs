@@ -27,8 +27,19 @@ impl Manifest {
 
         validate_dependency_graph(&self.resources)?;
         validate_references(self)?;
+        validate_dashboard(self)?;
         Ok(())
     }
+}
+
+fn validate_dashboard(manifest: &Manifest) -> Result<()> {
+    if let Some(dashboard) = &manifest.dashboard
+        && let Some(port) = dashboard.port
+        && port == 0
+    {
+        return Err(ManifestError::InvalidDashboardPort { port });
+    }
+    Ok(())
 }
 
 fn validate_name(name: &str) -> Result<()> {

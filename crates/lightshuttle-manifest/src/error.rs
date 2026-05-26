@@ -66,4 +66,11 @@ pub enum ManifestError {
         /// The name of the missing field.
         field: &'static str,
     },
+
+    /// The `dashboard.port` value is out of the allowed range.
+    #[error("invalid dashboard port `{port}`: must be in the range 1..=65535")]
+    InvalidDashboardPort {
+        /// The offending port value.
+        port: u16,
+    },
 }

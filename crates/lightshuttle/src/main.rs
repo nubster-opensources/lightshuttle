@@ -14,6 +14,7 @@ use crate::discovery::resolve_manifest;
 
 mod cli;
 mod commands;
+mod control_url;
 mod discovery;
 mod output;
 
@@ -33,9 +34,12 @@ async fn main() -> ExitCode {
 
 async fn run(cli: Cli) -> anyhow::Result<ExitOutcome> {
     match cli.command {
-        Command::Up { grace } => {
+        Command::Up {
+            grace,
+            control_port,
+        } => {
             let manifest = resolve_manifest(cli.file.as_deref())?;
-            commands::up::run(&manifest, grace.into()).await
+            commands::up::run(&manifest, grace.into(), control_port).await
         }
         Command::Down { grace } => {
             let manifest = resolve_manifest(cli.file.as_deref())?;
