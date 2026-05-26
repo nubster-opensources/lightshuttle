@@ -12,7 +12,7 @@
 
 LightShuttle (binary: `lightshuttle`) is a developer-time orchestrator written in Rust. You declare your service stack once in `lightshuttle.yml` (databases, queues, containers, Dockerfiles, static SPAs), and `lightshuttle up` boots the whole thing on your laptop with automatic service discovery, an integrated web dashboard, OpenTelemetry traces and logs, and a one-command export to `docker-compose.yml`, Kubernetes manifests or a Helm chart for production.
 
-LightShuttle is sponsored by [Encelade Technologies](https://encelade.tech).
+LightShuttle is sponsored by [Nubster](https://nubster.com).
 
 ## Status
 
@@ -116,4 +116,4 @@ Unless you explicitly state otherwise, any contribution intentionally submitted 
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for details, including the Contributor License Agreement (CLA).
 
-Copyright © Encelade Technologies.
+Copyright © Nubster.

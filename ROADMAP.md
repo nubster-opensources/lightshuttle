@@ -2,7 +2,7 @@
 
 LightShuttle is pre-alpha. This document captures the intended trajectory of
 the project up to v1.0, ordered by release. **No dates are committed.** The
-project is sponsored on a best-effort basis by Encelade Technologies, and
+project is sponsored on a best-effort basis by Nubster, and
 releases ship when they are ready, not when a calendar says so.
 
 The roadmap mirrors the GitHub milestones one-for-one. Each section here is
@@ -142,7 +142,7 @@ holding, the public API is frozen, and the documentation lives somewhere
 permanent.
 
 **Documentation.**
-- Dedicated documentation site or a section on the Encelade docs portal.
+- Dedicated documentation site or a section on the Nubster docs portal.
 - Onboarding tutorials per primary stack
   (Node.js, Python, Go, Rust).
 
