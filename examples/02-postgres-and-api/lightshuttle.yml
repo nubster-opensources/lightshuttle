@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/nubster-opensources/lightshuttle/main/docs/spec/manifest-v0.schema.json
+project:
+  name: postgres-and-api
+
+resources:
+  db:
+    postgres:
+      version: "16"
+
+  app:
+    container:
+      image: alpine:3.20
+      command: ["sh", "-c", "echo connected to $DATABASE_URL && sleep 3600"]
+      env:
+        DATABASE_URL: ${resources.db.url}

@@ -538,6 +538,14 @@ resources:
         - 3000
 ```
 
+### See also
+
+- [Getting started tutorial](../tutorial/getting-started.md), a
+  ten-minute walkthrough of the install, the first manifest and a
+  multi-resource stack.
+- [`examples/`](../../examples/), three runnable manifests of growing
+  complexity, validated against this specification.
+
 ## Forward compatibility
 
 The following are explicitly **not** part of `v0` but are reserved for

@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/nubster-opensources/lightshuttle/main/docs/spec/manifest-v0.schema.json
+project:
+  name: full-stack
+  version: "0.1.0"
+  description: "Postgres + Redis + third-party API container + locally built API"
+
+resources:
+  api_db:
+    postgres:
+      version: "16"
+      database: api
+
+  cache:
+    redis:
+      version: "7"
+
+  worker:
+    container:
+      image: alpine:3.20
+      command: ["sh", "-c", "echo worker booting && sleep 3600"]
+      env:
+        DATABASE_URL: ${resources.api_db.url}
+        REDIS_URL: ${resources.cache.url}
+        LOG_LEVEL: ${env.LOG_LEVEL:-info}
+
+  api:
+    dockerfile:
+      context: ./apps/api
+      dockerfile: Dockerfile
+      target: dev
+      env:
+        DATABASE_URL: ${resources.api_db.url}
+        REDIS_URL: ${resources.cache.url}
+      ports:
+        - 8080
+      depends_on:
+        - worker
