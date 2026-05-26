@@ -21,7 +21,8 @@
 pub use crate::docker::{DockerRuntime, LABEL_PROJECT, LABEL_RESOURCE, ManagedContainer};
 pub use crate::error::{Result, RuntimeError};
 pub use crate::lifecycle::{
-    LifecycleError, LifecycleEvent, LifecycleManager, LifecyclePlan, NodeStatus, PlanNode,
+    LifecycleError, LifecycleEvent, LifecycleHandle, LifecycleHandleError, LifecycleManager,
+    LifecyclePlan, ManagerHandle, NodeStatus, PlanNode, ResourceStatus, ResourceView,
 };
 pub use crate::runtime::{
     ContainerId, ContainerRuntime, ContainerStatus, LogChunk, LogChunkStream, LogStream,
@@ -36,3 +37,5 @@ mod error;
 mod lifecycle;
 mod runtime;
 mod spec;
+
+pub mod testkit;

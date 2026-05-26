@@ -14,6 +14,9 @@ use crate::spec::{ContainerSpec, ResolvedResource, ResourceOutputs, from_resourc
 pub struct PlanNode {
     /// Resource name as declared in the manifest.
     pub name: String,
+    /// Resource kind discriminant (`postgres`, `redis`, `container`,
+    /// `dockerfile`), mirrored from the manifest.
+    pub kind: String,
     /// Container specification derived from the manifest.
     pub spec: ContainerSpec,
     /// Outputs the resource exposes to its dependents (host, port,
@@ -41,6 +44,7 @@ impl LifecyclePlan {
         // Build edges and collect spec + outputs for every resource.
         let mut resolved: HashMap<String, ResolvedResource> = HashMap::new();
         let mut deps: HashMap<String, Vec<String>> = HashMap::new();
+        let mut kinds: HashMap<String, &'static str> = HashMap::new();
         for (name, kind) in &manifest.resources {
             let r =
                 from_resource(project, name, kind).map_err(|source| LifecycleError::SpecBuild {
@@ -49,6 +53,7 @@ impl LifecyclePlan {
                 })?;
             resolved.insert(name.clone(), r);
             deps.insert(name.clone(), kind.depends_on().to_vec());
+            kinds.insert(name.clone(), kind.kind_name());
         }
 
         // Verify every dependency points to an existing resource.
@@ -144,8 +149,13 @@ impl LifecyclePlan {
                 let ResolvedResource { spec, outputs } =
                     resolved.remove(&name).expect("spec indexed by name");
                 let dependencies = deps.remove(&name).unwrap_or_default();
+                let kind = kinds
+                    .remove(&name)
+                    .expect("kind indexed by name")
+                    .to_owned();
                 PlanNode {
                     name,
+                    kind,
                     spec,
                     outputs,
                     depends_on: dependencies,

@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use lightshuttle_manifest::{InterpolationContext, Interpolator};
 use tokio::sync::{mpsc, watch};
@@ -28,6 +28,18 @@ struct NodeHandle {
     outputs_tx: Arc<watch::Sender<Option<ResourceOutputs>>>,
     outputs_rx: watch::Receiver<Option<ResourceOutputs>>,
     container_id: Arc<Mutex<Option<ContainerId>>>,
+    started_at: Arc<Mutex<Option<SystemTime>>>,
+}
+
+/// Point-in-time snapshot of one managed resource, consumed by the
+/// control plane via [`super::handle::ManagerHandle`].
+pub(super) struct NodeSnapshot {
+    /// Lifecycle status at the moment of the snapshot.
+    pub(super) status: NodeStatus,
+    /// Wall-clock time at which the runtime accepted the start request.
+    pub(super) started_at: Option<SystemTime>,
+    /// Container identifier returned by the runtime, when known.
+    pub(super) container_id: Option<ContainerId>,
 }
 
 /// Coordinates the startup, supervision and shutdown of every resource
@@ -57,6 +69,7 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
                     outputs_tx: Arc::new(outputs_tx),
                     outputs_rx,
                     container_id: Arc::new(Mutex::new(None)),
+                    started_at: Arc::new(Mutex::new(None)),
                 },
             );
         }
@@ -192,6 +205,34 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
         wait_for_shutdown_signal().await;
         self.stop_all(grace).await
     }
+
+    /// Shared reference to the underlying execution plan.
+    pub(super) fn plan_arc(&self) -> &Arc<LifecyclePlan> {
+        &self.plan
+    }
+
+    /// Shared reference to the underlying container runtime.
+    pub(super) fn runtime_arc(&self) -> &Arc<R> {
+        &self.runtime
+    }
+
+    /// Point-in-time snapshot of one resource, or `None` when the name
+    /// is not part of the plan.
+    pub(super) fn snapshot(&self, name: &str) -> Option<NodeSnapshot> {
+        let handle = self.nodes.get(name)?;
+        let status = handle.status_rx.borrow().clone();
+        let started_at = *handle.started_at.lock().expect("started_at mutex poisoned");
+        let container_id = handle
+            .container_id
+            .lock()
+            .expect("container_id mutex poisoned")
+            .clone();
+        Some(NodeSnapshot {
+            status,
+            started_at,
+            container_id,
+        })
+    }
 }
 
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
@@ -298,6 +339,10 @@ async fn start_one<R: ContainerRuntime + 'static>(
             .lock()
             .expect("container_id mutex poisoned");
         *guard = Some(id.clone());
+    }
+    {
+        let mut guard = handle.started_at.lock().expect("started_at mutex poisoned");
+        *guard = Some(SystemTime::now());
     }
     let _ = handle.status_tx.send(NodeStatus::Running);
     let _ = event_tx.send(LifecycleEvent::ResourceStarted {
