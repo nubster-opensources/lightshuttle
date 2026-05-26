@@ -2,6 +2,10 @@
 
 > Lightweight dev orchestrator for polyglot teams: typed `docker-compose` successor with built-in dashboard, OpenTelemetry and production export.
 
+[![crates.io](https://img.shields.io/crates/v/lightshuttle.svg?label=crates.io)](https://crates.io/crates/lightshuttle)
+[![docs.rs](https://img.shields.io/docsrs/lightshuttle?label=docs.rs)](https://docs.rs/lightshuttle)
+[![CI](https://github.com/nubster-opensources/lightshuttle/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nubster-opensources/lightshuttle/actions/workflows/ci.yml)
+[![MSRV](https://img.shields.io/badge/MSRV-1.88-blue.svg)](./docs/MSRV_POLICY.md)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 [![Status](https://img.shields.io/badge/status-pre--alpha-orange)](#status)
 [![Made with Rust](https://img.shields.io/badge/made%20with-Rust-orange?logo=rust)](https://www.rust-lang.org/)
