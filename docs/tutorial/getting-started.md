@@ -74,6 +74,77 @@ Once v0.1.0 ships, the install command will be a one-liner:
 $ cargo install lightshuttle
 ```
 
+## Optional: shell alias `lsh`
+
+Typing `lightshuttle` twelve times an hour gets old. A short alias
+makes the binary feel like a native command. We deliberately did
+**not** ship `lsh` as the default binary name to avoid colliding with
+the legacy [GNU lsh][gnu-lsh] SSH client still packaged on some Linux
+distributions, but you can opt in if your environment is free of it.
+
+[gnu-lsh]: https://www.lysator.liu.se/~nisse/lsh/
+
+### Check availability
+
+Before adding the alias, confirm nothing else owns `lsh` on your
+machine:
+
+```sh
+# Linux / macOS
+$ command -v lsh
+# Windows PowerShell
+PS> Get-Command lsh -ErrorAction SilentlyContinue
+```
+
+If the command prints a path (typically `/usr/bin/lsh` or similar),
+something else is already there. Stick with the full `lightshuttle`
+name to avoid silent confusion.
+
+If the command returns nothing, you are clear to alias.
+
+### Add the alias
+
+**bash or zsh** — append to `~/.bashrc` or `~/.zshrc`:
+
+```sh
+alias lsh='lightshuttle'
+```
+
+Reload with `source ~/.bashrc` (or open a new terminal).
+
+**fish** — once per shell session, or persisted with `funcsave`:
+
+```fish
+alias --save lsh='lightshuttle'
+```
+
+**PowerShell** — append to your profile (`$PROFILE`):
+
+```powershell
+Set-Alias -Name lsh -Value lightshuttle
+```
+
+Open a new PowerShell window to pick it up.
+
+**Windows `cmd.exe`** has no native alias mechanism for executables.
+Either use PowerShell, or drop a one-line `lsh.bat` shim somewhere on
+your `PATH`:
+
+```bat
+@echo off
+lightshuttle %*
+```
+
+### Verify
+
+```sh
+$ lsh --version
+lightshuttle 0.1.0-dev
+```
+
+If anything in this tutorial reads `lightshuttle`, you can substitute
+`lsh` from this point on.
+
 ## Step 2: Your first manifest
 
 Create a fresh directory and an empty `lightshuttle.yml` next to it.

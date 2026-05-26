@@ -40,6 +40,8 @@ cargo install --path crates/lightshuttle
 
 Once published, the install command will simply be `cargo install lightshuttle`.
 
+> Typing `lightshuttle` is verbose. If your shell has no `lsh` already (check with `command -v lsh`), see the [optional shell alias](docs/tutorial/getting-started.md#optional-shell-alias-lsh) section of the tutorial.
+
 Create a `lightshuttle.yml` file at the root of your project:
 
 ```yaml
