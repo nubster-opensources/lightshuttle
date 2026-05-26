@@ -8,7 +8,7 @@ LightShuttle is an open-source project sponsored by Nubster under the `nubster-o
 
 The project follows a Benevolent Dictator For Life (BDFL) model.
 
-- **BDFL:** Pierrick Fonquerne, CEO of Nubster and founder of Nubster.
+- **BDFL:** Pierrick Fonquerne, Founder.
 - The BDFL holds the final decision on the public API, the project roadmap, the release cadence, every semver level decision, every MSRV bump, and any change to this governance document.
 - The BDFL takes input from maintainers and the community, but reserves the right to make the call when consensus cannot be reached.
 
