@@ -144,11 +144,17 @@ impl<R: ContainerRuntime + 'static> LifecycleHandle for ManagerHandle<R> {
     }
 
     async fn restart(&self, name: &str) -> Result<(), LifecycleHandleError> {
-        let plan = self.inner.plan_arc();
-        if !plan.nodes().iter().any(|n| n.name == name) {
-            return Err(LifecycleHandleError::UnknownResource(name.to_owned()));
-        }
-        Err(LifecycleHandleError::NotSupported("restart"))
+        self.inner.restart_one(name).await.map_err(|err| match err {
+            crate::LifecycleError::ResourceNotFound(name) => {
+                LifecycleHandleError::UnknownResource(name)
+            }
+            crate::LifecycleError::Start { source, .. }
+            | crate::LifecycleError::Stop { source, .. }
+            | crate::LifecycleError::SpecBuild { source, .. } => {
+                LifecycleHandleError::Runtime(source)
+            }
+            other => LifecycleHandleError::Runtime(RuntimeError::InvalidSpec(other.to_string())),
+        })
     }
 
     async fn logs(&self, name: &str, follow: bool) -> Result<LogChunkStream, LifecycleHandleError> {

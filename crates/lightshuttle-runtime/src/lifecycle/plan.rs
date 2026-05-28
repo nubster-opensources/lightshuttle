@@ -60,7 +60,7 @@ impl LifecyclePlan {
         for (name, dependencies) in &deps {
             for dependency in dependencies {
                 if !resolved.contains_key(dependency) {
-                    return Err(LifecycleError::UnknownResource(format!(
+                    return Err(LifecycleError::ResourceNotFound(format!(
                         "`{dependency}` (depended on by `{name}`)"
                     )));
                 }

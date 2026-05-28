@@ -98,7 +98,7 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
                 let handle = self
                     .nodes
                     .get(dep)
-                    .ok_or_else(|| LifecycleError::UnknownResource(dep.clone()))?;
+                    .ok_or_else(|| LifecycleError::ResourceNotFound(dep.clone()))?;
                 dep_status_rxs.insert(dep.clone(), handle.status_rx.clone());
                 dep_outputs_rxs.insert(dep.clone(), handle.outputs_rx.clone());
             }
@@ -204,6 +204,90 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
         self.start_all().await?;
         wait_for_shutdown_signal().await;
         self.stop_all(grace).await
+    }
+
+    /// Restart a single resource without touching its dependents.
+    ///
+    /// The target is stopped via `SIGTERM` (10-second grace window),
+    /// its container id and started-at timestamp are cleared, then
+    /// `start_one` is re-run from the same cached spec. Three events
+    /// are emitted on the lifecycle channel in order: `ResourceStopped`,
+    /// `ResourceStarted`, `ResourceHealthy`.
+    ///
+    /// Dependents keep running. Their `watch` channels observe the
+    /// target's status going `Stopped` → `Pending` → `Starting` →
+    /// `Running` → `Healthy`, so callers that depend on the target can
+    /// pause their work locally until it is healthy again.
+    pub async fn restart_one(&self, resource: &str) -> Result<(), LifecycleError> {
+        let node = self
+            .plan
+            .nodes()
+            .iter()
+            .find(|n| n.name == resource)
+            .ok_or_else(|| LifecycleError::ResourceNotFound(resource.to_owned()))?;
+        let handle = self
+            .nodes
+            .get(resource)
+            .ok_or_else(|| LifecycleError::ResourceNotFound(resource.to_owned()))?;
+
+        // Stop the running container if any.
+        let id = {
+            let guard = handle
+                .container_id
+                .lock()
+                .expect("container_id mutex poisoned");
+            guard.clone()
+        };
+        if let Some(id) = id {
+            self.runtime
+                .stop(&id, Duration::from_secs(10))
+                .await
+                .map_err(|source| LifecycleError::Stop {
+                    resource: resource.to_owned(),
+                    source,
+                })?;
+            *handle
+                .container_id
+                .lock()
+                .expect("container_id mutex poisoned") = None;
+            *handle
+                .started_at
+                .lock()
+                .expect("started_at mutex poisoned") = None;
+            let _ = handle.status_tx.send(NodeStatus::Stopped);
+            let _ = self.event_tx.send(LifecycleEvent::ResourceStopped {
+                name: resource.to_owned(),
+            });
+        }
+
+        // Reset to Pending so start_one drives the full restart cycle.
+        let _ = handle.status_tx.send(NodeStatus::Pending);
+
+        // Collect dependency watch receivers. Deps are already Healthy,
+        // so start_one's wait loop returns instantly.
+        let mut dep_status_rxs: HashMap<String, watch::Receiver<NodeStatus>> = HashMap::new();
+        let mut dep_outputs_rxs: HashMap<String, watch::Receiver<Option<ResourceOutputs>>> =
+            HashMap::new();
+        for dep in &node.depends_on {
+            let dep_handle = self
+                .nodes
+                .get(dep)
+                .ok_or_else(|| LifecycleError::ResourceNotFound(dep.clone()))?;
+            dep_status_rxs.insert(dep.clone(), dep_handle.status_rx.clone());
+            dep_outputs_rxs.insert(dep.clone(), dep_handle.outputs_rx.clone());
+        }
+
+        start_one(
+            resource.to_owned(),
+            node.spec.clone(),
+            node.outputs.clone(),
+            Arc::clone(&self.runtime),
+            handle.clone(),
+            dep_status_rxs,
+            dep_outputs_rxs,
+            self.event_tx.clone(),
+        )
+        .await
     }
 
     /// Shared reference to the underlying execution plan.
