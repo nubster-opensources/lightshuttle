@@ -2,11 +2,12 @@
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use lightshuttle_control::{ControlServer, ControlState};
-use lightshuttle_runtime::{DockerRuntime, LifecycleManager, LifecyclePlan};
+use lightshuttle_control::{ControlServer, ControlState, bind};
+use lightshuttle_runtime::{DockerRuntime, LifecycleManager, LifecyclePlan, ManagerHandle};
 use owo_colors::OwoColorize;
 use tokio::sync::oneshot;
 use tracing::{info, warn};
@@ -24,11 +25,12 @@ pub(crate) async fn run(
     let plan = LifecyclePlan::from_manifest(&manifest)?;
     let runtime = DockerRuntime::connect()?;
     let (manager, _events) = LifecycleManager::new(plan, runtime);
+    let manager = Arc::new(manager);
 
     let port = control_port_override
         .or_else(|| manifest.dashboard.as_ref().and_then(|d| d.port))
         .unwrap_or(0);
-    let listener = ControlServer::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
+    let listener = bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
         .await
         .context("failed to bind control plane socket")?;
     let local_addr = listener
@@ -47,7 +49,8 @@ pub(crate) async fn run(
     );
 
     let project = manifest.project.name.clone();
-    let server = ControlServer::new(ControlState::new(project.clone()));
+    let handle = ManagerHandle::new(Arc::clone(&manager));
+    let server = ControlServer::new(ControlState::new(project.clone(), handle));
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
     let server_task = tokio::spawn(async move {
         let _ = server

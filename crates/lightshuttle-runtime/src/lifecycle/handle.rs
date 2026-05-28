@@ -64,9 +64,19 @@ pub trait LifecycleHandle: Send + Sync {
 
 /// Newtype adapter turning an `Arc<LifecycleManager<R>>` into a
 /// [`LifecycleHandle`].
-#[derive(Clone)]
 pub struct ManagerHandle<R: ContainerRuntime + 'static> {
     inner: Arc<LifecycleManager<R>>,
+}
+
+// Manual `Clone` impl: the derived one would require `R: Clone`, but
+// the only field is an `Arc`, so cloning a `ManagerHandle` never has
+// to clone `R` itself.
+impl<R: ContainerRuntime + 'static> Clone for ManagerHandle<R> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+        }
+    }
 }
 
 impl<R: ContainerRuntime + 'static> ManagerHandle<R> {

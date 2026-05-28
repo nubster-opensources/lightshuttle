@@ -5,13 +5,15 @@
 //! an SSR dashboard served on `127.0.0.1`. CLI subcommands such as
 //! `lightshuttle restart` are thin clients of the same endpoints.
 //!
-//! At v0.2.0 this crate exposes only `GET /healthz`; subsequent PRs
-//! land the resource listing, the WebSocket log channel, the restart
-//! endpoint and the dashboard.
+//! At v0.2.0 this crate exposes `GET /healthz` plus REST endpoints
+//! under `/api/resources*`; subsequent PRs land the WebSocket log
+//! channel, the restart endpoint and the dashboard.
 
-pub use crate::server::ControlServer;
+pub use crate::error::{ApiError, ApiErrorBody};
+pub use crate::server::{ControlServer, bind};
 pub use crate::state::ControlState;
 
+mod error;
 mod routes;
 mod server;
 mod state;
