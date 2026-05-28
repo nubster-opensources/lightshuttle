@@ -6,8 +6,13 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use lightshuttle_manifest::{InterpolationContext, Interpolator};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{broadcast, watch};
 use tracing::{debug, info, warn};
+
+/// Buffer size for the broadcast event channel. Slow subscribers that
+/// fall behind by more than this number of events will see lagged
+/// messages and have to resynchronise.
+const EVENT_CHANNEL_CAPACITY: usize = 256;
 
 use crate::error::RuntimeError;
 use crate::lifecycle::error::LifecycleError;
@@ -48,15 +53,16 @@ pub struct LifecycleManager<R: ContainerRuntime + 'static> {
     plan: Arc<LifecyclePlan>,
     runtime: Arc<R>,
     nodes: HashMap<String, NodeHandle>,
-    event_tx: mpsc::UnboundedSender<LifecycleEvent>,
+    event_tx: broadcast::Sender<LifecycleEvent>,
 }
 
 impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
-    /// Build a manager bound to `plan` and `runtime`. Returns the event
-    /// stream receiver alongside.
+    /// Build a manager bound to `plan` and `runtime`. Returns a fresh
+    /// event subscriber alongside; further subscribers can be obtained
+    /// from [`Self::subscribe_events`].
     #[must_use]
-    pub fn new(plan: LifecyclePlan, runtime: R) -> (Self, mpsc::UnboundedReceiver<LifecycleEvent>) {
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
+    pub fn new(plan: LifecyclePlan, runtime: R) -> (Self, broadcast::Receiver<LifecycleEvent>) {
+        let (event_tx, event_rx) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         let mut nodes: HashMap<String, NodeHandle> = HashMap::new();
         for node in plan.nodes() {
             let (status_tx, status_rx) = watch::channel(NodeStatus::Pending);
@@ -287,6 +293,16 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
         .await
     }
 
+    /// Open a new subscription on the lifecycle event broadcast.
+    ///
+    /// Multiple subscribers can read concurrently. Subscribers that
+    /// fall more than [`EVENT_CHANNEL_CAPACITY`] events behind will
+    /// observe a `RecvError::Lagged` and have to resynchronise.
+    #[must_use]
+    pub fn subscribe_events(&self) -> broadcast::Receiver<LifecycleEvent> {
+        self.event_tx.subscribe()
+    }
+
     /// Shared reference to the underlying execution plan.
     pub(super) fn plan_arc(&self) -> &Arc<LifecyclePlan> {
         &self.plan
@@ -325,7 +341,7 @@ async fn start_one<R: ContainerRuntime + 'static>(
     handle: NodeHandle,
     dep_status_rxs: HashMap<String, watch::Receiver<NodeStatus>>,
     mut dep_outputs_rxs: HashMap<String, watch::Receiver<Option<ResourceOutputs>>>,
-    event_tx: mpsc::UnboundedSender<LifecycleEvent>,
+    event_tx: broadcast::Sender<LifecycleEvent>,
 ) -> Result<(), LifecycleError> {
     // 1. Wait for every dependency to become ready.
     for (dep_name, mut rx) in dep_status_rxs {

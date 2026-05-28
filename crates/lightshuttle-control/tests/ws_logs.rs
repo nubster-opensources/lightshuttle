@@ -8,10 +8,10 @@ use std::time::{Duration, SystemTime};
 use futures::stream::{self, Stream, StreamExt};
 use lightshuttle_control::{ControlServer, ControlState, bind};
 use lightshuttle_runtime::{
-    LifecycleHandle, LifecycleHandleError, LogChunk, LogChunkStream, LogStream, ResourceView,
-    RuntimeError,
+    LifecycleEvent, LifecycleHandle, LifecycleHandleError, LogChunk, LogChunkStream, LogStream,
+    ResourceView, RuntimeError,
 };
-use tokio::sync::oneshot;
+use tokio::sync::{broadcast, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 
 /// In-memory handle whose `logs()` returns a finite stream of three
@@ -48,6 +48,11 @@ impl LifecycleHandle for StubHandle {
         let stream: Pin<Box<dyn Stream<Item = Result<LogChunk, RuntimeError>> + Send>> =
             Box::pin(stream::iter(chunks).map(Ok));
         Ok(stream)
+    }
+
+    fn subscribe_events(&self) -> broadcast::Receiver<LifecycleEvent> {
+        let (_tx, rx) = broadcast::channel(1);
+        rx
     }
 }
 

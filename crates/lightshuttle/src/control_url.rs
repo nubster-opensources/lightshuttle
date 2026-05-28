@@ -32,6 +32,23 @@ pub(crate) fn write(cwd: &Path, url: &str) -> io::Result<PathBuf> {
     Ok(path)
 }
 
+/// Read the URL recorded in `<cwd>/.lightshuttle/control.url`.
+///
+/// Trims trailing whitespace (typically the newline added by `write`)
+/// and surfaces an error when the file is missing or empty.
+pub(crate) fn read(cwd: &Path) -> io::Result<String> {
+    let path = path_at(cwd);
+    let raw = fs::read_to_string(&path)?;
+    let trimmed = raw.trim().to_owned();
+    if trimmed.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("{} is empty", path.display()),
+        ));
+    }
+    Ok(trimmed)
+}
+
 /// Remove the discovery file if it exists. Errors other than
 /// `NotFound` are surfaced; missing files are silently treated as a
 /// no-op so a partial shutdown stays idempotent.
@@ -67,5 +84,22 @@ mod tests {
     fn remove_is_idempotent_when_file_missing() {
         let dir = tempdir().expect("tempdir");
         remove(dir.path()).expect("remove on empty dir is ok");
+    }
+
+    #[test]
+    fn read_returns_the_recorded_url_without_trailing_newline() {
+        let dir = tempdir().expect("tempdir");
+        let url = "http://127.0.0.1:54321/";
+        write(dir.path(), url).expect("write");
+
+        let recovered = read(dir.path()).expect("read");
+        assert_eq!(recovered, url);
+    }
+
+    #[test]
+    fn read_errors_when_file_missing() {
+        let dir = tempdir().expect("tempdir");
+        let err = read(dir.path()).expect_err("missing file is an error");
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
     }
 }
