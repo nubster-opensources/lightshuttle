@@ -5,6 +5,7 @@ use lightshuttle_runtime::LifecycleHandle;
 
 use crate::state::ControlState;
 
+pub(crate) mod events_ws;
 pub(crate) mod healthz;
 pub(crate) mod logs_ws;
 pub(crate) mod resources;
@@ -23,9 +24,15 @@ where
         .route(
             "/resources/{name}",
             axum::routing::get(resources::get_resource),
+        )
+        .route(
+            "/resources/{name}/restart",
+            axum::routing::post(resources::restart_resource),
         );
 
-    let ws = Router::new().route("/logs/{name}", axum::routing::get(logs_ws::logs_ws));
+    let ws = Router::new()
+        .route("/logs/{name}", axum::routing::get(logs_ws::logs_ws))
+        .route("/events", axum::routing::get(events_ws::events_ws));
 
     Router::new()
         .route("/healthz", axum::routing::get(healthz::healthz))

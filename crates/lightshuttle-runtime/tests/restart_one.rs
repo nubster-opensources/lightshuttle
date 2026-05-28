@@ -4,6 +4,7 @@
 use lightshuttle_manifest::Manifest;
 use lightshuttle_runtime::testkit::MockRuntime;
 use lightshuttle_runtime::{LifecycleError, LifecycleEvent, LifecycleManager, LifecyclePlan};
+use tokio::sync::broadcast;
 
 fn build_plan(yaml: &str) -> LifecyclePlan {
     let manifest = Manifest::parse(yaml).expect("manifest parses");
@@ -26,7 +27,7 @@ resources:
 /// Collect every event currently sitting on the receiver into a vector,
 /// without blocking. The mock runtime emits events synchronously, so a
 /// drain after each manager call is sufficient.
-fn drain(rx: &mut tokio::sync::mpsc::UnboundedReceiver<LifecycleEvent>) -> Vec<LifecycleEvent> {
+fn drain(rx: &mut broadcast::Receiver<LifecycleEvent>) -> Vec<LifecycleEvent> {
     let mut out = Vec::new();
     while let Ok(event) = rx.try_recv() {
         out.push(event);

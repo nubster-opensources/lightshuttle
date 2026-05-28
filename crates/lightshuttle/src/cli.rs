@@ -65,4 +65,19 @@ pub(crate) enum Command {
 
     /// Dump the resolved manifest to stdout as YAML.
     Manifest,
+
+    /// Restart a single managed resource through the running control
+    /// plane. Requires `lightshuttle up` to be active in the same
+    /// working directory so the discovery file
+    /// `.lightshuttle/control.url` is present.
+    Restart {
+        /// Resource name as declared in the manifest.
+        resource: String,
+
+        /// Return immediately after the control plane accepted the
+        /// restart request, without waiting for the resource to become
+        /// healthy again.
+        #[arg(long)]
+        detach: bool,
+    },
 }

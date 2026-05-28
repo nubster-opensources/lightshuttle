@@ -10,8 +10,10 @@ use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use lightshuttle_control::{ControlServer, ControlState};
 use lightshuttle_runtime::{
-    LifecycleHandle, LifecycleHandleError, LogChunkStream, ResourceStatus, ResourceView,
+    LifecycleEvent, LifecycleHandle, LifecycleHandleError, LogChunkStream, ResourceStatus,
+    ResourceView,
 };
+use tokio::sync::broadcast;
 use tower::ServiceExt;
 
 /// In-memory lifecycle handle whose state is fully controlled by the
@@ -54,6 +56,11 @@ impl LifecycleHandle for StubHandle {
         _follow: bool,
     ) -> Result<LogChunkStream, LifecycleHandleError> {
         Err(LifecycleHandleError::UnknownResource(name.to_owned()))
+    }
+
+    fn subscribe_events(&self) -> broadcast::Receiver<LifecycleEvent> {
+        let (_tx, rx) = broadcast::channel(1);
+        rx
     }
 }
 
@@ -163,6 +170,47 @@ async fn get_returns_404_with_error_body_for_unknown_resource() {
     let response = app
         .oneshot(
             Request::get("/api/resources/nope")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body collected")
+        .to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&bytes).expect("valid JSON");
+    assert_eq!(json["error"], "unknown resource");
+    assert_eq!(json["resource"], "nope");
+}
+
+#[tokio::test]
+async fn restart_returns_202_for_known_resource() {
+    let app = build_app(vec![sample_view("cache", "redis")]);
+
+    let response = app
+        .oneshot(
+            Request::post("/api/resources/cache/restart")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+}
+
+#[tokio::test]
+async fn restart_returns_404_for_unknown_resource() {
+    let app = build_app(vec![sample_view("cache", "redis")]);
+
+    let response = app
+        .oneshot(
+            Request::post("/api/resources/nope/restart")
                 .body(Body::empty())
                 .expect("request builds"),
         )

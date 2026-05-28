@@ -10,9 +10,11 @@
 use std::sync::Arc;
 
 use thiserror::Error;
+use tokio::sync::broadcast;
 
 use crate::error::RuntimeError;
 use crate::lifecycle::manager::LifecycleManager;
+use crate::lifecycle::status::LifecycleEvent;
 use crate::lifecycle::view::{ResourceStatus, ResourceView, image_label, last_error_from};
 use crate::runtime::{ContainerRuntime, LogChunkStream};
 
@@ -60,6 +62,12 @@ pub trait LifecycleHandle: Send + Sync {
         name: &str,
         follow: bool,
     ) -> impl std::future::Future<Output = Result<LogChunkStream, LifecycleHandleError>> + Send;
+
+    /// Open a fresh subscription on the lifecycle event broadcast.
+    /// Implementations return a `broadcast::Receiver` so multiple
+    /// consumers (REST handlers, WebSocket sessions, CLI followers)
+    /// can read independently.
+    fn subscribe_events(&self) -> broadcast::Receiver<LifecycleEvent>;
 }
 
 /// Newtype adapter turning an `Arc<LifecycleManager<R>>` into a
@@ -173,5 +181,9 @@ impl<R: ContainerRuntime + 'static> LifecycleHandle for ManagerHandle<R> {
         })?;
         let stream = self.inner.runtime_arc().logs(&container_id, follow).await?;
         Ok(stream)
+    }
+
+    fn subscribe_events(&self) -> broadcast::Receiver<LifecycleEvent> {
+        self.inner.subscribe_events()
     }
 }

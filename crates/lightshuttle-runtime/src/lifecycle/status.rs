@@ -1,5 +1,7 @@
 //! Per-node status and lifecycle event stream types.
 
+use serde::Serialize;
+
 /// Lifecycle status of a single managed resource.
 ///
 /// Broadcast through a `tokio::sync::watch` channel so dependents can
@@ -42,7 +44,8 @@ impl NodeStatus {
 
 /// Event emitted by [`crate::LifecycleManager`] for consumption by a
 /// CLI, dashboard or test harness.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum LifecycleEvent {
     /// A resource has been created and started by the runtime.
     ResourceStarted {

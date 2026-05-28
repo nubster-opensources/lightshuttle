@@ -32,6 +32,10 @@ allow = [
     "Zlib",
     "CC0-1.0",
     "MPL-2.0",
+    # Linux Foundation data license. Pulled in by `webpki-roots`
+    # (Mozilla CA bundle) via `rustls`. Permissive, no copyleft,
+    # aligned with the rest of the allow-list.
+    "CDLA-Permissive-2.0",
 ]
 exceptions = []
 

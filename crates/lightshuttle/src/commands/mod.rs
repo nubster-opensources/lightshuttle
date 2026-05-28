@@ -16,6 +16,7 @@ pub(crate) mod down;
 pub(crate) mod logs;
 pub(crate) mod manifest;
 pub(crate) mod ps;
+pub(crate) mod restart;
 pub(crate) mod up;
 pub(crate) mod validate;
 
@@ -28,6 +29,10 @@ pub(crate) mod validate;
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ExitOutcome {
     Success,
+    /// The lifecycle operation completed but the target resource ended
+    /// up in a failed state. Mapped to exit code `1`, matching the
+    /// `lightshuttle restart` contract.
+    LifecycleFailed,
     RuntimeError,
 }
 
@@ -37,6 +42,7 @@ impl ExitOutcome {
     pub(crate) fn code(self) -> i32 {
         match self {
             Self::Success => 0,
+            Self::LifecycleFailed => 1,
             Self::RuntimeError => 2,
         }
     }

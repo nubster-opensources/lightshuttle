@@ -33,8 +33,9 @@ mod tests {
     use axum::http::{Request, StatusCode};
     use http_body_util::BodyExt;
     use lightshuttle_runtime::{
-        LifecycleHandle, LifecycleHandleError, LogChunkStream, ResourceView,
+        LifecycleEvent, LifecycleHandle, LifecycleHandleError, LogChunkStream, ResourceView,
     };
+    use tokio::sync::broadcast;
     use tower::ServiceExt;
 
     use crate::routes::router;
@@ -61,6 +62,11 @@ mod tests {
             _follow: bool,
         ) -> Result<LogChunkStream, LifecycleHandleError> {
             Err(LifecycleHandleError::UnknownResource(name.to_owned()))
+        }
+
+        fn subscribe_events(&self) -> broadcast::Receiver<LifecycleEvent> {
+            let (_tx, rx) = broadcast::channel(1);
+            rx
         }
     }
 
