@@ -30,6 +30,17 @@
         }
       ]
     },
+    "observability": {
+      "description": "Optional observability settings (collector toggle, ...).",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ObservabilityConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "project": {
       "description": "Project metadata.",
       "allOf": [
@@ -276,6 +287,38 @@
           "description": "Maximum time a single check is allowed to run before being considered failed. Default `\"3s\"`.",
           "default": "3s",
           "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ObservabilityConfig": {
+      "description": "Top-level observability settings.",
+      "type": "object",
+      "properties": {
+        "otel": {
+          "description": "OpenTelemetry collector toggle.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/OtelConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "OtelConfig": {
+      "description": "Per-feature `OTel` collector toggle.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "When `Some(false)`, `lightshuttle up` skips both the bundled collector and the env injection. Absent or `Some(true)` keeps the default-on behaviour.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       },
       "additionalProperties": false

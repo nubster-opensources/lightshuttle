@@ -26,6 +26,7 @@ path = "src/main.rs"
 [dependencies]
 lightshuttle-control = { version = "0.1.0", path = "../lightshuttle-control" }
 lightshuttle-manifest = { version = "0.1.0", path = "../lightshuttle-manifest" }
+lightshuttle-otel = { version = "0.1.0", path = "../lightshuttle-otel" }
 lightshuttle-runtime = { version = "0.1.0", path = "../lightshuttle-runtime" }
 clap.workspace = true
 tokio.workspace = true
