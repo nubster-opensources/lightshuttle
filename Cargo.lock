@@ -1161,6 +1161,7 @@ dependencies = [
  "humantime",
  "lightshuttle-control",
  "lightshuttle-manifest",
+ "lightshuttle-otel",
  "lightshuttle-runtime",
  "owo-colors",
  "predicates",
@@ -1202,6 +1203,15 @@ dependencies = [
  "serde_json",
  "serde_norway",
  "thiserror",
+]
+
+[[package]]
+name = "lightshuttle-otel"
+version = "0.1.0"
+dependencies = [
+ "indexmap 2.14.0",
+ "lightshuttle-manifest",
+ "lightshuttle-runtime",
 ]
 
 [[package]]

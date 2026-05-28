@@ -17,7 +17,8 @@ pub use crate::error::{ManifestError, Result};
 pub use crate::interpolate::{InterpolationContext, Interpolator, Reference};
 pub use crate::model::{
     Command, ContainerConfig, DashboardConfig, DockerfileConfig, Healthcheck, Manifest,
-    PortMapping, PostgresConfig, Project, RedisConfig, ResourceKind, Version, Volume,
+    ObservabilityConfig, OtelConfig, PortMapping, PostgresConfig, Project, RedisConfig,
+    ResourceKind, Version, Volume,
 };
 pub use crate::schema::schema;
 

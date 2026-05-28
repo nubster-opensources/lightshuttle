@@ -5,6 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::dashboard::DashboardConfig;
+use super::observability::ObservabilityConfig;
 use super::resource::ResourceKind;
 
 /// Top-level `lightshuttle.yml` model.
@@ -21,6 +22,10 @@ pub struct Manifest {
     /// Optional local dashboard settings.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dashboard: Option<DashboardConfig>,
+
+    /// Optional observability settings (collector toggle, ...).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observability: Option<ObservabilityConfig>,
 
     /// Declared resources, keyed by name.
     pub resources: IndexMap<String, ResourceKind>,

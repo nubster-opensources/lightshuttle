@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use lightshuttle_control::{ControlServer, ControlState, bind};
+use lightshuttle_otel::{CollectorConfig, augment_manifest, is_enabled};
 use lightshuttle_runtime::{DockerRuntime, LifecycleManager, LifecyclePlan, ManagerHandle};
 use owo_colors::OwoColorize;
 use tokio::sync::oneshot;
@@ -20,8 +21,21 @@ pub(crate) async fn run(
     file: &Path,
     grace: Duration,
     control_port_override: Option<u16>,
+    no_otel: bool,
 ) -> Result<ExitOutcome> {
-    let manifest = load_manifest(file)?;
+    let mut manifest = load_manifest(file)?;
+
+    if !no_otel && is_enabled(&manifest) {
+        augment_manifest(&mut manifest, &CollectorConfig::defaults());
+        info!("OTel collector enabled; env injected into container resources");
+    } else {
+        info!(
+            no_otel,
+            enabled = is_enabled(&manifest),
+            "OTel collector disabled"
+        );
+    }
+
     let plan = LifecyclePlan::from_manifest(&manifest)?;
     let runtime = DockerRuntime::connect()?;
     let (manager, _events) = LifecycleManager::new(plan, runtime);

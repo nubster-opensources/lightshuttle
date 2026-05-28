@@ -35,6 +35,13 @@ pub(crate) enum Command {
         /// picked by the OS.
         #[arg(long, value_parser = clap::value_parser!(u16).range(1..))]
         control_port: Option<u16>,
+
+        /// Skip the bundled OpenTelemetry collector and the
+        /// per-resource `OTEL_*` env injection, even if
+        /// `observability.otel.enabled` is `true` (or absent) in the
+        /// manifest.
+        #[arg(long)]
+        no_otel: bool,
     },
 
     /// Stop every container managed by this project.

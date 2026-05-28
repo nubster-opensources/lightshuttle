@@ -4,6 +4,7 @@ members = [
     "crates/lightshuttle",
     "crates/lightshuttle-control",
     "crates/lightshuttle-manifest",
+    "crates/lightshuttle-otel",
     "crates/lightshuttle-runtime",
     "xtask",
 ]
