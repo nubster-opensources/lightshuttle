@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}LightShuttle{% endblock %}</title>
+    <link rel="stylesheet" href="/_assets/style.css" />
+    <script src="/_assets/htmx.min.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a href="/" class="brand">LightShuttle</a>
+      <span class="project-badge">{{ project }}</span>
+    </header>
+    <main class="site-main">
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

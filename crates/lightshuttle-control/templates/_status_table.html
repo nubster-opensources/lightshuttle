@@ -1,0 +1,44 @@
+<div
+  id="resource-table"
+  hx-get="/_partials/resources"
+  hx-trigger="every 2s"
+  hx-swap="outerHTML"
+>
+  <table class="resource-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Kind</th>
+        <th>Status</th>
+        <th>Healthy</th>
+        <th>Image</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for resource in resources %}
+      <tr>
+        <td>
+          <a class="resource-link" href="/resources/{{ resource.name }}">{{ resource.name }}</a>
+        </td>
+        <td>{{ resource.kind }}</td>
+        <td>
+          <span class="status status-{{ resource.status_class }}">{{ resource.status }}</span>
+        </td>
+        <td>{% if resource.healthy %}yes{% else %}no{% endif %}</td>
+        <td class="image">{{ resource.image }}</td>
+        <td>
+          <button
+            type="button"
+            class="restart-button"
+            hx-post="/api/resources/{{ resource.name }}/restart"
+            hx-swap="none"
+          >
+            Restart
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

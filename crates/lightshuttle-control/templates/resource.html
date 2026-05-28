@@ -1,0 +1,58 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ resource.name }} — LightShuttle{% endblock %}
+
+{% block content %}
+<section class="resource-detail">
+  <p><a class="back" href="/">← back to resources</a></p>
+  <h1>{{ resource.name }}</h1>
+  <dl class="metadata">
+    <dt>Kind</dt><dd>{{ resource.kind }}</dd>
+    <dt>Status</dt>
+    <dd>
+      <span class="status status-{{ resource.status_class }}">{{ resource.status }}</span>
+    </dd>
+    <dt>Healthy</dt><dd>{% if resource.healthy %}yes{% else %}no{% endif %}</dd>
+    <dt>Image</dt><dd class="image">{{ resource.image }}</dd>
+    {% if let Some(error) = resource.last_error.as_ref() %}
+    <dt>Last error</dt><dd class="error">{{ error }}</dd>
+    {% endif %}
+  </dl>
+  <button
+    type="button"
+    class="restart-button"
+    hx-post="/api/resources/{{ resource.name }}/restart"
+    hx-swap="none"
+  >
+    Restart this resource
+  </button>
+
+  <h2>Logs</h2>
+  <pre id="log-pane" class="log-pane" data-resource="{{ resource.name }}">Connecting to log stream…</pre>
+  <script>
+    (function () {
+      var pane = document.getElementById("log-pane");
+      var name = pane.dataset.resource;
+      var protocol = location.protocol === "https:" ? "wss:" : "ws:";
+      var ws = new WebSocket(protocol + "//" + location.host + "/ws/logs/" + encodeURIComponent(name));
+      pane.textContent = "";
+      ws.onmessage = function (event) {
+        try {
+          var frame = JSON.parse(event.data);
+          var line = (frame.stream === "stderr" ? "[stderr] " : "") + (frame.data || "");
+          pane.appendChild(document.createTextNode(line));
+        } catch (_e) {
+          pane.appendChild(document.createTextNode(event.data));
+        }
+        pane.scrollTop = pane.scrollHeight;
+      };
+      ws.onerror = function () {
+        pane.appendChild(document.createTextNode("\n[log stream error]\n"));
+      };
+      ws.onclose = function () {
+        pane.appendChild(document.createTextNode("\n[log stream closed]\n"));
+      };
+    })();
+  </script>
+</section>
+{% endblock %}
