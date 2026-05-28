@@ -2,6 +2,7 @@
 
 use axum::Json;
 use axum::extract::State;
+use lightshuttle_runtime::LifecycleHandle;
 use serde::Serialize;
 
 use crate::state::ControlState;
@@ -16,7 +17,10 @@ pub(crate) struct HealthzResponse {
 }
 
 /// Handler for `GET /healthz`.
-pub(crate) async fn healthz(State(state): State<ControlState>) -> Json<HealthzResponse> {
+pub(crate) async fn healthz<H>(State(state): State<ControlState<H>>) -> Json<HealthzResponse>
+where
+    H: LifecycleHandle + Clone + Send + Sync + 'static,
+{
     Json(HealthzResponse {
         status: "ok",
         project: state.project,
@@ -28,14 +32,41 @@ mod tests {
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use http_body_util::BodyExt;
+    use lightshuttle_runtime::{
+        LifecycleHandle, LifecycleHandleError, LogChunkStream, ResourceView,
+    };
     use tower::ServiceExt;
 
     use crate::routes::router;
     use crate::state::ControlState;
 
+    /// Minimal handle that returns empty data; satisfies the router's
+    /// type bounds for routes that do not touch it.
+    #[derive(Clone, Default)]
+    struct NopHandle;
+
+    impl LifecycleHandle for NopHandle {
+        async fn list(&self) -> Result<Vec<ResourceView>, LifecycleHandleError> {
+            Ok(Vec::new())
+        }
+        async fn get(&self, name: &str) -> Result<ResourceView, LifecycleHandleError> {
+            Err(LifecycleHandleError::UnknownResource(name.to_owned()))
+        }
+        async fn restart(&self, _name: &str) -> Result<(), LifecycleHandleError> {
+            Err(LifecycleHandleError::NotSupported("restart"))
+        }
+        async fn logs(
+            &self,
+            name: &str,
+            _follow: bool,
+        ) -> Result<LogChunkStream, LifecycleHandleError> {
+            Err(LifecycleHandleError::UnknownResource(name.to_owned()))
+        }
+    }
+
     #[tokio::test]
     async fn returns_200_with_status_and_project() {
-        let app = router(ControlState::new("demo"));
+        let app = router(ControlState::new("demo", NopHandle));
 
         let response = app
             .oneshot(

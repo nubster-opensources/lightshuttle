@@ -7,11 +7,13 @@
 
 use std::time::SystemTime;
 
+use serde::{Deserialize, Serialize};
+
 use crate::lifecycle::status::NodeStatus;
 use crate::spec::ImageSource;
 
 /// Dashboard-friendly view of a single managed resource.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourceView {
     /// Manifest-declared resource name.
     pub name: String,
@@ -31,7 +33,7 @@ pub struct ResourceView {
 
 /// Coarse-grained resource status, derived from [`NodeStatus`] and
 /// flattened for UI consumption.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ResourceStatus {
     /// Not started yet.
     Pending,

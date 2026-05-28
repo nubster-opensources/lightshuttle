@@ -1035,6 +1035,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "http-body-util",
+ "lightshuttle-runtime",
  "serde",
  "serde_json",
  "tokio",
@@ -1065,6 +1066,7 @@ dependencies = [
  "ignore",
  "indexmap 2.14.0",
  "lightshuttle-manifest",
+ "serde",
  "tar",
  "tempfile",
  "thiserror",

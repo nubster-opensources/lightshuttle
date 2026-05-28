@@ -1,21 +1,32 @@
 //! Shared application state injected into axum handlers.
+//!
+//! Generic over a [`LifecycleHandle`] so the control plane stays free
+//! of runtime-specific types. axum requires the state to be `Clone`,
+//! so the handle must be cheaply cloneable.
+
+use lightshuttle_runtime::LifecycleHandle;
 
 /// State shared by every route of the control plane.
-///
-/// At v0.2.0 it only carries the project name (surfaced through
-/// `/healthz`); the lifecycle handle is added in a follow-up PR.
 #[derive(Clone, Debug)]
-pub struct ControlState {
+pub struct ControlState<H>
+where
+    H: LifecycleHandle + Clone,
+{
     /// Project name as declared in the manifest.
     pub project: String,
+    /// Lifecycle handle backing the resource endpoints.
+    pub handle: H,
 }
 
-impl ControlState {
-    /// Build a new state bound to `project`.
-    #[must_use]
-    pub fn new(project: impl Into<String>) -> Self {
+impl<H> ControlState<H>
+where
+    H: LifecycleHandle + Clone,
+{
+    /// Build a new state bound to `project` and `handle`.
+    pub fn new(project: impl Into<String>, handle: H) -> Self {
         Self {
             project: project.into(),
+            handle,
         }
     }
 }
