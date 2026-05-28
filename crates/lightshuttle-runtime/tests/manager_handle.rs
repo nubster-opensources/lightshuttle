@@ -73,14 +73,18 @@ async fn get_rejects_unknown_resource() {
 }
 
 #[tokio::test]
-async fn restart_is_not_supported_yet_for_known_resource() {
+async fn restart_succeeds_for_known_resource() {
     let handle = started_handle().await;
 
-    let err = handle
+    handle
         .restart("cache")
         .await
-        .expect_err("restart not supported yet");
-    assert!(matches!(err, LifecycleHandleError::NotSupported("restart")));
+        .expect("restart succeeds for a running resource");
+
+    // The resource is healthy again after the restart cycle.
+    let view = handle.get("cache").await.expect("get after restart");
+    assert_eq!(view.status, ResourceStatus::Running);
+    assert!(view.healthy);
 }
 
 #[tokio::test]

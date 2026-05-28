@@ -63,6 +63,6 @@ pub enum LifecycleError {
     },
 
     /// A reference targets a resource that does not exist in the plan.
-    #[error("unknown resource `{0}` referenced in dependency graph")]
-    UnknownResource(String),
+    #[error("resource `{0}` not found in the current plan")]
+    ResourceNotFound(String),
 }
