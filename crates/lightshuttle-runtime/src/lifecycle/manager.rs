@@ -250,10 +250,7 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
                 .container_id
                 .lock()
                 .expect("container_id mutex poisoned") = None;
-            *handle
-                .started_at
-                .lock()
-                .expect("started_at mutex poisoned") = None;
+            *handle.started_at.lock().expect("started_at mutex poisoned") = None;
             let _ = handle.status_tx.send(NodeStatus::Stopped);
             let _ = self.event_tx.send(LifecycleEvent::ResourceStopped {
                 name: resource.to_owned(),
