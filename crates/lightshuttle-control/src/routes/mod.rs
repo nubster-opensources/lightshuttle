@@ -10,6 +10,7 @@ pub(crate) mod dashboard;
 pub(crate) mod events_ws;
 pub(crate) mod healthz;
 pub(crate) mod logs_ws;
+pub(crate) mod metrics;
 pub(crate) mod resources;
 
 /// Build the full router for the control plane.
@@ -46,6 +47,7 @@ where
         .route("/", axum::routing::get(dashboard::index))
         .route("/resources/{name}", axum::routing::get(dashboard::resource))
         .route("/healthz", axum::routing::get(healthz::healthz))
+        .route("/metrics", axum::routing::get(metrics::metrics))
         .nest("/api", api)
         .nest("/ws", ws)
         .nest("/_assets", assets)

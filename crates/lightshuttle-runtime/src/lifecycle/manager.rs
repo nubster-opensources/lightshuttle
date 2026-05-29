@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 
 use lightshuttle_manifest::{InterpolationContext, Interpolator};
 use tokio::sync::{broadcast, watch};
-use tracing::{debug, info, warn};
+use tracing::{Instrument, debug, info, info_span, instrument, warn};
 
 /// Buffer size for the broadcast event channel. Slow subscribers that
 /// fall behind by more than this number of events will see lagged
@@ -168,6 +168,7 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
 
     /// Stop every resource in reverse topological order with the given
     /// SIGTERM-to-SIGKILL grace window.
+    #[instrument(skip_all, fields(resources = self.plan.nodes().len()))]
     pub async fn stop_all(&self, grace: Duration) -> Result<(), LifecycleError> {
         let _ = self.event_tx.send(LifecycleEvent::StackStopping);
 
@@ -184,7 +185,8 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
                 guard.clone()
             };
             let Some(id) = id else { continue };
-            match self.runtime.stop(&id, grace).await {
+            let stop_span = info_span!("stop", resource = %node.name);
+            match self.runtime.stop(&id, grace).instrument(stop_span).await {
                 Ok(()) => {
                     let _ = handle.status_tx.send(NodeStatus::Stopped);
                     let _ = self.event_tx.send(LifecycleEvent::ResourceStopped {
@@ -224,6 +226,7 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
     /// target's status going `Stopped` → `Pending` → `Starting` →
     /// `Running` → `Healthy`, so callers that depend on the target can
     /// pause their work locally until it is healthy again.
+    #[instrument(skip(self), fields(resource = %resource))]
     pub async fn restart_one(&self, resource: &str) -> Result<(), LifecycleError> {
         let node = self
             .plan
@@ -333,6 +336,7 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
 }
 
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[instrument(name = "start", skip_all, fields(resource = %name))]
 async fn start_one<R: ContainerRuntime + 'static>(
     name: String,
     spec: ContainerSpec,
@@ -448,7 +452,12 @@ async fn start_one<R: ContainerRuntime + 'static>(
     });
 
     // 5. Wait for the healthcheck.
-    match runtime.wait_healthy(&id, DEFAULT_HEALTHCHECK_TIMEOUT).await {
+    let wait_span = info_span!("wait_healthy", resource = %name);
+    match runtime
+        .wait_healthy(&id, DEFAULT_HEALTHCHECK_TIMEOUT)
+        .instrument(wait_span)
+        .await
+    {
         Ok(()) => {
             let _ = handle.outputs_tx.send(Some(own_outputs));
             let _ = handle.status_tx.send(NodeStatus::Healthy);

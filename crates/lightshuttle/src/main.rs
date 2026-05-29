@@ -20,8 +20,16 @@ mod output;
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    init_tracing();
     let cli = Cli::parse();
+
+    // `up` owns its telemetry init: with OTel enabled it installs a
+    // tracing subscriber wired to the OTLP exporter, otherwise it falls
+    // back to plain logging itself. Every other command uses plain
+    // logging set up here. The global subscriber can only be installed
+    // once, hence the split.
+    if !matches!(cli.command, Command::Up { .. }) {
+        init_plain_logging();
+    }
 
     match run(cli).await {
         Ok(outcome) => ExitCode::from(u8::try_from(outcome.code()).unwrap_or(1)),
@@ -66,7 +74,10 @@ async fn run(cli: Cli) -> anyhow::Result<ExitOutcome> {
     }
 }
 
-fn init_tracing() {
+/// Install a plain compact `fmt` tracing subscriber. Used by every
+/// command except `up` with `OTel` enabled, which installs its own
+/// subscriber wired to the OTLP exporter.
+pub(crate) fn init_plain_logging() {
     let filter =
         EnvFilter::try_from_env("LIGHTSHUTTLE_LOG").unwrap_or_else(|_| EnvFilter::new("info"));
     tracing_subscriber::fmt()

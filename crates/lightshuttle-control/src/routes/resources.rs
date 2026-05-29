@@ -48,6 +48,8 @@ where
     // Surface 404 immediately when the resource is unknown.
     let _ = state.handle.get(&name).await?;
 
+    crate::metrics::record_restart();
+
     let handle = state.handle.clone();
     let resource = name.clone();
     tokio::spawn(async move {
