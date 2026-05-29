@@ -23,3 +23,11 @@ rustdoc-args = ["--cfg", "docsrs"]
 lightshuttle-manifest = { version = "0.1.0", path = "../lightshuttle-manifest" }
 lightshuttle-runtime = { version = "0.1.0", path = "../lightshuttle-runtime" }
 indexmap.workspace = true
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
+opentelemetry-otlp.workspace = true
+opentelemetry-semantic-conventions.workspace = true
+tracing.workspace = true
+tracing-opentelemetry.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true

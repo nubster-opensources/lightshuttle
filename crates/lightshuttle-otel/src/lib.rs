@@ -15,7 +15,9 @@
 pub use crate::augment::{augment_manifest, is_enabled};
 pub use crate::config::{CollectorConfig, SYNTHETIC_RESOURCE_NAME};
 pub use crate::env::inject_otel_env;
+pub use crate::tracer::{TracerGuard, init_orchestrator_tracer};
 
 mod augment;
 mod config;
 mod env;
+mod tracer;

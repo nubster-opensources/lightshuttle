@@ -10,10 +10,12 @@
 //! channel, the restart endpoint and the dashboard.
 
 pub use crate::error::{ApiError, ApiErrorBody};
+pub use crate::metrics::{Metrics, observe_event_duration};
 pub use crate::server::{ControlServer, bind};
 pub use crate::state::ControlState;
 
 mod error;
+mod metrics;
 mod routes;
 mod server;
 mod state;
