@@ -6,12 +6,16 @@ use std::pin::Pin;
 use std::time::{Duration, Instant, SystemTime};
 
 use bollard::Docker;
-use bollard::container::{
-    Config, CreateContainerOptions, ListContainersOptions, LogOutput, LogsOptions,
-    StopContainerOptions,
+use bollard::container::LogOutput;
+use bollard::models::{
+    ContainerCreateBody, ContainerSummaryStateEnum, HealthConfig, HostConfig,
+    PortBinding as BollardPortBinding,
 };
-use bollard::image::{BuildImageOptions, CreateImageOptions};
-use bollard::models::{HealthConfig, HostConfig, PortBinding as BollardPortBinding};
+use bollard::query_parameters::{
+    BuildImageOptionsBuilder, CreateContainerOptionsBuilder, CreateImageOptionsBuilder,
+    ListContainersOptionsBuilder, LogsOptionsBuilder, StartContainerOptions,
+    StopContainerOptionsBuilder,
+};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 
@@ -49,11 +53,10 @@ impl DockerRuntime {
 
     async fn ensure_image(&self, image: &str) -> Result<()> {
         let (from_image, tag) = split_image_ref(image);
-        let options = CreateImageOptions {
-            from_image,
-            tag,
-            ..Default::default()
-        };
+        let options = CreateImageOptionsBuilder::default()
+            .from_image(from_image)
+            .tag(tag)
+            .build();
         let mut stream = self.client.create_image(Some(options), None, None);
         while let Some(event) = stream.next().await {
             event.map_err(|e| RuntimeError::ImagePull {
@@ -71,11 +74,10 @@ impl DockerRuntime {
         let label_filter = format!("{LABEL_PROJECT}={project}");
         let mut filters: HashMap<String, Vec<String>> = HashMap::new();
         filters.insert("label".to_owned(), vec![label_filter]);
-        let options = ListContainersOptions {
-            all: true,
-            filters,
-            ..Default::default()
-        };
+        let options = ListContainersOptionsBuilder::default()
+            .all(true)
+            .filters(&filters)
+            .build();
         let summaries = self
             .client
             .list_containers(Some(options))
@@ -94,7 +96,7 @@ impl DockerRuntime {
                 .and_then(|labels| labels.get(LABEL_RESOURCE))
                 .cloned()
                 .unwrap_or_else(|| "<unknown>".to_owned());
-            let status = parse_summary_state(summary.state.as_deref());
+            let status = parse_summary_state(summary.state.as_ref());
             out.push(ManagedContainer {
                 id: ContainerId::new(id),
                 resource,
@@ -124,18 +126,19 @@ impl DockerRuntime {
                     RuntimeError::InvalidSpec(format!("failed to build tar archive: {io_err}"))
                 })?;
 
-        let options = BuildImageOptions::<String> {
-            dockerfile: dockerfile.to_owned(),
-            t: tag.to_owned(),
-            rm: true,
-            buildargs: build_args.clone(),
-            target: target.unwrap_or("").to_owned(),
-            ..Default::default()
-        };
+        let options = BuildImageOptionsBuilder::default()
+            .dockerfile(dockerfile)
+            .t(tag)
+            .rm(true)
+            .buildargs(build_args)
+            .target(target.unwrap_or(""))
+            .build();
 
-        let mut stream = self
-            .client
-            .build_image(options, None, Some(Bytes::from(tar_bytes)));
+        let mut stream = self.client.build_image(
+            options,
+            None,
+            Some(bollard::body_full(Bytes::from(tar_bytes))),
+        );
         while let Some(event) = stream.next().await {
             event.map_err(RuntimeError::Build)?;
         }
@@ -209,7 +212,7 @@ impl ContainerRuntime for DockerRuntime {
         let healthcheck = spec.healthcheck.as_ref().map(build_healthcheck);
         let labels = build_labels(&spec.project, &spec.resource);
 
-        let config = Config {
+        let config = ContainerCreateBody {
             image: Some(image_ref),
             env: Some(env),
             cmd: spec.command.clone(),
@@ -220,10 +223,9 @@ impl ContainerRuntime for DockerRuntime {
             ..Default::default()
         };
 
-        let create_options = CreateContainerOptions {
-            name: spec.name.clone(),
-            platform: None,
-        };
+        let create_options = CreateContainerOptionsBuilder::default()
+            .name(&spec.name)
+            .build();
 
         let created = self
             .client
@@ -232,7 +234,7 @@ impl ContainerRuntime for DockerRuntime {
             .map_err(RuntimeError::Start)?;
 
         self.client
-            .start_container::<String>(&created.id, None)
+            .start_container(&created.id, None::<StartContainerOptions>)
             .await
             .map_err(RuntimeError::Start)?;
 
@@ -241,9 +243,9 @@ impl ContainerRuntime for DockerRuntime {
 
     async fn stop(&self, id: &ContainerId, grace: Duration) -> Result<()> {
         #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
-        let options = StopContainerOptions {
-            t: grace.as_secs() as i64,
-        };
+        let options = StopContainerOptionsBuilder::default()
+            .t(grace.as_secs() as i32)
+            .build();
         match self.client.stop_container(id.as_str(), Some(options)).await {
             Ok(())
             | Err(bollard::errors::Error::DockerResponseServerError {
@@ -332,13 +334,12 @@ impl ContainerRuntime for DockerRuntime {
     }
 
     async fn logs(&self, id: &ContainerId, follow: bool) -> Result<LogChunkStream> {
-        let options = LogsOptions::<String> {
-            follow,
-            stdout: true,
-            stderr: true,
-            timestamps: true,
-            ..Default::default()
-        };
+        let options = LogsOptionsBuilder::default()
+            .follow(follow)
+            .stdout(true)
+            .stderr(true)
+            .timestamps(true)
+            .build();
         let stream = self.client.logs(id.as_str(), Some(options));
         let mapped: Pin<Box<dyn Stream<Item = Result<LogChunk>> + Send>> =
             Box::pin(stream.map(map_log_item));
@@ -380,19 +381,20 @@ pub struct ManagedContainer {
     pub status: ContainerStatus,
 }
 
-fn parse_summary_state(state: Option<&str>) -> ContainerStatus {
+fn parse_summary_state(state: Option<&ContainerSummaryStateEnum>) -> ContainerStatus {
     match state {
-        Some("running") => ContainerStatus::Running,
-        Some("exited" | "dead") => ContainerStatus::Stopped { exit_code: None },
+        Some(ContainerSummaryStateEnum::RUNNING) => ContainerStatus::Running,
+        Some(ContainerSummaryStateEnum::EXITED | ContainerSummaryStateEnum::DEAD) => {
+            ContainerStatus::Stopped { exit_code: None }
+        }
         _ => ContainerStatus::Starting,
     }
 }
 
-#[allow(clippy::zero_sized_map_values)]
-fn build_exposed_ports(ports: &[PortBinding]) -> HashMap<String, HashMap<(), ()>> {
+fn build_exposed_ports(ports: &[PortBinding]) -> Vec<String> {
     ports
         .iter()
-        .map(|p| (format!("{}/tcp", p.container_port), HashMap::new()))
+        .map(|p| format!("{}/tcp", p.container_port))
         .collect()
 }
 
