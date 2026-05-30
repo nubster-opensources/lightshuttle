@@ -398,12 +398,24 @@ fn build_exposed_ports(ports: &[PortBinding]) -> Vec<String> {
         .collect()
 }
 
+/// Default host bind address for published ports.
+///
+/// Loopback by default so a dev machine never exposes managed services
+/// (PostgreSQL, Redis, application ports) to the wider network. A
+/// manifest that needs a broader bind must request it explicitly via
+/// the `address:host:container` port mapping form.
+const DEFAULT_HOST_BIND_ADDRESS: &str = "127.0.0.1";
+
 fn build_host_config(ports: &[PortBinding], volumes: &[VolumeBinding]) -> HostConfig {
     let port_bindings = ports
         .iter()
         .map(|p| {
+            let host_ip = p
+                .host_address
+                .clone()
+                .unwrap_or_else(|| DEFAULT_HOST_BIND_ADDRESS.to_owned());
             let bindings = vec![BollardPortBinding {
-                host_ip: p.host_address.clone(),
+                host_ip: Some(host_ip),
                 host_port: Some(p.host_port.to_string()),
             }];
             (format!("{}/tcp", p.container_port), Some(bindings))
@@ -455,5 +467,43 @@ fn map_log_item(item: std::result::Result<LogOutput, bollard::errors::Error>) ->
             bytes: message.to_vec(),
         }),
         Err(e) => Err(RuntimeError::LogStream(e)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PortBinding, build_host_config};
+
+    fn host_ip_for(ports: &[PortBinding], key: &str) -> Option<String> {
+        let config = build_host_config(ports, &[]);
+        config
+            .port_bindings
+            .and_then(|map| map.get(key).cloned())
+            .flatten()
+            .and_then(|bindings| bindings.into_iter().next())
+            .and_then(|binding| binding.host_ip)
+    }
+
+    #[test]
+    fn unspecified_address_binds_to_loopback() {
+        let ports = vec![PortBinding {
+            container_port: 5432,
+            host_address: None,
+            host_port: 5432,
+        }];
+        assert_eq!(
+            host_ip_for(&ports, "5432/tcp").as_deref(),
+            Some("127.0.0.1")
+        );
+    }
+
+    #[test]
+    fn explicit_address_is_preserved() {
+        let ports = vec![PortBinding {
+            container_port: 80,
+            host_address: Some("0.0.0.0".to_owned()),
+            host_port: 8080,
+        }];
+        assert_eq!(host_ip_for(&ports, "80/tcp").as_deref(), Some("0.0.0.0"));
     }
 }
