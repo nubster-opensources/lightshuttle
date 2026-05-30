@@ -452,22 +452,56 @@ fn build_healthcheck(hc: &HealthcheckSpec) -> HealthConfig {
 
 fn map_log_item(item: std::result::Result<LogOutput, bollard::errors::Error>) -> Result<LogChunk> {
     match item {
-        Ok(LogOutput::StdErr { message }) => Ok(LogChunk {
-            stream: LogStream::Stderr,
-            timestamp: SystemTime::now(),
-            bytes: message.to_vec(),
-        }),
+        Ok(LogOutput::StdErr { message }) => Ok(log_chunk(LogStream::Stderr, &message)),
         Ok(
             LogOutput::StdOut { message }
             | LogOutput::Console { message }
             | LogOutput::StdIn { message },
-        ) => Ok(LogChunk {
-            stream: LogStream::Stdout,
-            timestamp: SystemTime::now(),
-            bytes: message.to_vec(),
-        }),
+        ) => Ok(log_chunk(LogStream::Stdout, &message)),
         Err(e) => Err(RuntimeError::LogStream(e)),
     }
+}
+
+/// Build a [`LogChunk`], extracting the Docker emission timestamp from
+/// the line prefix when present.
+fn log_chunk(stream: LogStream, message: &[u8]) -> LogChunk {
+    let (timestamp, bytes) = split_docker_timestamp(message);
+    LogChunk {
+        stream,
+        timestamp,
+        bytes,
+    }
+}
+
+/// Split a Docker log line into its emission timestamp and payload.
+///
+/// With `timestamps: true`, Docker prepends each line with an RFC3339
+/// nanosecond timestamp and a single space. When that prefix parses,
+/// the real emission time is returned and the prefix is stripped from
+/// the forwarded bytes. Otherwise the read time is used and the line is
+/// forwarded verbatim.
+fn split_docker_timestamp(message: &[u8]) -> (SystemTime, Vec<u8>) {
+    if let Some(space) = message.iter().position(|&b| b == b' ')
+        && let Ok(prefix) = std::str::from_utf8(&message[..space])
+        && let Ok(ts) = prefix.parse::<jiff::Timestamp>()
+        && let Some(system_time) = timestamp_to_system_time(ts)
+    {
+        let payload = message.get(space + 1..).unwrap_or(&[]).to_vec();
+        return (system_time, payload);
+    }
+    (SystemTime::now(), message.to_vec())
+}
+
+/// Convert a `jiff` timestamp to a `SystemTime`, returning `None` for
+/// pre-epoch instants (never produced by container logs).
+fn timestamp_to_system_time(ts: jiff::Timestamp) -> Option<SystemTime> {
+    let nanos = ts.as_nanosecond();
+    if nanos < 0 {
+        return None;
+    }
+    let secs = u64::try_from(nanos / 1_000_000_000).ok()?;
+    let subsec = u32::try_from(nanos % 1_000_000_000).ok()?;
+    Some(SystemTime::UNIX_EPOCH + Duration::new(secs, subsec))
 }
 
 #[cfg(test)]
@@ -505,5 +539,45 @@ mod tests {
             host_port: 8080,
         }];
         assert_eq!(host_ip_for(&ports, "80/tcp").as_deref(), Some("0.0.0.0"));
+    }
+
+    #[test]
+    fn timestamped_line_parses_emission_time_and_strips_prefix() {
+        use std::time::SystemTime;
+
+        let (ts, payload) =
+            super::split_docker_timestamp(b"2024-01-01T12:34:56.789012345Z hello world");
+
+        let elapsed = ts
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("post-epoch");
+        assert_eq!(elapsed.as_secs(), 1_704_112_496);
+        // SystemTime resolution is platform dependent (100ns on Windows),
+        // so compare the sub-second part at microsecond granularity.
+        assert_eq!(elapsed.subsec_micros(), 789_012);
+        assert_eq!(payload, b"hello world");
+    }
+
+    #[test]
+    fn timestamped_line_without_payload_yields_empty_bytes() {
+        // Docker still emits the trailing space then the (empty) line.
+        let (_ts, payload) = super::split_docker_timestamp(b"2024-01-01T00:00:00Z \n");
+        assert_eq!(payload, b"\n");
+    }
+
+    #[test]
+    fn untimestamped_line_is_forwarded_verbatim() {
+        // A leading token that is not an RFC3339 timestamp falls back to
+        // the read time and forwards every byte, including the token.
+        let input = b"not-a-timestamp hello world";
+        let (_ts, payload) = super::split_docker_timestamp(input);
+        assert_eq!(payload, input);
+    }
+
+    #[test]
+    fn line_without_space_is_forwarded_verbatim() {
+        let input = b"singletoken";
+        let (_ts, payload) = super::split_docker_timestamp(input);
+        assert_eq!(payload, input);
     }
 }
