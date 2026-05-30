@@ -61,9 +61,30 @@ pub(crate) fn read(cwd: &Path) -> io::Result<String> {
     Ok(trimmed)
 }
 
-/// Whether `url` is an `http` URL targeting the IPv4 or IPv6 loopback.
-fn is_loopback_url(url: &str) -> bool {
-    url.starts_with("http://127.0.0.1:") || url.starts_with("http://[::1]:")
+/// Whether `raw` is an `http` URL targeting the IPv4 or IPv6 loopback
+/// with no embedded credentials.
+///
+/// The URL is parsed with the same crate `reqwest` uses, then the host
+/// is checked structurally. String prefix matching is unsafe here: a
+/// value like `http://127.0.0.1:80@evil.example/` would pass a prefix
+/// check while resolving to `evil.example`.
+fn is_loopback_url(raw: &str) -> bool {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    let Ok(parsed) = url::Url::parse(raw) else {
+        return false;
+    };
+    if parsed.scheme() != "http" {
+        return false;
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return false;
+    }
+    match parsed.host() {
+        Some(url::Host::Ipv4(ip)) => ip == Ipv4Addr::LOCALHOST,
+        Some(url::Host::Ipv6(ip)) => ip == Ipv6Addr::LOCALHOST,
+        _ => false,
+    }
 }
 
 /// Remove the discovery file if it exists. Errors other than
@@ -136,5 +157,21 @@ mod tests {
         write(dir.path(), url).expect("write");
 
         assert_eq!(read(dir.path()).expect("read"), url);
+    }
+
+    #[test]
+    fn loopback_check_resists_userinfo_smuggling() {
+        // The host is actually `evil.example`; the loopback string is in
+        // the userinfo. A prefix check would wrongly accept this.
+        assert!(!is_loopback_url("http://127.0.0.1:80@evil.example/"));
+        assert!(!is_loopback_url("http://127.0.0.1:@evil.example/"));
+        // Credentials on a real loopback host are rejected too.
+        assert!(!is_loopback_url("http://user:pass@127.0.0.1:8080/"));
+        // Non-http schemes are rejected.
+        assert!(!is_loopback_url("https://127.0.0.1:8080/"));
+        assert!(!is_loopback_url("file:///etc/passwd"));
+        // Genuine loopback URLs still pass.
+        assert!(is_loopback_url("http://127.0.0.1:8080/"));
+        assert!(is_loopback_url("http://[::1]:8080/"));
     }
 }
