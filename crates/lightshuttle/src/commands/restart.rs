@@ -40,7 +40,12 @@ pub(crate) async fn run(resource: &str, detach: bool) -> Result<ExitOutcome> {
         "could not read .lightshuttle/control.url; is `lightshuttle up` running in this folder?",
     )?;
 
-    let client = reqwest::Client::new();
+    // Never follow redirects: the control plane is loopback only, and a
+    // redirect would be the only way to leave it.
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .context("failed to build the HTTP client")?;
     let restart_url = join_url(&base, &format!("api/resources/{resource}/restart"));
     let response = client
         .post(&restart_url)

@@ -1,9 +1,27 @@
 //! Axum route assembly.
 
 use axum::Router;
+use axum::extract::Request;
+use axum::http::HeaderValue;
+use axum::http::header::{CONTENT_SECURITY_POLICY, X_CONTENT_TYPE_OPTIONS, X_FRAME_OPTIONS};
+use axum::middleware::Next;
+use axum::response::Response;
 use lightshuttle_runtime::LifecycleHandle;
 
 use crate::state::ControlState;
+
+/// Content Security Policy for the dashboard.
+///
+/// Everything loads from the same origin. `script-src` allows the inline
+/// bootstrap script in the resource detail page; `connect-src 'self'`
+/// covers the same-origin log and event web sockets.
+const CONTENT_SECURITY_POLICY_VALUE: &str = "default-src 'self'; \
+     script-src 'self' 'unsafe-inline'; \
+     style-src 'self'; \
+     connect-src 'self'; \
+     img-src 'self' data:; \
+     base-uri 'none'; \
+     frame-ancestors 'none'";
 
 pub(crate) mod assets;
 pub(crate) mod dashboard;
@@ -53,4 +71,18 @@ where
         .nest("/_assets", assets)
         .nest("/_partials", partials)
         .with_state(state)
+        .layer(axum::middleware::from_fn(security_headers))
+}
+
+/// Attach baseline security headers to every response.
+async fn security_headers(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    headers.insert(X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    headers.insert(X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    headers.insert(
+        CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(CONTENT_SECURITY_POLICY_VALUE),
+    );
+    response
 }

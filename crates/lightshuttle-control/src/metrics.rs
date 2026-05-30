@@ -50,9 +50,13 @@ impl Metrics {
         }
     }
 
-    /// Build a non-installing handle for tests. The returned `Metrics`
-    /// renders an empty (or local-only) snapshot and never touches the
-    /// global recorder.
+    /// Build a non-installing handle for tests.
+    ///
+    /// The `metrics!` macros always target the globally installed
+    /// recorder, which this constructor never sets. The returned handle
+    /// therefore renders an empty snapshot regardless of any metric
+    /// recorded elsewhere. Use [`Self::install`] plus
+    /// [`super::ControlState::with_metrics`] to serve live metrics.
     #[must_use]
     pub fn for_test() -> Self {
         let recorder = PrometheusBuilder::new().build_recorder();

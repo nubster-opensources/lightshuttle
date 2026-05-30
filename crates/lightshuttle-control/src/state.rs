@@ -29,8 +29,13 @@ where
     H: LifecycleHandle + Clone,
 {
     /// Build a new state bound to `project` and `handle`, with a
-    /// non-installing test metrics handle. Use [`Self::with_metrics`]
-    /// in production to attach the globally installed recorder.
+    /// non-installing test metrics handle.
+    ///
+    /// The attached [`Metrics`] does not install a global recorder, so
+    /// the `metrics!` macros write nowhere and `GET /metrics` renders an
+    /// empty snapshot. This constructor is meant for tests and embedders
+    /// that do not serve metrics. In production, install the recorder
+    /// once and use [`Self::with_metrics`] instead.
     pub fn new(project: impl Into<String>, handle: H) -> Self {
         Self {
             project: project.into(),
