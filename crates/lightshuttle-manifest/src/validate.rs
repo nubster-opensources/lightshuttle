@@ -6,11 +6,14 @@ use indexmap::IndexMap;
 
 use crate::error::{ManifestError, Result};
 use crate::interpolate::{InterpolationContext, Interpolator, Reference};
-use crate::model::{Healthcheck, Manifest, ResourceKind};
+use crate::model::{Command, Healthcheck, Manifest, ResourceKind};
 
 const NAME_PATTERN: &str = "^[a-z][a-z0-9_-]{0,31}$";
-const DATABASE_PATTERN: &str = "^[a-z][a-z0-9_]*$";
+const DATABASE_PATTERN: &str = "^[a-z][a-z0-9_]{0,62}$";
 const NAME_MAX_LEN: usize = 32;
+/// PostgreSQL truncates identifiers at 63 bytes, so a longer database
+/// name would be silently shortened at runtime.
+const DATABASE_MAX_LEN: usize = 63;
 
 impl Manifest {
     /// Run structural and semantic validation on the parsed manifest.
@@ -66,7 +69,7 @@ fn matches_name_pattern(name: &str) -> bool {
 }
 
 fn matches_database_pattern(name: &str) -> bool {
-    if name.is_empty() {
+    if name.is_empty() || name.len() > DATABASE_MAX_LEN {
         return false;
     }
     let mut chars = name.chars();
@@ -244,6 +247,9 @@ fn collect_strings(kind: &ResourceKind) -> Vec<String> {
             if let Some(w) = &c.working_dir {
                 out.push(w.clone());
             }
+            if let Some(cmd) = &c.command {
+                out.extend(command_strings(cmd));
+            }
         }
         ResourceKind::Dockerfile(c) => {
             out.push(c.context.clone());
@@ -256,6 +262,9 @@ fn collect_strings(kind: &ResourceKind) -> Vec<String> {
             }
             if let Some(w) = &c.working_dir {
                 out.push(w.clone());
+            }
+            if let Some(cmd) = &c.command {
+                out.extend(command_strings(cmd));
             }
         }
         ResourceKind::Postgres(c) => {
@@ -275,5 +284,17 @@ fn collect_strings(kind: &ResourceKind) -> Vec<String> {
             }
         }
     }
+    // Healthcheck test commands carry interpolations too, on every kind
+    // that declares one.
+    if let Some(hc) = kind.healthcheck() {
+        out.extend(hc.test.iter().cloned());
+    }
     out
+}
+
+fn command_strings(command: &Command) -> Vec<String> {
+    match command {
+        Command::Single(s) => vec![s.clone()],
+        Command::Args(args) => args.clone(),
+    }
 }

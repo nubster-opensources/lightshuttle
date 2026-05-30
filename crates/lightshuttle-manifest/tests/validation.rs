@@ -117,6 +117,64 @@ resources:
 }
 
 #[test]
+fn rejects_overly_long_database_name() {
+    let long = "a".repeat(64);
+    let yaml = format!(
+        "
+project:
+  name: app
+resources:
+  db:
+    postgres:
+      database: '{long}'
+"
+    );
+    let err = Manifest::parse(&yaml).expect_err("64 byte database name should be rejected");
+    assert!(
+        matches!(err, ManifestError::InvalidName { .. }),
+        "got: {err:?}"
+    );
+}
+
+#[test]
+fn rejects_unknown_reference_in_command() {
+    let yaml = r"
+project:
+  name: app
+resources:
+  app:
+    container:
+      image: alpine
+      command: ${resources.missing.url}
+";
+    let err = Manifest::parse(yaml).expect_err("missing ref in command should be rejected");
+    assert!(
+        matches!(err, ManifestError::UnknownResource(_)),
+        "got: {err:?}"
+    );
+}
+
+#[test]
+fn rejects_unknown_reference_in_healthcheck() {
+    let yaml = r#"
+project:
+  name: app
+resources:
+  app:
+    container:
+      image: alpine
+      healthcheck:
+        test: ["CMD-SHELL", "check ${resources.missing.host}"]
+        interval: "5s"
+"#;
+    let err = Manifest::parse(yaml).expect_err("missing ref in healthcheck should be rejected");
+    assert!(
+        matches!(err, ManifestError::UnknownResource(_)),
+        "got: {err:?}"
+    );
+}
+
+#[test]
 fn accepts_omitted_lightshuttle_discriminator() {
     let yaml = r"
 project:
