@@ -9,6 +9,58 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 ### Added
 - _Items in flight will be listed here until the next release._
 
+## [0.2.0] - 2026-05-30
+
+Dashboard and observability release. Adds a local HTTP control plane with a web dashboard, live log and event streaming, a restart workflow, a bundled OpenTelemetry collector, orchestrator self-tracing and Prometheus metrics. Ships two new published crates and a round of network-surface hardening.
+
+### Added
+
+- New crate `lightshuttle-control` (#43): the local HTTP control plane and dashboard, served on `127.0.0.1`.
+  - `LifecycleHandle` trait and `ManagerHandle` adapter exposing the running stack without leaking runtime types (#44).
+  - HTTP control server wired into `up` with a `GET /healthz` probe (#45).
+  - REST API `GET /api/resources` and `GET /api/resources/{name}` (#46).
+  - WebSocket log streaming on `GET /ws/logs/{name}` (#47).
+  - `POST /api/resources/{name}/restart` plus a `GET /ws/events` lifecycle event stream (#49).
+  - Server-side rendered dashboard built with Askama and HTMX, with an embedded stylesheet and HTMX bundle (#50).
+- New crate `lightshuttle-otel` (#51): bundles the `otel/opentelemetry-collector` container, injects the standard `OTEL_*` environment variables into resources and exposes an `observability.otel` manifest section.
+  - Orchestrator self-tracing over OTLP and a Prometheus `/metrics` endpoint on the dashboard server (#52).
+- `restart_one` lifecycle primitive on `LifecycleManager`, with three ordered lifecycle events (#48).
+- `lightshuttle restart <resource>` CLI command that follows lifecycle events to completion, with a `--detach` flag (#49).
+- Optional `dashboard.port` manifest field (#45).
+
+### Changed
+
+- Dependency upgrades: `bollard` 0.18 to 0.21, `schemars` 0.8 to 1, `jsonschema` 0.17 to 0.46; `axum` gains the `ws` feature (#64). The generated JSON Schema now targets draft 2020-12.
+- The lifecycle event channel moved from `mpsc` to `broadcast` so multiple consumers (dashboard, CLI, metrics) can subscribe; `LifecycleEvent` gained `serde::Serialize`.
+- `LifecycleError::UnknownResource` was renamed to `LifecycleError::ResourceNotFound`.
+
+### Security
+
+- Published ports now bind to `127.0.0.1` by default instead of `0.0.0.0`, so managed services are not exposed to the wider network; a broader bind requires an explicit `address:host:container` mapping (#65).
+- Generated resource passwords now use a cryptographically secure random source (#66).
+- The control plane sets baseline security headers (`X-Content-Type-Options`, `X-Frame-Options`) and a same-origin Content Security Policy (#73).
+- The `restart` client validates that `.lightshuttle/control.url` points at a loopback address (parsed, not prefix matched) and disables HTTP redirects (#72).
+
+### Fixed
+
+- Container log chunks now carry the Docker emission timestamp instead of the read time, and the timestamp prefix is stripped from the forwarded bytes (#68).
+- `augment_manifest` no longer overwrites a user resource named `lightshuttle_otel` (#67).
+- The tracing subscriber is installed with `try_init`, returning an error instead of panicking on a double install (#69).
+- The metrics pump no longer leaks a pending entry when a resource fails before becoming healthy (#71).
+- The bundled collector healthcheck no longer always reports healthy; a crash now surfaces through the container exit status (#70).
+- Database identifier length is bounded to the PostgreSQL 63 byte limit (#75).
+- Interpolation references inside `command` and `healthcheck.test` are now validated statically (#76).
+
+### Documentation
+
+- `docs/spec/control-api.md` (REST and WebSocket surface), `docs/spec/observability.md` (spans and metrics) and `docs/tutorial/dashboard.md` (dashboard walkthrough).
+
+### Notes for upgraders
+
+- Two new crates are published: `lightshuttle-control` and `lightshuttle-otel`.
+- Managed services now bind to loopback by default. Use the explicit `address:host:container` port form to expose a service on another interface.
+- `LifecycleError::UnknownResource` is now `LifecycleError::ResourceNotFound`. This is a breaking change for direct consumers of `lightshuttle-runtime`.
+
 ## [0.1.0] - 2026-05-25
 
 First public release. Ships a local development orchestrator able to read a Cargo-style manifest, build and run a graph of Docker services with lifecycle management, signal handling and service discovery via environment variables.
@@ -54,5 +106,6 @@ First public release. Ships a local development orchestrator able to read a Carg
 
 This is the first published version, so no upgrade path applies.
 
-[Unreleased]: https://github.com/nubster-opensources/lightshuttle/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/nubster-opensources/lightshuttle/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/nubster-opensources/lightshuttle/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/nubster-opensources/lightshuttle/releases/tag/v0.1.0
