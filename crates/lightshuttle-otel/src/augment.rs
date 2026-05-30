@@ -36,7 +36,19 @@ pub fn is_enabled(manifest: &Manifest) -> bool {
 ///   injects the `OTel` env keys without overriding user-defined
 ///   values, and adds an implicit `depends_on` on the collector so
 ///   the runtime starts it before the dependents.
+///
+/// If the manifest already declares a resource under the reserved
+/// [`SYNTHETIC_RESOURCE_NAME`], augmentation is skipped entirely so the
+/// user resource is never silently overwritten and no self-referential
+/// `depends_on` is produced.
 pub fn augment_manifest(manifest: &mut Manifest, config: &CollectorConfig) {
+    if manifest.resources.contains_key(SYNTHETIC_RESOURCE_NAME) {
+        tracing::warn!(
+            reserved = SYNTHETIC_RESOURCE_NAME,
+            "manifest declares a resource using the reserved OTel collector name; skipping OTel augmentation"
+        );
+        return;
+    }
     inject_into_resources(manifest, config);
     prepend_collector_resource(manifest, config);
 }
@@ -210,5 +222,34 @@ resources:
             api.env.get(OTEL_SERVICE_NAME).map(String::as_str),
             Some("custom-service")
         );
+    }
+
+    #[test]
+    fn augment_skips_when_user_owns_the_reserved_name() {
+        let mut manifest = parse(
+            r"
+project:
+  name: demo
+resources:
+  lightshuttle_otel:
+    container:
+      image: my/own-collector:1.0
+",
+        );
+        let cfg = CollectorConfig::defaults();
+        augment_manifest(&mut manifest, &cfg);
+
+        // The user resource is untouched: same count, same image, no
+        // self-referential depends_on.
+        assert_eq!(manifest.resources.len(), 1);
+        let owned = manifest
+            .resources
+            .get(SYNTHETIC_RESOURCE_NAME)
+            .expect("user resource preserved");
+        let ResourceKind::Container(owned) = owned else {
+            panic!("expected container resource");
+        };
+        assert_eq!(owned.image, "my/own-collector:1.0");
+        assert!(owned.depends_on.is_empty());
     }
 }
