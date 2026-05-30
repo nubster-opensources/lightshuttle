@@ -31,6 +31,7 @@ ignore.workspace = true
 bytes.workspace = true
 indexmap.workspace = true
 serde.workspace = true
+rand.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
