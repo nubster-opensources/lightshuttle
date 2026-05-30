@@ -76,7 +76,8 @@ pub fn init_orchestrator_tracer(endpoint: &str, service: &str) -> Result<TracerG
                 .compact(),
         )
         .with(otel_layer)
-        .init();
+        .try_init()
+        .context("a global tracing subscriber is already installed")?;
 
     Ok(TracerGuard { provider })
 }

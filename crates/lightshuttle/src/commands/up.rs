@@ -146,6 +146,11 @@ where
                         observe_event_duration(started.elapsed().as_secs_f64());
                     }
                 }
+                Ok(LifecycleEvent::ResourceFailed { name, .. }) => {
+                    // Drop the pending entry so a crash-looping resource
+                    // does not leak a map entry on every restart.
+                    pending.remove(&name);
+                }
                 Err(RecvError::Closed) => break,
                 Ok(_) | Err(RecvError::Lagged(_)) => {}
             }
