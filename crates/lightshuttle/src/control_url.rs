@@ -35,7 +35,10 @@ pub(crate) fn write(cwd: &Path, url: &str) -> io::Result<PathBuf> {
 /// Read the URL recorded in `<cwd>/.lightshuttle/control.url`.
 ///
 /// Trims trailing whitespace (typically the newline added by `write`)
-/// and surfaces an error when the file is missing or empty.
+/// and surfaces an error when the file is missing, empty, or does not
+/// point at a loopback address. The loopback check stops a forged
+/// discovery file from redirecting client requests to an arbitrary
+/// host.
 pub(crate) fn read(cwd: &Path) -> io::Result<String> {
     let path = path_at(cwd);
     let raw = fs::read_to_string(&path)?;
@@ -46,7 +49,21 @@ pub(crate) fn read(cwd: &Path) -> io::Result<String> {
             format!("{} is empty", path.display()),
         ));
     }
+    if !is_loopback_url(&trimmed) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "{} points at a non-loopback address: {trimmed}",
+                path.display()
+            ),
+        ));
+    }
     Ok(trimmed)
+}
+
+/// Whether `url` is an `http` URL targeting the IPv4 or IPv6 loopback.
+fn is_loopback_url(url: &str) -> bool {
+    url.starts_with("http://127.0.0.1:") || url.starts_with("http://[::1]:")
 }
 
 /// Remove the discovery file if it exists. Errors other than
@@ -101,5 +118,23 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let err = read(dir.path()).expect_err("missing file is an error");
         assert_eq!(err.kind(), io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn read_rejects_a_non_loopback_url() {
+        let dir = tempdir().expect("tempdir");
+        write(dir.path(), "http://evil.example.com:80/").expect("write");
+
+        let err = read(dir.path()).expect_err("non-loopback url is rejected");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn read_accepts_ipv6_loopback() {
+        let dir = tempdir().expect("tempdir");
+        let url = "http://[::1]:54321/";
+        write(dir.path(), url).expect("write");
+
+        assert_eq!(read(dir.path()).expect("read"), url);
     }
 }
