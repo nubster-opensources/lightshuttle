@@ -553,32 +553,47 @@ fn split_duration(input: &str) -> Option<(&str, &str)> {
     Some((&input[..idx], &input[idx..]))
 }
 
-/// Generate a 24-character alphanumeric password using a basic pseudo
-/// random source seeded from the system clock.
+/// Generate a 24-character alphanumeric password from a cryptographically
+/// secure random source.
 ///
-/// This is acceptable for local dev where the password is exposed
-/// through `lightshuttle ps`; production export will require an
+/// The alphabet excludes visually ambiguous characters (`0`, `O`, `1`,
+/// `I`, `l`). The password is for local development and is surfaced
+/// through `lightshuttle ps`; production export still requires an
 /// explicit password.
-#[allow(clippy::cast_possible_truncation)]
 fn generate_random_password() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use rand::Rng;
 
     const ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
     const LEN: usize = 24;
 
-    let mut seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0xDEAD_BEEF);
+    let mut rng = rand::rng();
+    (0..LEN)
+        .map(|_| ALPHABET[rng.random_range(0..ALPHABET.len())] as char)
+        .collect()
+}
 
-    let mut out = String::with_capacity(LEN);
-    for _ in 0..LEN {
-        // Xorshift64 step.
-        seed ^= seed << 13;
-        seed ^= seed >> 7;
-        seed ^= seed << 17;
-        let idx = (seed as usize) % ALPHABET.len();
-        out.push(ALPHABET[idx] as char);
+#[cfg(test)]
+mod tests {
+    use super::generate_random_password;
+
+    #[test]
+    fn generated_password_has_expected_shape() {
+        let password = generate_random_password();
+        assert_eq!(password.len(), 24);
+        assert!(
+            password
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() && !"0O1Il".contains(c)),
+            "password must be unambiguous alphanumeric, got `{password}`"
+        );
     }
-    out
+
+    #[test]
+    fn generated_passwords_are_distinct() {
+        // A clock-seeded generator would collide for calls within the
+        // same instant; a CSPRNG must not.
+        let first = generate_random_password();
+        let second = generate_random_password();
+        assert_ne!(first, second);
+    }
 }

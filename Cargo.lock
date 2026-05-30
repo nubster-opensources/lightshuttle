@@ -1351,6 +1351,7 @@ dependencies = [
  "ignore",
  "indexmap 2.14.0",
  "lightshuttle-manifest",
+ "rand 0.9.4",
  "serde",
  "tar",
  "tempfile",
