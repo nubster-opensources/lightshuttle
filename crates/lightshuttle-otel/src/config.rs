@@ -1,9 +1,8 @@
 //! OpenTelemetry collector configuration.
 
 use std::collections::HashMap;
-use std::time::Duration;
 
-use lightshuttle_runtime::{ContainerSpec, HealthcheckSpec, ImageSource, PortBinding};
+use lightshuttle_runtime::{ContainerSpec, ImageSource, PortBinding};
 
 /// Resource name used for the bundled collector inside the lifecycle
 /// plan. Stable so dependents can refer to it via the standard
@@ -81,18 +80,15 @@ impl CollectorConfig {
             ],
             volumes: Vec::new(),
             command: None,
-            healthcheck: Some(HealthcheckSpec {
-                test: vec![
-                    "CMD-SHELL".to_owned(),
-                    format!(
-                        "wget -qO- http://127.0.0.1:{DEFAULT_OTLP_HTTP_PORT}/ > /dev/null 2>&1 || exit 0"
-                    ),
-                ],
-                interval: Duration::from_secs(5),
-                timeout: Duration::from_secs(3),
-                retries: 3,
-                start_period: Duration::from_secs(2),
-            }),
+            // No Docker healthcheck. The previous `... || exit 0` probe
+            // always reported healthy and masked a crashed collector. The
+            // collector image runs `--config=builtin:default-config`,
+            // which does not enable the health_check extension, so there
+            // is no reliable HTTP probe to target. A crash is instead
+            // surfaced through the container exit status: `wait_healthy`
+            // observes a stopped container and fails rather than passing
+            // a dead collector off as healthy.
+            healthcheck: None,
         }
     }
 }
