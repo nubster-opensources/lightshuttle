@@ -41,6 +41,7 @@ bytes = "1"
 humantime = "2"
 rand = "0.9"
 url = "2"
+jiff = { version = "0.2", default-features = false, features = ["std"] }
 axum = "0.8"
 tower = "0.5"
 owo-colors = "4"
