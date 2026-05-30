@@ -246,3 +246,35 @@ async fn assets_serve_embedded_css_and_htmx_with_cache_headers() {
     // HTMX 2.x bundles always reference the lib name in their body.
     assert!(bytes.len() > 10_000);
 }
+
+#[tokio::test]
+async fn responses_carry_baseline_security_headers() {
+    let app = build_app(vec![sample(
+        "cache",
+        "redis",
+        ResourceStatus::Running,
+        true,
+    )]);
+
+    let response = app
+        .oneshot(
+            Request::get("/")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+
+    let headers = response.headers();
+    assert_eq!(
+        headers.get(header::X_CONTENT_TYPE_OPTIONS).unwrap(),
+        "nosniff"
+    );
+    assert_eq!(headers.get(header::X_FRAME_OPTIONS).unwrap(), "DENY");
+    let csp = headers
+        .get(header::CONTENT_SECURITY_POLICY)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    assert!(csp.contains("default-src 'self'"), "got CSP: {csp}");
+    assert!(csp.contains("frame-ancestors 'none'"), "got CSP: {csp}");
+}
