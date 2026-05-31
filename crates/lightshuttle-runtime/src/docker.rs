@@ -13,8 +13,8 @@ use bollard::models::{
 };
 use bollard::query_parameters::{
     BuildImageOptionsBuilder, CreateContainerOptionsBuilder, CreateImageOptionsBuilder,
-    ListContainersOptionsBuilder, LogsOptionsBuilder, StartContainerOptions,
-    StopContainerOptionsBuilder,
+    ListContainersOptionsBuilder, LogsOptionsBuilder, RemoveContainerOptionsBuilder,
+    StartContainerOptions, StopContainerOptionsBuilder,
 };
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
@@ -254,6 +254,20 @@ impl ContainerRuntime for DockerRuntime {
             }) => Ok(()),
             Err(e) => Err(RuntimeError::Stop {
                 id: id.to_string(),
+                source: e,
+            }),
+        }
+    }
+
+    async fn remove(&self, name: &str) -> Result<()> {
+        let options = RemoveContainerOptionsBuilder::default().force(true).build();
+        match self.client.remove_container(name, Some(options)).await {
+            Ok(())
+            | Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 404, ..
+            }) => Ok(()),
+            Err(e) => Err(RuntimeError::Remove {
+                name: name.to_owned(),
                 source: e,
             }),
         }

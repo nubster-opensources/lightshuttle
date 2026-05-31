@@ -108,6 +108,18 @@ impl ContainerRuntime for MockRuntime {
                 spec.name
             )));
         }
+        let id = ContainerId::new(format!("mock-{}", spec.name));
+        if self
+            .state
+            .lock()
+            .expect("state mutex poisoned")
+            .contains_key(id.as_str())
+        {
+            return Err(RuntimeError::InvalidSpec(format!(
+                "container name `{}` already in use",
+                spec.name
+            )));
+        }
         self.start_order
             .lock()
             .expect("start_order mutex poisoned")
@@ -116,7 +128,6 @@ impl ContainerRuntime for MockRuntime {
             .lock()
             .expect("started_specs mutex poisoned")
             .push(spec.clone());
-        let id = ContainerId::new(format!("mock-{}", spec.name));
         self.state.lock().expect("state mutex poisoned").insert(
             id.as_str().to_owned(),
             MockContainer {
@@ -138,6 +149,14 @@ impl ContainerRuntime for MockRuntime {
                 .expect("stop_order mutex poisoned")
                 .push(c.name.clone());
         }
+        Ok(())
+    }
+
+    async fn remove(&self, name: &str) -> Result<(), RuntimeError> {
+        self.state
+            .lock()
+            .expect("state mutex poisoned")
+            .remove(&format!("mock-{name}"));
         Ok(())
     }
 
