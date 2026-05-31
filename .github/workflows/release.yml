@@ -107,8 +107,8 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          awk -v v="[$VERSION]" '
-            $0 ~ "^## " v {flag=1; next}
+          awk -v v="## [$VERSION]" '
+            index($0, v) == 1 {flag=1; next}
             /^## \[/ {flag=0}
             flag {print}
           ' CHANGELOG.md > release-notes.md
