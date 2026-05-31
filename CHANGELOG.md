@@ -43,6 +43,7 @@ Dashboard and observability release. Adds a local HTTP control plane with a web 
 
 ### Fixed
 
+- Starting a resource now removes any container left over from a previous run before recreating it, so a second `up` or a `restart` no longer fails with a name conflict (#82).
 - Container log chunks now carry the Docker emission timestamp instead of the read time, and the timestamp prefix is stripped from the forwarded bytes (#68).
 - `augment_manifest` no longer overwrites a user resource named `lightshuttle_otel` (#67).
 - The tracing subscriber is installed with `try_init`, returning an error instead of panicking on a double install (#69).

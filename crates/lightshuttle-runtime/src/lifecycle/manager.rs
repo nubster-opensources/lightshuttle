@@ -415,8 +415,24 @@ async fn start_one<R: ContainerRuntime + 'static>(
         }
     };
 
-    // 4. Start the container.
+    // 4. Remove any container left over from a previous run so the
+    //    create call below never collides with a stale name.
     let _ = handle.status_tx.send(NodeStatus::Starting);
+    if let Err(source) = runtime.remove(&resolved_spec.name).await {
+        let _ = handle.status_tx.send(NodeStatus::Failed {
+            reason: source.to_string(),
+        });
+        let _ = event_tx.send(LifecycleEvent::ResourceFailed {
+            name: name.clone(),
+            error: source.to_string(),
+        });
+        return Err(LifecycleError::Start {
+            resource: name,
+            source,
+        });
+    }
+
+    // 5. Start the container.
     let id = match runtime.start(&resolved_spec).await {
         Ok(id) => id,
         Err(source) => {
@@ -451,7 +467,7 @@ async fn start_one<R: ContainerRuntime + 'static>(
         container_id: id.to_string(),
     });
 
-    // 5. Wait for the healthcheck.
+    // 6. Wait for the healthcheck.
     let wait_span = info_span!("wait_healthy", resource = %name);
     match runtime
         .wait_healthy(&id, DEFAULT_HEALTHCHECK_TIMEOUT)

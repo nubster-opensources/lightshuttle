@@ -108,6 +108,15 @@ pub trait ContainerRuntime: Send + Sync {
         grace: Duration,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
+    /// Remove a container by name, forcing removal even if it is still
+    /// running. Idempotent: removing a container that does not exist is a
+    /// no-op. Named volumes are preserved.
+    ///
+    /// The lifecycle manager calls this before every `start` so that a
+    /// re-up or restart replaces the previous container instead of
+    /// colliding with its name.
+    fn remove(&self, name: &str) -> impl std::future::Future<Output = Result<()>> + Send;
+
     /// Report the current status of a container.
     fn inspect(
         &self,

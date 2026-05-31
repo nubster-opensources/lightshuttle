@@ -37,6 +37,16 @@ pub enum RuntimeError {
         source: bollard::errors::Error,
     },
 
+    /// The runtime refused to remove a container.
+    #[error("failed to remove container `{name}`")]
+    Remove {
+        /// Name of the container that could not be removed.
+        name: String,
+        /// Underlying error from the container daemon.
+        #[source]
+        source: bollard::errors::Error,
+    },
+
     /// The runtime could not inspect a container.
     #[error("failed to inspect container `{id}`")]
     Inspect {
