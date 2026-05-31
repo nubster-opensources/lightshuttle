@@ -82,10 +82,32 @@ makes the binary feel like a native command. We deliberately did
 the legacy [GNU lsh][gnu-lsh] SSH client still packaged on some Linux
 distributions, but you can opt in if your environment is free of it.
 
-> A future `lightshuttle alias install` subcommand will automate the
-> detection and the rc-file edit described below. Tracked as
-> [issue #40](https://github.com/nubster-opensources/lightshuttle/issues/40)
-> for v0.2.0. Until it ships, follow the manual procedure.
+### Automatic setup (recommended)
+
+`lightshuttle alias install` detects your shell, refuses to run when a
+conflicting `lsh` executable is on your `PATH`, and writes the alias to
+the right startup file:
+
+```sh
+$ lightshuttle alias install
+Detected shell: zsh
+Will add `alias lsh='lightshuttle'` to /home/you/.zshrc
+Proceed? [y/N]: y
+ok: added `lsh` alias. Restart your shell or reload /home/you/.zshrc
+```
+
+It is idempotent, so re-running it is a no-op. Companion commands:
+
+- `lightshuttle alias check` reports what `install` would do without
+  writing anything.
+- `lightshuttle alias uninstall` removes the alias.
+- `--shell <bash|zsh|fish|powershell>` overrides auto-detection and
+  `--yes` skips the prompt for scripts and CI.
+
+`cmd.exe` has no startup file, so there it stays manual; use PowerShell
+or the `.bat` shim described below.
+
+The rest of this section documents the manual procedure for reference.
 
 [gnu-lsh]: https://www.lysator.liu.se/~nisse/lsh/
 

@@ -26,6 +26,7 @@ Dashboard and observability release. Adds a local HTTP control plane with a web 
   - Orchestrator self-tracing over OTLP and a Prometheus `/metrics` endpoint on the dashboard server (#52).
 - `restart_one` lifecycle primitive on `LifecycleManager`, with three ordered lifecycle events (#48).
 - `lightshuttle restart <resource>` CLI command that follows lifecycle events to completion, with a `--detach` flag (#49).
+- `lightshuttle alias` command (`install`/`check`/`uninstall`) that manages the optional `lsh` shell alias: detects bash, zsh, fish and PowerShell, refuses to shadow a conflicting `lsh` on the PATH, and edits the startup file idempotently (#40).
 - Optional `dashboard.port` manifest field (#45).
 
 ### Changed

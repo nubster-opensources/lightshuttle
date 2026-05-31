@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
+use crate::commands::alias::shell::Shell;
+
 /// Top-level CLI.
 #[derive(Debug, Parser)]
 #[command(
@@ -86,5 +88,45 @@ pub(crate) enum Command {
         /// healthy again.
         #[arg(long)]
         detach: bool,
+    },
+
+    /// Manage the optional `lsh` shell alias.
+    Alias {
+        /// Action to perform.
+        #[command(subcommand)]
+        action: AliasAction,
+    },
+}
+
+/// Actions for the `alias` subcommand.
+#[derive(Debug, Subcommand)]
+pub(crate) enum AliasAction {
+    /// Add the `lsh` alias to your shell's startup file.
+    Install {
+        /// Override shell auto-detection.
+        #[arg(long)]
+        shell: Option<Shell>,
+
+        /// Skip the confirmation prompt.
+        #[arg(long)]
+        yes: bool,
+    },
+
+    /// Report what `install` would do, without writing anything.
+    Check {
+        /// Override shell auto-detection.
+        #[arg(long)]
+        shell: Option<Shell>,
+    },
+
+    /// Remove the `lsh` alias from your shell's startup file.
+    Uninstall {
+        /// Override shell auto-detection.
+        #[arg(long)]
+        shell: Option<Shell>,
+
+        /// Skip the confirmation prompt.
+        #[arg(long)]
+        yes: bool,
     },
 }

@@ -71,6 +71,7 @@ async fn run(cli: Cli) -> anyhow::Result<ExitOutcome> {
             commands::manifest::run(&manifest)
         }
         Command::Restart { resource, detach } => commands::restart::run(&resource, detach).await,
+        Command::Alias { action } => commands::alias::run(&action),
     }
 }
 
