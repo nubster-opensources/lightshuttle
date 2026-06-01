@@ -5,6 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::dashboard::DashboardConfig;
+use super::export::ExportConfig;
 use super::observability::ObservabilityConfig;
 use super::resource::ResourceKind;
 
@@ -26,6 +27,11 @@ pub struct Manifest {
     /// Optional observability settings (collector toggle, ...).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub observability: Option<ObservabilityConfig>,
+
+    /// Optional export settings (per-target overrides for
+    /// `lightshuttle export`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub export: Option<ExportConfig>,
 
     /// Declared resources, keyed by name.
     pub resources: IndexMap<String, ResourceKind>,

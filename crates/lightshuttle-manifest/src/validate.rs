@@ -31,8 +31,42 @@ impl Manifest {
         validate_dependency_graph(&self.resources)?;
         validate_references(self)?;
         validate_dashboard(self)?;
+        validate_export_targets(self)?;
         Ok(())
     }
+}
+
+fn validate_export_targets(manifest: &Manifest) -> Result<()> {
+    let Some(export) = &manifest.export else {
+        return Ok(());
+    };
+    let known: HashSet<&str> = manifest.resources.keys().map(String::as_str).collect();
+
+    let mut overrides: Vec<(&str, &String)> = Vec::new();
+    if let Some(compose) = &export.compose {
+        overrides.extend(compose.resources.keys().map(|n| ("export.compose", n)));
+    }
+    if let Some(kubernetes) = &export.kubernetes {
+        overrides.extend(
+            kubernetes
+                .resources
+                .keys()
+                .map(|n| ("export.kubernetes", n)),
+        );
+    }
+    if let Some(helm) = &export.helm {
+        overrides.extend(helm.resources.keys().map(|n| ("export.helm", n)));
+    }
+
+    for (target, name) in overrides {
+        if !known.contains(name.as_str()) {
+            return Err(ManifestError::UnknownResource(format!(
+                "`{name}` (referenced from `{target}.resources`)"
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 fn validate_dashboard(manifest: &Manifest) -> Result<()> {
