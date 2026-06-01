@@ -58,6 +58,13 @@ jobs:
         if: steps.mode.outputs.is_dry == 'false'
         run: sleep 30
 
+      - name: Publish lightshuttle-spec
+        run: cargo publish -p lightshuttle-spec ${{ steps.mode.outputs.args }} --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+
+      - name: Wait for index propagation
+        if: steps.mode.outputs.is_dry == 'false'
+        run: sleep 30
+
       - name: Publish lightshuttle-runtime
         run: cargo publish -p lightshuttle-runtime ${{ steps.mode.outputs.args }} --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
 

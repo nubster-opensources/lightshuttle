@@ -6,7 +6,7 @@ use std::time::{Duration, SystemTime};
 use futures::stream::Stream;
 
 use crate::error::Result;
-use crate::spec::ContainerSpec;
+use lightshuttle_spec::ContainerSpec;
 
 /// Opaque identifier for a container managed by the runtime.
 ///

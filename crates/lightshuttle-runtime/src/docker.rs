@@ -23,7 +23,7 @@ use crate::error::{Result, RuntimeError};
 use crate::runtime::{
     ContainerId, ContainerRuntime, ContainerStatus, LogChunk, LogChunkStream, LogStream,
 };
-use crate::spec::{
+use lightshuttle_spec::{
     ContainerSpec, HealthcheckSpec, ImageSource, PortBinding, VolumeBinding, VolumeSource,
 };
 

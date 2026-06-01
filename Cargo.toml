@@ -6,6 +6,7 @@ members = [
     "crates/lightshuttle-manifest",
     "crates/lightshuttle-otel",
     "crates/lightshuttle-runtime",
+    "crates/lightshuttle-spec",
     "xtask",
 ]
 

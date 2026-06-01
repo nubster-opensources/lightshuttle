@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use lightshuttle_manifest::Manifest;
 
 use crate::lifecycle::error::LifecycleError;
-use crate::spec::{ContainerSpec, ResolvedResource, ResourceOutputs, from_resource};
+use lightshuttle_spec::{ContainerSpec, ResolvedResource, ResourceOutputs, from_resource};
 
 /// A single resource to manage, with its resolved [`ContainerSpec`],
 /// its exposed outputs and its explicit dependencies.
