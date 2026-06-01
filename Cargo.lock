@@ -1376,6 +1376,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightshuttle-export"
+version = "0.2.0"
+dependencies = [
+ "indexmap 2.14.0",
+ "lightshuttle-manifest",
+ "lightshuttle-spec",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "lightshuttle-manifest"
 version = "0.2.0"
 dependencies = [
