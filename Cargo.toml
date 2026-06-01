@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/lightshuttle",
     "crates/lightshuttle-control",
+    "crates/lightshuttle-export",
     "crates/lightshuttle-manifest",
     "crates/lightshuttle-otel",
     "crates/lightshuttle-runtime",
