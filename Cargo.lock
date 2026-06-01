@@ -1377,13 +1377,23 @@ dependencies = [
  "indexmap 2.14.0",
  "jiff",
  "lightshuttle-manifest",
- "rand 0.9.4",
+ "lightshuttle-spec",
  "serde",
  "tar",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "lightshuttle-spec"
+version = "0.2.0"
+dependencies = [
+ "indexmap 2.14.0",
+ "lightshuttle-manifest",
+ "rand 0.9.4",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

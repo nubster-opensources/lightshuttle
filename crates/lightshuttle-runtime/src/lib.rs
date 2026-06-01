@@ -27,15 +27,14 @@ pub use crate::lifecycle::{
 pub use crate::runtime::{
     ContainerId, ContainerRuntime, ContainerStatus, LogChunk, LogChunkStream, LogStream,
 };
-pub use crate::spec::{
+pub use lightshuttle_spec::{
     ContainerSpec, HealthcheckSpec, ImageSource, PortBinding, ResolvedResource, ResourceOutputs,
-    VolumeBinding, VolumeSource, from_resource,
+    SpecError, VolumeBinding, VolumeSource, from_resource,
 };
 
 mod docker;
 mod error;
 mod lifecycle;
 mod runtime;
-mod spec;
 
 pub mod testkit;

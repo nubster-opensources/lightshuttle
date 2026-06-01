@@ -10,7 +10,7 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 
 use crate::lifecycle::status::NodeStatus;
-use crate::spec::ImageSource;
+use lightshuttle_spec::ImageSource;
 
 /// Dashboard-friendly view of a single managed resource.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

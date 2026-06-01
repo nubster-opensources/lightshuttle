@@ -21,6 +21,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 lightshuttle-manifest = { version = "0.2.0", path = "../lightshuttle-manifest" }
+lightshuttle-spec = { version = "0.2.0", path = "../lightshuttle-spec" }
 bollard.workspace = true
 tokio.workspace = true
 tracing.workspace = true
@@ -31,7 +32,6 @@ ignore.workspace = true
 bytes.workspace = true
 indexmap.workspace = true
 serde.workspace = true
-rand.workspace = true
 jiff.workspace = true
 
 [dev-dependencies]

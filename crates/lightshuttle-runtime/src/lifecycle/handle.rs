@@ -157,9 +157,11 @@ impl<R: ContainerRuntime + 'static> LifecycleHandle for ManagerHandle<R> {
                 LifecycleHandleError::UnknownResource(name)
             }
             crate::LifecycleError::Start { source, .. }
-            | crate::LifecycleError::Stop { source, .. }
-            | crate::LifecycleError::SpecBuild { source, .. } => {
+            | crate::LifecycleError::Stop { source, .. } => {
                 LifecycleHandleError::Runtime(source)
+            }
+            crate::LifecycleError::SpecBuild { source, .. } => {
+                LifecycleHandleError::Runtime(RuntimeError::InvalidSpec(source.to_string()))
             }
             other => LifecycleHandleError::Runtime(RuntimeError::InvalidSpec(other.to_string())),
         })

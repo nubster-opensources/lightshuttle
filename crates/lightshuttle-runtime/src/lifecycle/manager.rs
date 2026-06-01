@@ -19,7 +19,7 @@ use crate::lifecycle::error::LifecycleError;
 use crate::lifecycle::plan::LifecyclePlan;
 use crate::lifecycle::status::{LifecycleEvent, NodeStatus};
 use crate::runtime::{ContainerId, ContainerRuntime};
-use crate::spec::{ContainerSpec, ResourceOutputs};
+use lightshuttle_spec::{ContainerSpec, ResourceOutputs};
 
 /// Default healthcheck timeout, applied when the manifest does not
 /// provide one of its own. Kept conservative for v0.1.

@@ -18,7 +18,7 @@ use futures::stream::{Stream, StreamExt};
 
 use crate::error::RuntimeError;
 use crate::runtime::{ContainerId, ContainerRuntime, ContainerStatus, LogChunk, LogChunkStream};
-use crate::spec::ContainerSpec;
+use lightshuttle_spec::ContainerSpec;
 
 /// In-memory [`ContainerRuntime`] for tests.
 ///

@@ -3,6 +3,8 @@
 
 use std::time::Duration;
 
+use lightshuttle_spec::SpecError;
+
 use crate::error::RuntimeError;
 
 /// Errors raised by the lifecycle layer.
@@ -17,9 +19,9 @@ pub enum LifecycleError {
     SpecBuild {
         /// Resource whose conversion failed.
         resource: String,
-        /// Underlying runtime error.
+        /// Underlying specification error.
         #[source]
-        source: RuntimeError,
+        source: SpecError,
     },
 
     /// A resource failed to start.

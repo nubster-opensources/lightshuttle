@@ -10,7 +10,7 @@ use lightshuttle_manifest::{
     RedisConfig, ResourceKind, Volume,
 };
 
-use crate::error::{Result, RuntimeError};
+use crate::error::{Result, SpecError};
 
 /// Properties a managed resource exposes to its dependents.
 ///
@@ -447,11 +447,11 @@ fn parse_port_string(input: &str) -> Result<PortBinding> {
     let parts: Vec<&str> = input.split(':').collect();
     match parts.as_slice() {
         [host_port, container_port] => {
-            let host_port: u16 = host_port.parse().map_err(|_| {
-                RuntimeError::InvalidSpec(format!("invalid host port `{host_port}`"))
-            })?;
+            let host_port: u16 = host_port
+                .parse()
+                .map_err(|_| SpecError::InvalidSpec(format!("invalid host port `{host_port}`")))?;
             let container_port: u16 = container_port.parse().map_err(|_| {
-                RuntimeError::InvalidSpec(format!("invalid container port `{container_port}`"))
+                SpecError::InvalidSpec(format!("invalid container port `{container_port}`"))
             })?;
             Ok(PortBinding {
                 container_port,
@@ -460,11 +460,11 @@ fn parse_port_string(input: &str) -> Result<PortBinding> {
             })
         }
         [host_address, host_port, container_port] => {
-            let host_port: u16 = host_port.parse().map_err(|_| {
-                RuntimeError::InvalidSpec(format!("invalid host port `{host_port}`"))
-            })?;
+            let host_port: u16 = host_port
+                .parse()
+                .map_err(|_| SpecError::InvalidSpec(format!("invalid host port `{host_port}`")))?;
             let container_port: u16 = container_port.parse().map_err(|_| {
-                RuntimeError::InvalidSpec(format!("invalid container port `{container_port}`"))
+                SpecError::InvalidSpec(format!("invalid container port `{container_port}`"))
             })?;
             Ok(PortBinding {
                 container_port,
@@ -472,7 +472,7 @@ fn parse_port_string(input: &str) -> Result<PortBinding> {
                 host_port,
             })
         }
-        _ => Err(RuntimeError::InvalidSpec(format!(
+        _ => Err(SpecError::InvalidSpec(format!(
             "invalid port mapping `{input}`"
         ))),
     }
@@ -480,7 +480,7 @@ fn parse_port_string(input: &str) -> Result<PortBinding> {
 
 fn parse_volume_string(input: &str) -> Result<VolumeBinding> {
     let (source, target) = input.split_once(':').ok_or_else(|| {
-        RuntimeError::InvalidSpec(format!(
+        SpecError::InvalidSpec(format!(
             "invalid volume mapping `{input}`: expected `src:target`"
         ))
     })?;
@@ -515,10 +515,10 @@ fn parse_healthcheck(hc: &Healthcheck) -> Result<HealthcheckSpec> {
 fn parse_duration(input: &str) -> Result<Duration> {
     let trimmed = input.trim();
     let (digits, unit) = split_duration(trimmed)
-        .ok_or_else(|| RuntimeError::InvalidSpec(format!("invalid duration `{input}`")))?;
+        .ok_or_else(|| SpecError::InvalidSpec(format!("invalid duration `{input}`")))?;
     let value: f64 = digits
         .parse()
-        .map_err(|_| RuntimeError::InvalidSpec(format!("invalid duration `{input}`")))?;
+        .map_err(|_| SpecError::InvalidSpec(format!("invalid duration `{input}`")))?;
     let nanos = match unit {
         "ns" => value,
         "us" => value * 1_000.0,
@@ -527,13 +527,13 @@ fn parse_duration(input: &str) -> Result<Duration> {
         "m" => value * 60.0 * 1_000_000_000.0,
         "h" => value * 3_600.0 * 1_000_000_000.0,
         _ => {
-            return Err(RuntimeError::InvalidSpec(format!(
+            return Err(SpecError::InvalidSpec(format!(
                 "invalid duration unit `{unit}`"
             )));
         }
     };
     if nanos.is_sign_negative() || !nanos.is_finite() {
-        return Err(RuntimeError::InvalidSpec(format!(
+        return Err(SpecError::InvalidSpec(format!(
             "invalid duration `{input}`"
         )));
     }
