@@ -34,5 +34,5 @@ tracing.workspace = true
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
 tower = { workspace = true, features = ["util"] }
-tokio-tungstenite = "0.27"
+tokio-tungstenite = "0.29"
 http-body-util = "0.1"
