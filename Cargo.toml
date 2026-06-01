@@ -55,7 +55,7 @@ opentelemetry-otlp = { version = "0.27", default-features = false, features = ["
 opentelemetry-semantic-conventions = "0.32"
 tracing-opentelemetry = "0.28"
 metrics = "0.24"
-metrics-exporter-prometheus = { version = "0.16", default-features = false }
+metrics-exporter-prometheus = { version = "0.18", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
