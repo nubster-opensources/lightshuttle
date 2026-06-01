@@ -24,3 +24,8 @@ lightshuttle-manifest = { version = "0.2.0", path = "../lightshuttle-manifest" }
 lightshuttle-spec = { version = "0.2.0", path = "../lightshuttle-spec" }
 indexmap.workspace = true
 thiserror.workspace = true
+serde.workspace = true
+serde_norway.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

@@ -1382,6 +1382,9 @@ dependencies = [
  "indexmap 2.14.0",
  "lightshuttle-manifest",
  "lightshuttle-spec",
+ "serde",
+ "serde_norway",
+ "tempfile",
  "thiserror 2.0.18",
 ]
 
