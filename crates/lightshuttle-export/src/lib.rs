@@ -12,12 +12,14 @@
 //! way on a developer machine or in CI without Docker.
 
 mod emit;
+mod emitters;
 mod error;
 mod lower;
 mod model;
 pub mod resolve;
 
 pub use crate::emit::Emitter;
+pub use crate::emitters::ComposeEmitter;
 pub use crate::error::{ExportError, Result};
 pub use crate::lower::lower;
 pub use crate::model::{
