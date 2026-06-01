@@ -15,6 +15,17 @@
         }
       ]
     },
+    "export": {
+      "description": "Optional export settings (per-target overrides for\n`lightshuttle export`).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ExportConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "lightshuttle": {
       "description": "Optional manifest version discriminator. Absent means `v0`.",
       "anyOf": [
@@ -70,6 +81,34 @@
           }
         }
       ]
+    },
+    "ComposeExport": {
+      "description": "Overrides applied when exporting to `docker-compose`.",
+      "type": "object",
+      "properties": {
+        "resources": {
+          "description": "Per-resource overrides, keyed by manifest resource name.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ComposeResourceExport"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ComposeResourceExport": {
+      "description": "Per-resource overrides for the `docker-compose` target.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "When `Some(false)`, the resource is omitted from the export.\nAbsent or `Some(true)` keeps it.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
     },
     "ContainerConfig": {
       "description": "Configuration of a container resource pulled from a registry.",
@@ -249,6 +288,46 @@
         "context"
       ]
     },
+    "ExportConfig": {
+      "description": "Top-level `export` settings, one optional sub-table per target.",
+      "type": "object",
+      "properties": {
+        "compose": {
+          "description": "Overrides for the `docker-compose` target.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ComposeExport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "helm": {
+          "description": "Overrides for the Helm chart target.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HelmExport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kubernetes": {
+          "description": "Overrides for the Kubernetes manifests target.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KubernetesExport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "Healthcheck": {
       "description": "Per-resource healthcheck configuration.\n\nThe field semantics mirror those used by Docker Compose so that\ndevelopers already familiar with `docker-compose.yml` translate their\nknowledge directly to LightShuttle manifests.",
       "type": "object",
@@ -287,6 +366,161 @@
       "required": [
         "test"
       ]
+    },
+    "HelmExport": {
+      "description": "Overrides applied when exporting to a Helm chart.",
+      "type": "object",
+      "properties": {
+        "chart_name": {
+          "description": "Chart name. Defaults to the project name during lowering.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "chart_version": {
+          "description": "Chart version. Defaults to the project version, else `0.1.0`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "replicas": {
+          "description": "Default replica count exposed through chart values.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "resources": {
+          "description": "Per-resource overrides, keyed by manifest resource name.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/HelmResourceExport"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "HelmResourceExport": {
+      "description": "Per-resource overrides for the Helm target.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "When `Some(false)`, the resource is omitted from the chart.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "replicas": {
+          "description": "Replica count override for this resource.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "ImagePullPolicy": {
+      "description": "Kubernetes image pull policy.",
+      "oneOf": [
+        {
+          "description": "Always pull the image.",
+          "type": "string",
+          "const": "Always"
+        },
+        {
+          "description": "Pull only when the image is not present locally.",
+          "type": "string",
+          "const": "IfNotPresent"
+        },
+        {
+          "description": "Never pull; the image must already be present.",
+          "type": "string",
+          "const": "Never"
+        }
+      ]
+    },
+    "KubernetesExport": {
+      "description": "Overrides applied when exporting to Kubernetes manifests.",
+      "type": "object",
+      "properties": {
+        "image_pull_policy": {
+          "description": "Default image pull policy for every resource.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImagePullPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "namespace": {
+          "description": "Target namespace. Defaults to the project name during lowering.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "replicas": {
+          "description": "Default replica count for every resource.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "resources": {
+          "description": "Per-resource overrides, keyed by manifest resource name.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/KubernetesResourceExport"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "KubernetesResourceExport": {
+      "description": "Per-resource overrides for the Kubernetes target.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "When `Some(false)`, the resource is omitted from the export.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "image_pull_policy": {
+          "description": "Image pull policy override for this resource.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImagePullPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "replicas": {
+          "description": "Replica count override for this resource.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
     },
     "ObservabilityConfig": {
       "description": "Top-level observability settings.",
