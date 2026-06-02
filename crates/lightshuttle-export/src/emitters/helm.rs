@@ -19,13 +19,9 @@ use crate::emit::Emitter;
 use crate::error::Result;
 use crate::model::{ExportModel, ExportProject, Target};
 use crate::resolve::{
-    chart_name_for, chart_version_for, dns_name, enabled_for, image_pull_policy_for, namespace_for,
-    replicas_for,
+    SECRET_MARKERS, chart_name_for, chart_version_for, dns_name, enabled_for,
+    image_pull_policy_for, namespace_for, replicas_for,
 };
-
-/// Environment key fragments that route a variable into `secrets`
-/// rather than `env`. Matched case-insensitively.
-const SECRET_MARKERS: &[&str] = &["PASSWORD", "PASSWD", "SECRET", "TOKEN", "KEY"];
 
 /// Emits a Helm chart from the export model.
 pub struct HelmEmitter;

@@ -13,11 +13,9 @@ use serde::Serialize;
 use crate::emit::Emitter;
 use crate::error::Result;
 use crate::model::{ExportModel, ExportService, Target};
-use crate::resolve::{dns_name, enabled_for, image_pull_policy_for, namespace_for, replicas_for};
-
-/// Environment key fragments that route a variable into a `Secret`
-/// instead of a `ConfigMap`. Matched case-insensitively.
-const SECRET_MARKERS: &[&str] = &["PASSWORD", "PASSWD", "SECRET", "TOKEN", "KEY"];
+use crate::resolve::{
+    SECRET_MARKERS, dns_name, enabled_for, image_pull_policy_for, namespace_for, replicas_for,
+};
 
 /// Emits plain Kubernetes manifests from the export model.
 pub struct KubernetesEmitter;
