@@ -13,11 +13,9 @@ use serde::Serialize;
 use crate::emit::Emitter;
 use crate::error::Result;
 use crate::model::{ExportModel, ExportService, Target};
-use crate::resolve::{dns_name, enabled_for, image_pull_policy_for, namespace_for, replicas_for};
-
-/// Environment key fragments that route a variable into a `Secret`
-/// instead of a `ConfigMap`. Matched case-insensitively.
-const SECRET_MARKERS: &[&str] = &["PASSWORD", "PASSWD", "SECRET", "TOKEN", "KEY"];
+use crate::resolve::{
+    SECRET_MARKERS, dns_name, enabled_for, image_pull_policy_for, namespace_for, replicas_for,
+};
 
 /// Emits plain Kubernetes manifests from the export model.
 pub struct KubernetesEmitter;
@@ -156,6 +154,7 @@ fn deployment(
                         env_from,
                         volume_mounts: mounts,
                         command: spec.command.clone(),
+                        working_dir: spec.working_dir.clone(),
                         readiness_probe: probe.clone(),
                         liveness_probe: probe,
                     }],
@@ -228,6 +227,9 @@ fn pod_volume(resource: &str, idx: usize, volume: &VolumeBinding) -> (String, Po
 }
 
 /// Split env into (config, secret) by case-insensitive key marker.
+///
+/// Secret values are replaced with a placeholder so the exported
+/// manifest never contains real credentials.
 fn split_env(
     env: &std::collections::HashMap<String, String>,
 ) -> (BTreeMap<String, String>, BTreeMap<String, String>) {
@@ -236,7 +238,7 @@ fn split_env(
     for (key, value) in env {
         let upper = key.to_ascii_uppercase();
         if SECRET_MARKERS.iter().any(|m| upper.contains(m)) {
-            secret.insert(key.clone(), value.clone());
+            secret.insert(key.clone(), "***".to_owned());
         } else {
             config.insert(key.clone(), value.clone());
         }
@@ -247,7 +249,9 @@ fn split_env(
 fn probe(hc: &HealthcheckSpec) -> Probe {
     let command = match hc.test.first().map(String::as_str) {
         Some("CMD") => hc.test[1..].to_vec(),
-        Some("CMD-SHELL") => vec!["sh".to_owned(), "-c".to_owned(), hc.test[1..].join(" ")],
+        Some("CMD-SHELL") if hc.test.len() > 1 => {
+            vec!["sh".to_owned(), "-c".to_owned(), hc.test[1..].join(" ")]
+        }
         _ => hc.test.clone(),
     };
     Probe {
@@ -381,6 +385,8 @@ struct Container {
     volume_mounts: Vec<VolumeMount>,
     #[serde(skip_serializing_if = "Option::is_none")]
     command: Option<Vec<String>>,
+    #[serde(rename = "workingDir", skip_serializing_if = "Option::is_none")]
+    working_dir: Option<String>,
     #[serde(rename = "readinessProbe", skip_serializing_if = "Option::is_none")]
     readiness_probe: Option<Probe>,
     #[serde(rename = "livenessProbe", skip_serializing_if = "Option::is_none")]
@@ -561,4 +567,42 @@ struct PvcSpec {
 #[derive(Serialize)]
 struct PvcResources {
     requests: BTreeMap<String, String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::probe;
+    use lightshuttle_spec::HealthcheckSpec;
+
+    fn hc(test: Vec<&str>) -> HealthcheckSpec {
+        HealthcheckSpec {
+            test: test.into_iter().map(ToOwned::to_owned).collect(),
+            interval: Duration::from_secs(5),
+            timeout: Duration::from_secs(3),
+            retries: 3,
+            start_period: Duration::from_secs(5),
+        }
+    }
+
+    #[test]
+    fn cmd_shell_empty_args_falls_back_to_raw_vector() {
+        let p = probe(&hc(vec!["CMD-SHELL"]));
+        assert_eq!(p.exec.command, vec!["CMD-SHELL"]);
+    }
+
+    #[test]
+    fn cmd_shell_with_args_wraps_in_sh_c() {
+        let p = probe(&hc(vec![
+            "CMD-SHELL",
+            "curl",
+            "-f",
+            "http://localhost/health",
+        ]));
+        assert_eq!(
+            p.exec.command,
+            vec!["sh", "-c", "curl -f http://localhost/health"]
+        );
+    }
 }

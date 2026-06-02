@@ -23,6 +23,7 @@ fn small_image_spec(name: &str) -> ContainerSpec {
         volumes: Vec::new(),
         command: Some(vec!["sh".to_owned(), "-c".to_owned(), "sleep 5".to_owned()]),
         healthcheck: None,
+        working_dir: None,
     }
 }
 
@@ -80,6 +81,7 @@ async fn builds_and_runs_a_dockerfile_resource() {
         volumes: Vec::new(),
         command: None,
         healthcheck: None,
+        working_dir: None,
     };
 
     let id = runtime
@@ -127,6 +129,7 @@ async fn builds_buildkit_only_dockerfile() {
         volumes: Vec::new(),
         command: None,
         healthcheck: None,
+        working_dir: None,
     };
 
     let id = runtime

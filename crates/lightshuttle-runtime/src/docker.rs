@@ -217,6 +217,7 @@ impl ContainerRuntime for DockerRuntime {
             image: Some(image_ref),
             env: Some(env),
             cmd: spec.command.clone(),
+            working_dir: spec.working_dir.clone(),
             host_config: Some(host_config),
             exposed_ports: Some(exposed_ports),
             healthcheck,

@@ -9,7 +9,7 @@ services:
     env:
       LOG_LEVEL: info
     secrets:
-      API_TOKEN: t0ken
+      API_TOKEN: '***'
   db:
     replicas: 1
     image:
@@ -20,4 +20,4 @@ services:
       POSTGRES_DB: db
       POSTGRES_USER: postgres
     secrets:
-      POSTGRES_PASSWORD: devsecret
+      POSTGRES_PASSWORD: '***'

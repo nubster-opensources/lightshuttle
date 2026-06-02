@@ -89,6 +89,7 @@ impl CollectorConfig {
             // observes a stopped container and fails rather than passing
             // a dead collector off as healthy.
             healthcheck: None,
+            working_dir: None,
         }
     }
 }

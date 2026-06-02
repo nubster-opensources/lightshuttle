@@ -19,6 +19,7 @@ fn spec(name: &str) -> ContainerSpec {
         volumes: Vec::new(),
         command: None,
         healthcheck: None,
+        working_dir: None,
     }
 }
 

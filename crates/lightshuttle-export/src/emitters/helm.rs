@@ -19,13 +19,9 @@ use crate::emit::Emitter;
 use crate::error::Result;
 use crate::model::{ExportModel, ExportProject, Target};
 use crate::resolve::{
-    chart_name_for, chart_version_for, dns_name, enabled_for, image_pull_policy_for, namespace_for,
-    replicas_for,
+    SECRET_MARKERS, chart_name_for, chart_version_for, dns_name, enabled_for,
+    image_pull_policy_for, namespace_for, replicas_for,
 };
-
-/// Environment key fragments that route a variable into `secrets`
-/// rather than `env`. Matched case-insensitively.
-const SECRET_MARKERS: &[&str] = &["PASSWORD", "PASSWD", "SECRET", "TOKEN", "KEY"];
 
 /// Emits a Helm chart from the export model.
 pub struct HelmEmitter;
@@ -190,6 +186,9 @@ fn deployment_block(spec: &ContainerSpec, name: &str) -> String {
             let _ = writeln!(s, "        - name: {vol}\n          mountPath: {target}");
         }
     }
+    if let Some(dir) = &spec.working_dir {
+        let _ = writeln!(s, "        workingDir: {dir}");
+    }
     if let Some(hc) = &spec.healthcheck {
         let probe = probe_block(hc);
         let _ = write!(s, "        readinessProbe:\n{probe}");
@@ -289,7 +288,9 @@ fn pvc_block(name: &str, volume: &str) -> String {
 fn probe_block(hc: &HealthcheckSpec) -> String {
     let command = match hc.test.first().map(String::as_str) {
         Some("CMD") => hc.test[1..].to_vec(),
-        Some("CMD-SHELL") => vec!["sh".to_owned(), "-c".to_owned(), hc.test[1..].join(" ")],
+        Some("CMD-SHELL") if hc.test.len() > 1 => {
+            vec!["sh".to_owned(), "-c".to_owned(), hc.test[1..].join(" ")]
+        }
         _ => hc.test.clone(),
     };
     let mut s = String::from("          exec:\n            command:\n");
@@ -318,6 +319,8 @@ fn named_mounts(spec: &ContainerSpec) -> Vec<(String, &str)> {
         .collect()
 }
 
+/// Secret values are replaced with a placeholder so the exported
+/// chart never contains real credentials.
 fn split_env(
     env: &std::collections::HashMap<String, String>,
 ) -> (BTreeMap<String, String>, BTreeMap<String, String>) {
@@ -328,7 +331,7 @@ fn split_env(
             .iter()
             .any(|m| key.to_ascii_uppercase().contains(m))
         {
-            secret.insert(key.clone(), value.clone());
+            secret.insert(key.clone(), "***".to_owned());
         } else {
             config.insert(key.clone(), value.clone());
         }

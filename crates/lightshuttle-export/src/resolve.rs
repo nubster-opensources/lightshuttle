@@ -9,6 +9,25 @@ use lightshuttle_manifest::{ExportConfig, ImagePullPolicy};
 
 use crate::model::Target;
 
+/// Environment key fragments that route a variable into a secret store
+/// rather than plain configuration. Matched case-insensitively against
+/// the full key name.
+///
+/// Emitters reference this single slice so the set stays in sync across
+/// all export targets.
+pub const SECRET_MARKERS: &[&str] = &[
+    "PASSWORD",
+    "PASSWD",
+    "PASS",
+    "SECRET",
+    "TOKEN",
+    "KEY",
+    "CREDENTIAL",
+    "AUTH",
+    "CERT",
+    "PWD",
+];
+
 /// Default replica count when neither a per-resource nor a per-target
 /// override is set.
 const DEFAULT_REPLICAS: u32 = 1;

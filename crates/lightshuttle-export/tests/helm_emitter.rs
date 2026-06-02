@@ -73,7 +73,10 @@ fn values_carry_resource_knobs() {
     assert!(values.contains("replicas: 1"));
     assert!(values.contains("repository: postgres"));
     assert!(values.contains("LOG_LEVEL: info"), "env in values");
-    assert!(values.contains("API_TOKEN: t0ken"), "secret in values");
+    assert!(
+        values.contains("API_TOKEN: '***'"),
+        "secret placeholder in values"
+    );
 }
 
 #[test]

@@ -70,6 +70,8 @@ pub struct ContainerSpec {
     pub command: Option<Vec<String>>,
     /// Optional healthcheck.
     pub healthcheck: Option<HealthcheckSpec>,
+    /// Optional working directory override inside the container.
+    pub working_dir: Option<String>,
 }
 
 /// How the container image is obtained.
@@ -221,6 +223,7 @@ fn spec_postgres(
         volumes,
         command: None,
         healthcheck,
+        working_dir: None,
     };
 
     let mut outputs = ResourceOutputs::new();
@@ -296,6 +299,7 @@ fn spec_redis(
         volumes,
         command: Some(command),
         healthcheck,
+        working_dir: None,
     };
 
     let mut outputs = ResourceOutputs::new();
@@ -353,6 +357,7 @@ fn spec_container(
         volumes,
         command,
         healthcheck,
+        working_dir: c.working_dir.clone(),
     };
 
     let mut outputs = ResourceOutputs::new();
@@ -417,6 +422,7 @@ fn spec_dockerfile(
         volumes,
         command,
         healthcheck,
+        working_dir: c.working_dir.clone(),
     };
 
     let mut outputs = ResourceOutputs::new();
@@ -495,6 +501,11 @@ fn parse_volume_string(input: &str) -> Result<VolumeBinding> {
     let source = if source.starts_with('.') || source.starts_with('/') {
         VolumeSource::HostPath(source.to_owned())
     } else {
+        if source.contains(['{', '}']) {
+            return Err(SpecError::InvalidSpec(format!(
+                "volume name `{source}` must not contain '{{' or '}}': unsafe in export templates"
+            )));
+        }
         VolumeSource::Named(source.to_owned())
     };
     Ok(VolumeBinding {
@@ -639,6 +650,11 @@ mod tests {
     #[test]
     fn parse_volume_string_no_colon_is_error() {
         assert!(parse_volume_string("nodatahere").is_err());
+    }
+
+    #[test]
+    fn parse_volume_string_braces_in_name_is_error() {
+        assert!(parse_volume_string("my{vol}:/data").is_err());
     }
 
     #[test]
