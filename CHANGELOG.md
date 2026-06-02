@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 ### Added
 - _Items in flight will be listed here until the next release._
 
+## [0.3.1] - 2026-06-02
+
+_See diff against the previous tag for details._
+
 ## [0.3.0] - 2026-06-02
 
 Production Export release. Adds the `export:` manifest section and the `lightshuttle export <target>` command, which transpiles a manifest to Docker Compose, plain Kubernetes manifests or a Helm chart. Ships two new published crates, a full offline validation CI job and a round of documentation harmonisation.
@@ -144,7 +148,8 @@ First public release. Ships a local development orchestrator able to read a Carg
 
 This is the first published version, so no upgrade path applies.
 
-[Unreleased]: https://github.com/nubster-opensources/lightshuttle/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/nubster-opensources/lightshuttle/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/nubster-opensources/lightshuttle/releases/tag/v0.3.1
 [0.3.0]: https://github.com/nubster-opensources/lightshuttle/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/nubster-opensources/lightshuttle/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/nubster-opensources/lightshuttle/releases/tag/v0.1.0
