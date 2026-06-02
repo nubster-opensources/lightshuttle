@@ -65,7 +65,7 @@ git push origin v<TARGET>
 
 The tag push triggers [`.github/workflows/release.yml`](../.github/workflows/release.yml) which:
 
-1. Publishes the workspace crates to crates.io in dependency order (`lightshuttle-manifest` -> `lightshuttle-runtime` -> `lightshuttle` facade / CLI), with 30 s sleeps between each to let the crates.io index propagate. The `xtask` crate is repository tooling and is never published.
+1. Publishes the workspace crates to crates.io in dependency order (`lightshuttle-manifest` -> `lightshuttle-spec` -> `lightshuttle-runtime` -> `lightshuttle-otel` -> `lightshuttle-control` -> `lightshuttle-export` -> `lightshuttle` facade / CLI), with 30 s sleeps between each to let the crates.io index propagate. The `xtask` crate is repository tooling and is never published.
 2. Creates a GitHub Release whose notes are extracted from the `[<TARGET>]` section of `CHANGELOG.md`.
 
 Tagging is deliberately a manual step so the human reviewing the PR is also the one who triggers the publish, with full awareness of what is about to leave the workshop.

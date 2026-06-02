@@ -7,7 +7,6 @@
 [![CI](https://github.com/nubster-opensources/lightshuttle/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nubster-opensources/lightshuttle/actions/workflows/ci.yml)
 [![MSRV](https://img.shields.io/badge/MSRV-1.88-blue.svg)](./docs/MSRV_POLICY.md)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](#license)
-[![Status](https://img.shields.io/badge/status-pre--alpha-orange)](#status)
 [![Made with Rust](https://img.shields.io/badge/made%20with-Rust-orange?logo=rust)](https://www.rust-lang.org/)
 
 LightShuttle (binary: `lightshuttle`) is a developer-time orchestrator written in Rust. You declare your service stack once in `lightshuttle.yml` (databases, queues, containers, Dockerfiles, static SPAs), and `lightshuttle up` boots the whole thing on your laptop with automatic service discovery, an integrated web dashboard, OpenTelemetry traces and logs, and a one-command export to `docker-compose.yml`, Kubernetes manifests or a Helm chart for production.
@@ -16,33 +15,30 @@ LightShuttle is sponsored by [Nubster](https://nubster.com).
 
 ## Status
 
-🚧 **Pre-alpha, no usable release yet.**
+LightShuttle is published on crates.io and under active development. The
+public API is still pre-1.0 and may change between minor versions; see
+the [SemVer policy](docs/SEMVER_POLICY.md).
 
-| Phase | State |
-| --- | --- |
-| 1. Product vision and scope | ✅ Closed (2026-05-21) |
-| 2. Technical architecture | ⏳ In progress |
-| 3. Open source strategy | ⏳ Pending |
-| 4. Proof of concept (1 to 2 weeks spike) | ⏳ Pending |
-| 5. v0.1.0 public release | ⏳ Target Q3 2026 |
+- **v0.1.0** Minimum viable orchestrator: typed manifest, topological
+  startup, healthchecks, graceful shutdown, env-var service discovery,
+  and the core CLI.
+- **v0.2.0** Dashboard and observability: a local web dashboard, live log
+  and event streaming, a bundled OpenTelemetry collector, Prometheus
+  metrics and the `restart` command.
+- **v0.3.0** _(in progress)_ Production export: `lightshuttle export`
+  to `docker-compose.yml`, Kubernetes manifests or a Helm chart.
 
-The repository is intentionally public from day one to capture the name and make the design discussion visible. **Do not depend on it yet**, anything can change until v0.1.0.
+See the [roadmap](ROADMAP.md) for what comes next.
 
 ## Quickstart
 
-> Pre-alpha. The CLI works but everything below may change before v0.1.0.
-
 **Prerequisites:** Docker Desktop or a Docker Engine daemon running locally, plus a Rust toolchain (`rustup` is the recommended installer).
 
-Install LightShuttle from the cloned repository (it is not on crates.io yet):
+Install LightShuttle from crates.io:
 
 ```sh
-git clone https://github.com/nubster-opensources/lightshuttle.git
-cd lightshuttle
-cargo install --path crates/lightshuttle
+cargo install lightshuttle
 ```
-
-Once published, the install command will simply be `cargo install lightshuttle`.
 
 > Typing `lightshuttle` is verbose. If your shell has no `lsh` already (check with `command -v lsh`), see the [optional shell alias](docs/tutorial/getting-started.md#optional-shell-alias-lsh) section of the tutorial.
 
@@ -78,7 +74,7 @@ For a complete walkthrough see [`docs/tutorial/getting-started.md`](docs/tutoria
 - **No production export**, the same YAML cannot be reused or transformed into Kubernetes resources.
 - **No custom lifecycle**, running a migration before serving traffic requires shell scripts and `depends_on: service_healthy` ceremonies.
 
-LightShuttle keeps the simplicity of a single YAML file but layers type validation, a live dashboard, automatic environment variable injection between services, a clean extension point in Rust for custom hooks and lifecycles, and a first-class production export.
+LightShuttle keeps the simplicity of a single YAML file but layers type validation, a live dashboard, automatic environment variable injection between services, and a first-class production export, with a clean Rust extension point for custom hooks and lifecycles on the roadmap.
 
 ## What LightShuttle is **not**
 
@@ -91,15 +87,33 @@ To stay focused, the following are explicitly out of scope:
 
 ## Configuration model
 
-The primary configuration lives in `lightshuttle.yml`, a declarative manifest readable by every developer regardless of their primary language. For the 10 % of cases that need custom lifecycle logic, for example running a one-shot migration container before starting the long-running service, LightShuttle reuses the Cargo `xtask/` pattern: a small Rust crate inside the project exposes hooks that the orchestrator calls at the right moments.
+Everything lives in a single `lightshuttle.yml`, a typed declarative manifest readable by every developer regardless of their primary language. It declares a `project`, a set of `resources` (`postgres`, `redis`, `container`, `dockerfile`), their dependencies and `${...}` interpolations, and optional `dashboard`, `observability` and `export` sections. The full schema is in the [manifest specification](docs/spec/manifest-v0.md); a JSON Schema for editor autocompletion ships at [`docs/spec/manifest-v0.schema.json`](docs/spec/manifest-v0.schema.json). Custom lifecycle hooks through a Cargo-style `xtask/` crate are on the [roadmap](ROADMAP.md), not yet implemented.
 
-A minimal example will be added once the architecture phase finalises the YAML schema.
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `lightshuttle up` | Boot the stack and supervise it until interrupted. |
+| `lightshuttle down` | Stop every managed container. |
+| `lightshuttle ps` | List managed resources and their status. |
+| `lightshuttle logs <resource>` | Stream a resource's logs. |
+| `lightshuttle restart <resource>` | Restart one resource through the running control plane. |
+| `lightshuttle validate` | Parse and validate the manifest without starting anything. |
+| `lightshuttle manifest` | Print the resolved manifest. |
+| `lightshuttle export <target>` | Generate `docker-compose.yml`, Kubernetes manifests or a Helm chart. |
+| `lightshuttle alias install` | Manage the optional `lsh` shell alias. |
+
+## Documentation
+
+- Tutorials: [getting started](docs/tutorial/getting-started.md), [the dashboard](docs/tutorial/dashboard.md), [export](docs/tutorial/export.md).
+- Specifications: [manifest](docs/spec/manifest-v0.md), [control plane API](docs/spec/control-api.md), [observability](docs/spec/observability.md), [export](docs/spec/export.md).
+- Project policies: [roadmap](ROADMAP.md), [SemVer](docs/SEMVER_POLICY.md), [MSRV](docs/MSRV_POLICY.md), [release process](docs/RELEASE_PROCESS.md), [governance](docs/GOVERNANCE.md).
+
+The workspace is split into published crates: `lightshuttle` (the CLI), `lightshuttle-manifest`, `lightshuttle-spec`, `lightshuttle-runtime`, `lightshuttle-otel`, `lightshuttle-control` and `lightshuttle-export`.
 
 ## Contributing
 
-LightShuttle is in pre-alpha and the public API is unstable. The repository is open so the design phase can happen in public, not so that external contributions can be accepted yet. Once v0.1.0 ships, the contribution model will be documented in `CONTRIBUTING.md`.
-
-Until then, feel free to open a discussion if you want to give early feedback on the direction.
+LightShuttle is open source and pre-1.0; the public API may still change between minor versions. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the contribution model and the Contributor License Agreement, and [`SECURITY.md`](SECURITY.md) to report a vulnerability. Feedback and discussion on the direction are welcome.
 
 ## License
 

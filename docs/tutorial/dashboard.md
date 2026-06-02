@@ -46,9 +46,9 @@ The index lists every resource declared in the manifest:
 
 | Name  | Kind     | Status   | Healthy | Image          | Actions |
 | ----- | -------- | -------- | ------- | -------------- | ------- |
-| db    | postgres | running  | yes     | postgres:16    | Restart |
-| cache | redis    | running  | yes     | redis:7        | Restart |
-| api   | container| starting | no      | alpine:latest  | Restart |
+| db    | postgres | running  | yes     | postgres:16-alpine | Restart |
+| cache | redis    | running  | yes     | redis:7-alpine     | Restart |
+| api   | container| starting | no      | alpine:3.20        | Restart |
 
 - The status column refreshes every two seconds via an HTMX poll on
   `/_partials/resources`. No full page reload, no flicker.
@@ -64,7 +64,7 @@ The detail page shows the full metadata block:
 - Kind: `container`
 - Status: `running`
 - Healthy: yes
-- Image: `alpine:latest`
+- Image: `alpine:3.20`
 - Last error: only when a terminal failure has occurred.
 
 Below the metadata, a live log pane streams `stdout` and `stderr` of
@@ -93,6 +93,4 @@ following should be true:
 - [ ] The detail log pane begins streaming as soon as the page loads
       and reports `[log stream closed]` when the resource is stopped.
 
-When all six boxes are ticked, the dashboard is healthy. Capture
-screenshots and attach them to the PR review once the visual layer
-lands a CSS refresh.
+When all six boxes are ticked, the dashboard is working as intended.

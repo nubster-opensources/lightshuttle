@@ -6,10 +6,9 @@ through the CLI, shut it down cleanly and extended it with a second
 backing service. No prior Rust knowledge is required; basic familiarity
 with Docker is assumed.
 
-> **Pre-alpha.** LightShuttle is under active design. The CLI works
-> end to end on a real Docker daemon, but the public surface may
-> change before the v0.1.0 release. Do not depend on the file
-> formats or command output shown below in production scripts yet.
+> **Pre-1.0.** LightShuttle is published and works end to end on a real
+> Docker daemon, but the public API may still change between minor
+> versions. See the [SemVer policy](../SEMVER_POLICY.md).
 
 A reminder of what LightShuttle is **not**, so the rest of the tutorial
 is read with the right expectations:
@@ -20,9 +19,9 @@ is read with the right expectations:
 - Not a CI/CD pipeline.
 
 LightShuttle is the local stack runner you reach for instead of
-`docker-compose` while you are coding. Production deployment is handled
-by the export command (planned, not yet shipped) which emits standard
-artefacts for the orchestrator of your choice.
+`docker-compose` while you are coding. When you are ready to ship,
+[`lightshuttle export`](export.md) turns the same manifest into a
+`docker-compose.yml`, Kubernetes manifests or a Helm chart.
 
 ## Prerequisites
 
@@ -48,13 +47,10 @@ If that command fails, start Docker before continuing.
 
 ## Step 1: Install LightShuttle
 
-LightShuttle is not yet published to crates.io. Install it from a
-local clone of the repository:
+Install the CLI from crates.io:
 
 ```sh
-$ git clone https://github.com/nubster-opensources/lightshuttle.git
-$ cd lightshuttle
-$ cargo install --path crates/lightshuttle
+$ cargo install lightshuttle
 ```
 
 Cargo compiles the binary in release mode and drops it in
@@ -62,17 +58,11 @@ Cargo compiles the binary in release mode and drops it in
 
 ```sh
 $ lightshuttle --version
-lightshuttle 0.1.0-dev
+lightshuttle 0.2.0
 ```
 
 If `lightshuttle` is not found, make sure `~/.cargo/bin` is on your
 `PATH`.
-
-Once v0.1.0 ships, the install command will be a one-liner:
-
-```sh
-$ cargo install lightshuttle
-```
 
 ## Optional: shell alias `lsh`
 
@@ -166,7 +156,7 @@ lightshuttle %*
 
 ```sh
 $ lsh --version
-lightshuttle 0.1.0-dev
+lightshuttle 0.2.0
 ```
 
 If anything in this tutorial reads `lightshuttle`, you can substitute
@@ -400,11 +390,13 @@ $ lightshuttle down
 
 - Read the [manifest specification][spec] for every supported field,
   resource kind and interpolation rule.
+- Explore the [dashboard tutorial](dashboard.md) for the web UI, live
+  logs and the OpenTelemetry collector.
+- Generate deployment artifacts with the [export tutorial](export.md).
 - Browse the [`examples/`](../../examples/) folder for ready-to-run
   manifests.
 - Track upcoming features in the [roadmap](../../ROADMAP.md).
-- If you want to contribute once contributions open up, read
-  [`CONTRIBUTING.md`](../../CONTRIBUTING.md) and
+- To contribute, read [`CONTRIBUTING.md`](../../CONTRIBUTING.md) and
   [`SECURITY.md`](../../SECURITY.md) first.
 
 [spec]: ../spec/manifest-v0.md
