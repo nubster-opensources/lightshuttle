@@ -70,6 +70,8 @@ pub struct ContainerSpec {
     pub command: Option<Vec<String>>,
     /// Optional healthcheck.
     pub healthcheck: Option<HealthcheckSpec>,
+    /// Optional working directory override inside the container.
+    pub working_dir: Option<String>,
 }
 
 /// How the container image is obtained.
@@ -221,6 +223,7 @@ fn spec_postgres(
         volumes,
         command: None,
         healthcheck,
+        working_dir: None,
     };
 
     let mut outputs = ResourceOutputs::new();
@@ -296,6 +299,7 @@ fn spec_redis(
         volumes,
         command: Some(command),
         healthcheck,
+        working_dir: None,
     };
 
     let mut outputs = ResourceOutputs::new();
@@ -353,6 +357,7 @@ fn spec_container(
         volumes,
         command,
         healthcheck,
+        working_dir: c.working_dir.clone(),
     };
 
     let mut outputs = ResourceOutputs::new();
@@ -417,6 +422,7 @@ fn spec_dockerfile(
         volumes,
         command,
         healthcheck,
+        working_dir: c.working_dir.clone(),
     };
 
     let mut outputs = ResourceOutputs::new();

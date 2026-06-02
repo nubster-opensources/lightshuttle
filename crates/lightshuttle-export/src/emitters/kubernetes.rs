@@ -154,6 +154,7 @@ fn deployment(
                         env_from,
                         volume_mounts: mounts,
                         command: spec.command.clone(),
+                        working_dir: spec.working_dir.clone(),
                         readiness_probe: probe.clone(),
                         liveness_probe: probe,
                     }],
@@ -384,6 +385,8 @@ struct Container {
     volume_mounts: Vec<VolumeMount>,
     #[serde(skip_serializing_if = "Option::is_none")]
     command: Option<Vec<String>>,
+    #[serde(rename = "workingDir", skip_serializing_if = "Option::is_none")]
+    working_dir: Option<String>,
     #[serde(rename = "readinessProbe", skip_serializing_if = "Option::is_none")]
     readiness_probe: Option<Probe>,
     #[serde(rename = "livenessProbe", skip_serializing_if = "Option::is_none")]

@@ -186,6 +186,9 @@ fn deployment_block(spec: &ContainerSpec, name: &str) -> String {
             let _ = writeln!(s, "        - name: {vol}\n          mountPath: {target}");
         }
     }
+    if let Some(dir) = &spec.working_dir {
+        let _ = writeln!(s, "        workingDir: {dir}");
+    }
     if let Some(hc) = &spec.healthcheck {
         let probe = probe_block(hc);
         let _ = write!(s, "        readinessProbe:\n{probe}");
