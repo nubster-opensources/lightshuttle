@@ -24,6 +24,7 @@ pub use crate::model::{
 pub use crate::schema::schema;
 
 mod error;
+mod host_paths;
 pub mod interpolate;
 pub mod model;
 mod parse;
