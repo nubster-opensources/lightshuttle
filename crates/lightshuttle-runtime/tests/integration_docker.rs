@@ -92,3 +92,50 @@ async fn builds_and_runs_a_dockerfile_resource() {
         .await
         .expect("container stops cleanly");
 }
+
+#[tokio::test]
+#[ignore = "requires a running Docker daemon"]
+async fn builds_buildkit_only_dockerfile() {
+    let context = tempfile::tempdir().expect("temp dir created");
+
+    let dockerfile_path = context.path().join("Dockerfile");
+    let mut dockerfile = std::fs::File::create(&dockerfile_path).expect("Dockerfile created");
+    writeln!(dockerfile, "# syntax=docker/dockerfile:1").expect("write line");
+    writeln!(dockerfile, "FROM alpine:3.20").expect("write line");
+    writeln!(
+        dockerfile,
+        "RUN --mount=type=cache,target=/var/cache/apk echo cached"
+    )
+    .expect("write line");
+    writeln!(dockerfile, "CMD [\"sh\", \"-c\", \"sleep 5\"]").expect("write line");
+    drop(dockerfile);
+
+    let runtime = DockerRuntime::connect().expect("Docker daemon reachable");
+    let spec = ContainerSpec {
+        name: "lightshuttle_it_buildkit".to_owned(),
+        project: "lightshuttle_it".to_owned(),
+        resource: "buildkit".to_owned(),
+        image: ImageSource::Build {
+            context: context.path().to_string_lossy().into_owned(),
+            dockerfile: "Dockerfile".to_owned(),
+            build_args: HashMap::new(),
+            target: None,
+            tag: "lightshuttle/it_buildkit:dev".to_owned(),
+        },
+        env: HashMap::new(),
+        ports: Vec::new(),
+        volumes: Vec::new(),
+        command: None,
+        healthcheck: None,
+    };
+
+    let id = runtime
+        .start(&spec)
+        .await
+        .expect("BuildKit-only Dockerfile builds and starts");
+
+    runtime
+        .stop(&id, Duration::from_secs(2))
+        .await
+        .expect("container stops cleanly");
+}
