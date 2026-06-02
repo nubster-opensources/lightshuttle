@@ -25,7 +25,7 @@ the [SemVer policy](docs/SEMVER_POLICY.md).
 - **v0.2.0** Dashboard and observability: a local web dashboard, live log
   and event streaming, a bundled OpenTelemetry collector, Prometheus
   metrics and the `restart` command.
-- **v0.3.0** _(in progress)_ Production export: `lightshuttle export`
+- **v0.3.0** Production export: `lightshuttle export`
   to `docker-compose.yml`, Kubernetes manifests or a Helm chart.
 
 See the [roadmap](ROADMAP.md) for what comes next.

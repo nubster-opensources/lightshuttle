@@ -6,10 +6,9 @@ the manifest and the orchestrator that interprets it.
 
 ## Status
 
-`v0` is **pre-stable**. It will be frozen when LightShuttle ships v0.1.0
-and any later breaking change will produce a `v1` specification published
-side by side with this one. Until v0.1.0 ships, every section of this
-document may evolve.
+`v0` is the stable manifest format shipped with LightShuttle v0.1.0 through
+v0.3.0. It is frozen: breaking changes produce a `v1` specification published
+alongside this one.
 
 ## Scope
 
