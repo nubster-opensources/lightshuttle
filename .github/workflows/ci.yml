@@ -114,6 +114,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: validate-export
-      # docker compose, kubectl and helm are preinstalled on ubuntu-latest.
+      # docker compose ships with the runner; kubectl and helm are
+      # installed here so all three targets are validated. Tests skip any
+      # tool that is still missing.
+      - uses: azure/setup-kubectl@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: latest
       # Run locally with: cargo test -p lightshuttle-export -- --ignored
       - run: cargo test -p lightshuttle-export --test compose_emitter --test kubernetes_emitter --test helm_emitter -- --ignored --nocapture
