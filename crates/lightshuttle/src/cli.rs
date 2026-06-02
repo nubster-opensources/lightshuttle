@@ -117,6 +117,8 @@ pub(crate) enum Command {
 pub(crate) enum ExportTarget {
     /// A `docker-compose.yml` file.
     Compose,
+    /// Plain Kubernetes manifests, one file per resource.
+    Kubernetes,
 }
 
 /// Actions for the `alias` subcommand.

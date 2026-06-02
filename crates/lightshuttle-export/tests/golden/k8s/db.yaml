@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db
+  namespace: prod
+  labels:
+    app: db
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+    spec:
+      containers:
+      - name: db
+        image: postgres:16-alpine
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5432
+        envFrom:
+        - configMapRef:
+            name: db-config
+        - secretRef:
+            name: db-secret
+        volumeMounts:
+        - name: dbdata
+          mountPath: /var/lib/postgresql/data
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 5
+          initialDelaySeconds: 5
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 5
+          initialDelaySeconds: 5
+      volumes:
+      - name: dbdata
+        persistentVolumeClaim:
+          claimName: db-dbdata
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: prod
+  labels:
+    app: db
+spec:
+  selector:
+    app: db
+  ports:
+  - port: 5432
+    targetPort: 5432
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-config
+  namespace: prod
+  labels:
+    app: db
+data:
+  POSTGRES_DB: db
+  POSTGRES_USER: postgres
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-secret
+  namespace: prod
+  labels:
+    app: db
+stringData:
+  POSTGRES_PASSWORD: devsecret
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: db-dbdata
+  namespace: prod
+  labels:
+    app: db
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

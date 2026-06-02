@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use lightshuttle_export::{ComposeEmitter, Emitter, Target, lower};
+use lightshuttle_export::{ComposeEmitter, Emitter, KubernetesEmitter, Target, lower};
 use tracing::info;
 
 use super::{ExitOutcome, load_manifest};
@@ -62,6 +62,7 @@ pub(crate) fn run(
 fn emitter_for(target: ExportTarget) -> Box<dyn Emitter> {
     match target {
         ExportTarget::Compose => Box::new(ComposeEmitter),
+        ExportTarget::Kubernetes => Box::new(KubernetesEmitter),
     }
 }
 

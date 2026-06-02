@@ -117,15 +117,37 @@ fn default_output_dir_is_export_target() {
 }
 
 #[test]
-fn unknown_target_is_rejected() {
+fn export_kubernetes_writes_manifests() {
     let home = TempDir::new().expect("temp dir");
     let manifest = write_manifest(home.path());
+    let out = home.path().join("k8s");
 
     Command::cargo_bin("lightshuttle")
         .expect("binary builds")
         .arg("-f")
         .arg(&manifest)
-        .args(["export", "kubernetes"])
+        .args(["export", "kubernetes", "--output"])
+        .arg(&out)
+        .assert()
+        .success();
+
+    assert!(out.join("namespace.yaml").exists());
+    let db = std::fs::read_to_string(out.join("db.yaml")).expect("db manifest written");
+    assert!(db.contains("kind: Deployment"), "got:\n{db}");
+    assert!(db.contains("kind: Service"), "got:\n{db}");
+}
+
+#[test]
+fn unknown_target_is_rejected() {
+    let home = TempDir::new().expect("temp dir");
+    let manifest = write_manifest(home.path());
+
+    // `helm` is not wired into the CLI yet, so clap rejects it.
+    Command::cargo_bin("lightshuttle")
+        .expect("binary builds")
+        .arg("-f")
+        .arg(&manifest)
+        .args(["export", "helm"])
         .assert()
         .failure();
 }
