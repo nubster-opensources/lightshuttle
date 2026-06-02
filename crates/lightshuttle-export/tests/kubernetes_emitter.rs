@@ -3,6 +3,8 @@
 use lightshuttle_export::{Emitter, ExportArtifacts, KubernetesEmitter, lower};
 use lightshuttle_manifest::Manifest;
 
+mod common;
+
 const STACK: &str = r"
 project:
   name: shop
@@ -65,6 +67,11 @@ fn matches_golden_files() {
 #[test]
 #[ignore = "requires kubectl on the host"]
 fn output_passes_kubectl_dry_run() {
+    if !common::tool_available("kubectl") {
+        eprintln!("skipping: kubectl not found on PATH");
+        return;
+    }
+
     let a = artifacts(STACK);
     for f in &a.files {
         let output = std::process::Command::new("kubectl")

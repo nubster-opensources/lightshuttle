@@ -3,6 +3,8 @@
 use lightshuttle_export::{Emitter, ExportArtifacts, HelmEmitter, lower};
 use lightshuttle_manifest::Manifest;
 
+mod common;
+
 const STACK: &str = r"
 project:
   name: shop
@@ -89,6 +91,11 @@ fn templates_reference_values() {
 #[ignore = "requires helm on the host"]
 fn output_passes_helm_lint() {
     use std::io::Write;
+
+    if !common::tool_available("helm") {
+        eprintln!("skipping: helm not found on PATH");
+        return;
+    }
 
     let dir = tempfile::tempdir().expect("temp dir");
     let chart = dir.path().join("chart");

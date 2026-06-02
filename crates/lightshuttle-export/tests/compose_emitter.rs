@@ -3,6 +3,8 @@
 use lightshuttle_export::{ComposeEmitter, Emitter, lower};
 use lightshuttle_manifest::Manifest;
 
+mod common;
+
 const STACK: &str = r"
 project:
   name: shop
@@ -60,6 +62,11 @@ fn matches_golden_file() {
 #[ignore = "requires docker compose on the host"]
 fn output_passes_docker_compose_config() {
     use std::io::Write;
+
+    if !common::tool_available("docker") {
+        eprintln!("skipping: docker not found on PATH");
+        return;
+    }
 
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("docker-compose.yml");
