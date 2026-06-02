@@ -24,11 +24,11 @@ name = "lightshuttle"
 path = "src/main.rs"
 
 [dependencies]
-lightshuttle-control = { version = "0.2.0", path = "../lightshuttle-control" }
-lightshuttle-export = { version = "0.2.0", path = "../lightshuttle-export" }
-lightshuttle-manifest = { version = "0.2.0", path = "../lightshuttle-manifest" }
-lightshuttle-otel = { version = "0.2.0", path = "../lightshuttle-otel" }
-lightshuttle-runtime = { version = "0.2.0", path = "../lightshuttle-runtime" }
+lightshuttle-control = { version = "0.3.0", path = "../lightshuttle-control" }
+lightshuttle-export = { version = "0.3.0", path = "../lightshuttle-export" }
+lightshuttle-manifest = { version = "0.3.0", path = "../lightshuttle-manifest" }
+lightshuttle-otel = { version = "0.3.0", path = "../lightshuttle-otel" }
+lightshuttle-runtime = { version = "0.3.0", path = "../lightshuttle-runtime" }
 clap.workspace = true
 tokio.workspace = true
 tracing.workspace = true

@@ -20,8 +20,8 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-lightshuttle-manifest = { version = "0.2.0", path = "../lightshuttle-manifest" }
-lightshuttle-spec = { version = "0.2.0", path = "../lightshuttle-spec" }
+lightshuttle-manifest = { version = "0.3.0", path = "../lightshuttle-manifest" }
+lightshuttle-spec = { version = "0.3.0", path = "../lightshuttle-spec" }
 indexmap.workspace = true
 thiserror.workspace = true
 serde.workspace = true
