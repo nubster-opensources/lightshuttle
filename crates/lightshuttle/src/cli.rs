@@ -96,6 +96,27 @@ pub(crate) enum Command {
         #[command(subcommand)]
         action: AliasAction,
     },
+
+    /// Generate deployment artifacts from the manifest.
+    Export {
+        /// Target format to generate.
+        target: ExportTarget,
+
+        /// Output directory. Defaults to `./export/<target>`.
+        #[arg(long, short = 'o')]
+        output: Option<PathBuf>,
+
+        /// Overwrite a non-empty output directory.
+        #[arg(long)]
+        force: bool,
+    },
+}
+
+/// Deployment targets the `export` command can generate.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub(crate) enum ExportTarget {
+    /// A `docker-compose.yml` file.
+    Compose,
 }
 
 /// Actions for the `alias` subcommand.
