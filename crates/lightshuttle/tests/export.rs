@@ -157,6 +157,43 @@ fn export_helm_writes_chart() {
     assert!(out.join("templates").join("db.yaml").exists());
 }
 
+// Unix-only: a resolved Windows host path carries a drive-letter colon
+// that the `src:target` volume format splits on, a separate pre-existing
+// limitation unrelated to the relative-path resolution under test.
+#[cfg(unix)]
+#[test]
+fn relative_host_volume_is_resolved_against_manifest_dir() {
+    let home = TempDir::new().expect("temp dir");
+    let manifest = home.path().join("lightshuttle.yml");
+    std::fs::write(
+        &manifest,
+        "project:\n  name: app\nresources:\n  svc:\n    container:\n      image: alpine:3.20\n      volumes:\n        - ./config/demo.conf:/etc/demo.conf\n",
+    )
+    .expect("write manifest");
+    let out = home.path().join("out");
+
+    Command::cargo_bin("lightshuttle")
+        .expect("binary builds")
+        .arg("-f")
+        .arg(&manifest)
+        .args(["export", "compose", "--output"])
+        .arg(&out)
+        .assert()
+        .success();
+
+    let compose = std::fs::read_to_string(out.join("docker-compose.yml")).expect("compose written");
+    let resolved = home.path().join("config/demo.conf");
+    assert!(
+        compose.contains(&format!("{}:/etc/demo.conf", resolved.display())),
+        "relative host path should be resolved to {}, got:\n{compose}",
+        resolved.display()
+    );
+    assert!(
+        !compose.contains("./config/demo.conf"),
+        "the relative form must not survive, got:\n{compose}"
+    );
+}
+
 #[test]
 fn unknown_target_is_rejected() {
     let home = TempDir::new().expect("temp dir");
