@@ -62,20 +62,23 @@ fn matches_golden_files() {
     );
 }
 
-/// Validates the emitted manifests with the real `kubectl` CLI.
-/// Ignored by default: it needs kubectl on the host.
+/// Validates the emitted manifests with `kubeconform`, an offline
+/// schema validator. Ignored by default: it needs kubeconform on the
+/// host. `kubectl --dry-run=client` is avoided because it contacts the
+/// cluster API server to fetch the `OpenAPI` schema, which makes it
+/// non-deterministic in CI.
 #[test]
-#[ignore = "requires kubectl on the host"]
-fn output_passes_kubectl_dry_run() {
-    if !common::tool_available("kubectl") {
-        eprintln!("skipping: kubectl not found on PATH");
+#[ignore = "requires kubeconform on the host"]
+fn output_passes_kubeconform() {
+    if !common::tool_available("kubeconform") {
+        eprintln!("skipping: kubeconform not found on PATH");
         return;
     }
 
     let a = artifacts(STACK);
     for f in &a.files {
-        let output = std::process::Command::new("kubectl")
-            .args(["apply", "--dry-run=client", "-f", "-"])
+        let output = std::process::Command::new("kubeconform")
+            .args(["-strict", "-summary", "-"])
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -89,11 +92,12 @@ fn output_passes_kubectl_dry_run() {
                     .write_all(f.contents.as_bytes())?;
                 child.wait_with_output()
             })
-            .expect("kubectl runs");
+            .expect("kubeconform runs");
         assert!(
             output.status.success(),
-            "kubectl rejected {}:\n{}",
+            "kubeconform rejected {}:\n{}\n{}",
             f.path.display(),
+            String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
     }
