@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/nubster-opensources/lightshuttle/main/docs/spec/manifest-v0.schema.json
+project:
+  name: shop
+  version: "1.2.0"
+  description: "A stack that also targets deployment artifacts via export"
+
+# Per-target overrides consumed by `lightshuttle export`. Every field is
+# optional; an absent `export:` section falls back to sensible defaults.
+export:
+  compose:
+    resources:
+      # The worker is a dev-only helper, kept out of the compose output.
+      worker:
+        enabled: false
+  kubernetes:
+    namespace: shop-staging
+    replicas: 2
+    image_pull_policy: IfNotPresent
+    resources:
+      # The API scales wider than the default in Kubernetes.
+      api:
+        replicas: 3
+  helm:
+    chart_name: shop
+    chart_version: "1.2.0"
+
+resources:
+  db:
+    postgres:
+      version: "16"
+      database: shop
+      # An explicit password keeps the export reproducible; an unset
+      # password is generated fresh on every run.
+      password: change-me-in-your-vault
+
+  api:
+    container:
+      image: nginx:1.27-alpine
+      ports:
+        - 8080:80
+      env:
+        LOG_LEVEL: info
+        API_TOKEN: change-me-in-your-vault
+      depends_on:
+        - db
+
+  worker:
+    container:
+      image: alpine:3.20
+      command: ["sh", "-c", "echo worker booting && sleep 3600"]

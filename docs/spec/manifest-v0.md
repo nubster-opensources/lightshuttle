@@ -548,14 +548,17 @@ resources:
 
 ## Forward compatibility
 
+Two optional top-level sections have shipped since `v0` and extend the
+manifest without breaking it: `dashboard:` and `observability:` (see the
+[observability spec](observability.md)) and `export:` (see the
+[export spec](export.md)).
+
 The following are explicitly **not** part of `v0` but are reserved for
 later versions. Until they ship, using their keywords at the top level
 or inside a resource produces a warning at validate time.
 
 | Future version | Keyword | Topic |
 |---|---|---|
-| `v0.2` | `dashboard:` (top-level) | Dashboard configuration. |
-| `v0.3` | `export:` (top-level) | Per-target production export overrides. |
 | `v0.4` | `hooks:` (top-level) | Global lifecycle hooks. |
 | `v0.4` | `${secret.*}` (interpolation) | Secret store integration. |
 | `v0.4` | resource kinds `mysql`, `mariadb`, `mongodb`, `static`, `process` | Additional resource kinds. |

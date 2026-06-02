@@ -27,7 +27,7 @@ The public API consists of every item that is reachable from a crate's root thro
 - Trait method signatures and associated types.
 - Public re-exports from sibling crates (the facade crate `lightshuttle` re-exports curated items).
 - The on-disk manifest schema produced by `lightshuttle-manifest` and exposed via `cargo xtask schema`. Schema changes that break previously valid manifests are treated as breaking changes.
-- The `lsh` CLI surface: command names, flags, exit codes, and the documented shape of human-readable and machine-readable output.
+- The `lightshuttle` CLI surface: command names, flags, exit codes, and the documented shape of human-readable and machine-readable output.
 
 Items that are explicitly NOT part of the public API:
 
