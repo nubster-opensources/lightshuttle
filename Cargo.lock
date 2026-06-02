@@ -1340,6 +1340,7 @@ dependencies = [
  "futures",
  "humantime",
  "lightshuttle-control",
+ "lightshuttle-export",
  "lightshuttle-manifest",
  "lightshuttle-otel",
  "lightshuttle-runtime",

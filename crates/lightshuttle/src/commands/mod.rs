@@ -14,6 +14,7 @@ use anyhow::Result;
 
 pub(crate) mod alias;
 pub(crate) mod down;
+pub(crate) mod export;
 pub(crate) mod logs;
 pub(crate) mod manifest;
 pub(crate) mod ps;

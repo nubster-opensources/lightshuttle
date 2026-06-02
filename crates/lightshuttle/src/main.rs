@@ -72,6 +72,14 @@ async fn run(cli: Cli) -> anyhow::Result<ExitOutcome> {
         }
         Command::Restart { resource, detach } => commands::restart::run(&resource, detach).await,
         Command::Alias { action } => commands::alias::run(&action),
+        Command::Export {
+            target,
+            output,
+            force,
+        } => {
+            let manifest = resolve_manifest(cli.file.as_deref())?;
+            commands::export::run(&manifest, target, output, force)
+        }
     }
 }
 
