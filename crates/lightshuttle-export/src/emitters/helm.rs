@@ -19,7 +19,7 @@ use crate::emit::Emitter;
 use crate::error::Result;
 use crate::model::{ExportModel, ExportProject, Target};
 use crate::resolve::{
-    chart_name_for, chart_version_for, enabled_for, image_pull_policy_for, namespace_for,
+    chart_name_for, chart_version_for, dns_name, enabled_for, image_pull_policy_for, namespace_for,
     replicas_for,
 };
 
@@ -112,8 +112,10 @@ fn resource_template(spec: &ContainerSpec, name: &str) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "{{{{- $svc := index .Values.services {name:?} -}}}}");
     out.push_str(&deployment_block(spec, name));
-    out.push_str("---\n");
-    out.push_str(&service_block(spec, name));
+    if !spec.ports.is_empty() {
+        out.push_str("---\n");
+        out.push_str(&service_block(spec, name));
+    }
     if !split_env(&spec.env).0.is_empty() {
         out.push_str("---\n");
         out.push_str(&configmap_block(name));
@@ -352,10 +354,6 @@ fn pull_policy_str(policy: ImagePullPolicy) -> &'static str {
         ImagePullPolicy::IfNotPresent => "IfNotPresent",
         ImagePullPolicy::Never => "Never",
     }
-}
-
-fn dns_name(name: &str) -> String {
-    name.replace('_', "-")
 }
 
 #[allow(clippy::cast_possible_truncation)]

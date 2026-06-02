@@ -113,13 +113,16 @@ fn build_compose(model: &ExportModel) -> ComposeFile {
             continue;
         }
         collect_named_volumes(&service.spec.volumes, &mut volumes);
-        services.insert(service.spec.resource.clone(), compose_service(service));
+        services.insert(
+            service.spec.resource.clone(),
+            compose_service(service, model),
+        );
     }
 
     ComposeFile { services, volumes }
 }
 
-fn compose_service(service: &ExportService) -> ComposeService {
+fn compose_service(service: &ExportService, model: &ExportModel) -> ComposeService {
     let spec = &service.spec;
     let (image, build) = image_or_build(spec);
 
@@ -145,10 +148,18 @@ fn compose_service(service: &ExportService) -> ComposeService {
             .depends_on
             .iter()
             .map(|dep| {
+                let has_healthcheck = model
+                    .services
+                    .iter()
+                    .any(|s| s.spec.resource == *dep && s.spec.healthcheck.is_some());
                 (
                     dep.clone(),
                     ComposeDependency {
-                        condition: "service_healthy",
+                        condition: if has_healthcheck {
+                            "service_healthy"
+                        } else {
+                            "service_started"
+                        },
                     },
                 )
             })

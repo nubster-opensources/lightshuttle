@@ -1,7 +1,7 @@
 //! Resolution of relative host volume paths against the manifest
 //! directory.
 
-use std::path::Path;
+use std::path::{Component, Path};
 
 use crate::model::{Manifest, ResourceKind};
 
@@ -35,13 +35,21 @@ impl Manifest {
 
 /// Rewrite a `src:target` mapping whose `src` is a relative host path,
 /// returning the absolute form. Returns `None` when nothing changes
-/// (named volume, absolute host path, or malformed mapping).
+/// (named volume, absolute host path, or malformed mapping) or when the
+/// resolved path would escape `base_dir` via `..` components.
 fn resolve_mapping(mapping: &str, base_dir: &Path) -> Option<String> {
     let (src, target) = mapping.split_once(':')?;
     if !src.starts_with('.') {
         return None;
     }
     let relative = src.strip_prefix("./").unwrap_or(src);
+    // Reject any path that contains '..' to prevent directory traversal.
+    if Path::new(relative)
+        .components()
+        .any(|c| c == Component::ParentDir)
+    {
+        return None;
+    }
     let absolute = base_dir.join(relative);
     Some(format!("{}:{target}", absolute.display()))
 }
@@ -73,11 +81,20 @@ mod tests {
     }
 
     #[test]
-    fn parent_relative_source_is_resolved() {
-        let expected = format!("{}:/etc/x", base().join("../shared/x").display());
+    fn parent_relative_source_is_rejected() {
         assert_eq!(
-            resolve_mapping("../shared/x:/etc/x", &base()).as_deref(),
-            Some(expected.as_str())
+            resolve_mapping("../shared/x:/etc/x", &base()),
+            None,
+            "paths escaping the base directory via '..' must be rejected"
+        );
+    }
+
+    #[test]
+    fn embedded_traversal_is_rejected() {
+        assert_eq!(
+            resolve_mapping("./foo/../../etc/passwd:/etc/passwd", &base()),
+            None,
+            "embedded '..' traversal must be rejected"
         );
     }
 

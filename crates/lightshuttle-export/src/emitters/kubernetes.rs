@@ -13,7 +13,7 @@ use serde::Serialize;
 use crate::emit::Emitter;
 use crate::error::Result;
 use crate::model::{ExportModel, ExportService, Target};
-use crate::resolve::{enabled_for, image_pull_policy_for, namespace_for, replicas_for};
+use crate::resolve::{dns_name, enabled_for, image_pull_policy_for, namespace_for, replicas_for};
 
 /// Environment key fragments that route a variable into a `Secret`
 /// instead of a `ConfigMap`. Matched case-insensitively.
@@ -70,7 +70,9 @@ fn resource_docs(service: &ExportService, model: &ExportModel, namespace: &str) 
     docs.push(to_yaml(&deployment(
         spec, model, namespace, &name, &labels,
     ))?);
-    docs.push(to_yaml(&service_object(spec, namespace, &name, &labels))?);
+    if !spec.ports.is_empty() {
+        docs.push(to_yaml(&service_object(spec, namespace, &name, &labels))?);
+    }
 
     if !config_env.is_empty() {
         docs.push(to_yaml(&ConfigMap {
@@ -288,11 +290,6 @@ fn meta(name: &str, namespace: &str, labels: &BTreeMap<String, String>) -> Meta 
         namespace: namespace.to_owned(),
         labels: labels.clone(),
     }
-}
-
-/// Sanitise a manifest name into a DNS-1123 compliant label.
-fn dns_name(name: &str) -> String {
-    name.replace('_', "-")
 }
 
 #[allow(clippy::cast_possible_truncation)]

@@ -331,7 +331,11 @@ fn spec_container(
         .iter()
         .map(|s| parse_volume_string(s))
         .collect::<Result<Vec<_>>>()?;
-    let command = c.command.as_ref().map(parse_command);
+    let command = c
+        .command
+        .as_ref()
+        .map(parse_command)
+        .filter(|cmd| !cmd.is_empty());
     let healthcheck = c.healthcheck.as_ref().map(parse_healthcheck).transpose()?;
 
     let ports_csv: String = ports
@@ -385,7 +389,11 @@ fn spec_dockerfile(
         .iter()
         .map(|s| parse_volume_string(s))
         .collect::<Result<Vec<_>>>()?;
-    let command = c.command.as_ref().map(parse_command);
+    let command = c
+        .command
+        .as_ref()
+        .map(parse_command)
+        .filter(|cmd| !cmd.is_empty());
     let healthcheck = c.healthcheck.as_ref().map(parse_healthcheck).transpose()?;
 
     let ports_csv: String = ports
@@ -574,7 +582,105 @@ fn generate_random_password() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::generate_random_password;
+    use super::{
+        VolumeSource, generate_random_password, parse_command, parse_duration, parse_port_string,
+        parse_volume_string,
+    };
+    use lightshuttle_manifest::Command;
+    use std::time::Duration;
+
+    #[test]
+    fn parse_port_string_two_part() {
+        let b = parse_port_string("8080:80").unwrap();
+        assert_eq!(b.host_port, 8080);
+        assert_eq!(b.container_port, 80);
+        assert_eq!(b.host_address, None);
+    }
+
+    #[test]
+    fn parse_port_string_three_part() {
+        let b = parse_port_string("127.0.0.1:8080:80").unwrap();
+        assert_eq!(b.host_port, 8080);
+        assert_eq!(b.container_port, 80);
+        assert_eq!(b.host_address.as_deref(), Some("127.0.0.1"));
+    }
+
+    #[test]
+    fn parse_port_string_single_part_is_error() {
+        assert!(parse_port_string("80").is_err());
+    }
+
+    #[test]
+    fn parse_port_string_non_numeric_is_error() {
+        assert!(parse_port_string("abc:80").is_err());
+    }
+
+    #[test]
+    fn parse_volume_string_named() {
+        let b = parse_volume_string("data:/var/lib/data").unwrap();
+        assert!(matches!(b.source, VolumeSource::Named(_)));
+        assert_eq!(b.target, "/var/lib/data");
+    }
+
+    #[test]
+    fn parse_volume_string_relative_host() {
+        let b = parse_volume_string("./src:/app").unwrap();
+        assert!(matches!(b.source, VolumeSource::HostPath(_)));
+        assert_eq!(b.target, "/app");
+    }
+
+    #[test]
+    fn parse_volume_string_absolute_host() {
+        let b = parse_volume_string("/abs/path:/app").unwrap();
+        assert!(matches!(b.source, VolumeSource::HostPath(_)));
+        assert_eq!(b.target, "/app");
+    }
+
+    #[test]
+    fn parse_volume_string_no_colon_is_error() {
+        assert!(parse_volume_string("nodatahere").is_err());
+    }
+
+    #[test]
+    fn parse_duration_seconds() {
+        assert_eq!(parse_duration("30s").unwrap(), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn parse_duration_milliseconds() {
+        assert_eq!(parse_duration("500ms").unwrap(), Duration::from_millis(500));
+    }
+
+    #[test]
+    fn parse_duration_minutes() {
+        assert_eq!(parse_duration("1m").unwrap(), Duration::from_secs(60));
+    }
+
+    #[test]
+    fn parse_duration_unknown_unit_is_error() {
+        assert!(parse_duration("10x").is_err());
+    }
+
+    #[test]
+    fn parse_duration_no_unit_is_error() {
+        assert!(parse_duration("10").is_err());
+    }
+
+    #[test]
+    fn parse_duration_no_digits_is_error() {
+        assert!(parse_duration("s").is_err());
+    }
+
+    #[test]
+    fn parse_command_empty_args_produces_empty_vec() {
+        assert!(parse_command(&Command::Args(vec![])).is_empty());
+    }
+
+    #[test]
+    fn parse_command_single_becomes_sh_c() {
+        let v = parse_command(&Command::Single("echo hi".to_owned()));
+        assert_eq!(v, vec!["sh", "-c", "echo hi"]);
+    }
 
     #[test]
     fn generated_password_has_expected_shape() {
