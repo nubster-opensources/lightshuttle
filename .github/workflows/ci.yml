@@ -114,12 +114,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: validate-export
-      # docker compose ships with the runner; kubectl and helm are
-      # installed here so all three targets are validated. Tests skip any
-      # tool that is still missing.
-      - uses: azure/setup-kubectl@v4
+      # docker compose ships with the runner; helm and kubeconform are
+      # installed here so all three targets are validated offline.
+      # kubeconform replaces kubectl --dry-run, which would contact a
+      # cluster API server. Tests skip any tool that is still missing.
       - uses: azure/setup-helm@v4
         with:
           version: latest
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo install kubeconform /usr/local/bin/
       # Run locally with: cargo test -p lightshuttle-export -- --ignored
       - run: cargo test -p lightshuttle-export --test compose_emitter --test kubernetes_emitter --test helm_emitter -- --ignored --nocapture
