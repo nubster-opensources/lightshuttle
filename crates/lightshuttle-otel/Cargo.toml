@@ -20,8 +20,8 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-lightshuttle-manifest = { version = "0.2.0", path = "../lightshuttle-manifest" }
-lightshuttle-runtime = { version = "0.2.0", path = "../lightshuttle-runtime" }
+lightshuttle-manifest = { version = "0.3.0", path = "../lightshuttle-manifest" }
+lightshuttle-runtime = { version = "0.3.0", path = "../lightshuttle-runtime" }
 indexmap.workspace = true
 opentelemetry.workspace = true
 opentelemetry_sdk.workspace = true

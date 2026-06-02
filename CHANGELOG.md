@@ -9,6 +9,42 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 ### Added
 - _Items in flight will be listed here until the next release._
 
+## [0.3.0] - 2026-06-02
+
+Production Export release. Adds the `export:` manifest section and the `lightshuttle export <target>` command, which transpiles a manifest to Docker Compose, plain Kubernetes manifests or a Helm chart. Ships two new published crates, a full offline validation CI job and a round of documentation harmonisation.
+
+### Added
+
+- New crate `lightshuttle-spec` (#105): extracts `ContainerSpec`, `from_resource` resolution and `SpecError` from `lightshuttle-runtime` into a dedicated, dependency-light crate, enabling downstream consumers (the export crate) to perform lowering without pulling in the full runtime.
+- New crate `lightshuttle-export` (#87): manifest-to-artifact transpilation pipeline.
+  - `lower()` converts a resolved manifest to a target-neutral `ExportModel` (reuses `from_resource` from `lightshuttle-spec`, zero drift).
+  - `Emitter` trait with three implementations: Compose, Kubernetes and Helm.
+  - `resolve` module: six pure helper functions shared across emitters (port defaults, image tags, DNS-1123 normalisation, healthcheck command extraction, volume mount classification, secret heuristic).
+  - Secret heuristic: environment variable names containing `PASSWORD`, `PASSWD`, `SECRET`, `TOKEN` or `KEY` are classified as `Secret` in Kubernetes and Helm output.
+- `export:` typed manifest section with per-target overrides for Compose, Kubernetes and Helm (#86).
+- `lightshuttle export <target> [--output <dir>] [--force]` CLI command (#88): guards against overwriting a non-empty output directory without `--force`, prints a summary of emitted files.
+- Docker Compose emitter (#89): emits a `docker-compose.yml` with typed service model, `depends_on: condition: service_healthy`, top-level named volumes and loopback port bindings by default.
+- Kubernetes manifests emitter (#90): emits `Deployment`, `Service`, `ConfigMap`, `Secret` and `PersistentVolumeClaim` resources plus a `namespace.yaml`; maps healthcheck probes to liveness/readiness probes; DNS-1123 name normalisation.
+- Helm chart emitter (#91): emits `Chart.yaml`, `values.yaml` and per-resource `templates/*.yaml`; parametrised via `index .Values.services`; full parity with the Kubernetes emitter.
+- External validation CI job `validate-export` (#92): probes tool availability with `--help` before running; validates Compose output with `docker compose config`, Kubernetes with `kubeconform` and Helm with `helm lint`; non-blocking, runs offline.
+
+### Fixed
+
+- Relative host volume paths (e.g. `./data:/var/lib/data`) are now resolved to absolute paths at manifest load time via `Manifest::resolve_host_volume_paths(base_dir)`, so emitted artefacts are portable across working directories (#107).
+
+### Documentation
+
+- `docs/spec/export.md`: `export:` section schema, target matrix and per-target mapping rules (Compose, Kubernetes, Helm), cross-cutting rules (secret heuristic, DNS-1123 names, built images, reproducibility).
+- `docs/tutorial/export.md`: end-to-end walkthrough of `lightshuttle export` against a runnable four-service manifest.
+- `examples/04-export`: runnable manifest demonstrating the `export:` section and all three targets.
+- Full doc-set harmonisation: README and getting-started dropped pre-alpha framing and now install from crates.io; Commands table and Documentation index added to README; manifest spec moved `dashboard:` and `export:` out of future-reserved; release process lists all seven crates; semver policy names the `lightshuttle` CLI.
+
+### Notes for upgraders
+
+- Two new crates are published: `lightshuttle-spec` and `lightshuttle-export`.
+- The `export:` manifest key is no longer future-reserved; it is parsed and validated.
+- Relative host volume paths in `volumes` are now resolved at manifest load time. Manifests that relied on the raw relative form being forwarded as-is should switch to absolute paths or keep using relative paths (they will be resolved correctly from the manifest's directory).
+
 ## [0.2.0] - 2026-05-30
 
 Dashboard and observability release. Adds a local HTTP control plane with a web dashboard, live log and event streaming, a restart workflow, a bundled OpenTelemetry collector, orchestrator self-tracing and Prometheus metrics. Ships two new published crates and a round of network-surface hardening.
@@ -108,6 +144,7 @@ First public release. Ships a local development orchestrator able to read a Carg
 
 This is the first published version, so no upgrade path applies.
 
-[Unreleased]: https://github.com/nubster-opensources/lightshuttle/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/nubster-opensources/lightshuttle/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/nubster-opensources/lightshuttle/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/nubster-opensources/lightshuttle/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/nubster-opensources/lightshuttle/releases/tag/v0.1.0
