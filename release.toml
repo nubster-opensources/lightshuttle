@@ -16,4 +16,4 @@ push = false
 sign-commit = false
 sign-tag = false
 
-pre-release-commit-message = "release(v{{version}}): bump workspace to {{version}}"
+pre-release-commit-message = "release: bump workspace to {{version}}"
