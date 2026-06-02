@@ -495,6 +495,11 @@ fn parse_volume_string(input: &str) -> Result<VolumeBinding> {
     let source = if source.starts_with('.') || source.starts_with('/') {
         VolumeSource::HostPath(source.to_owned())
     } else {
+        if source.contains(['{', '}']) {
+            return Err(SpecError::InvalidSpec(format!(
+                "volume name `{source}` must not contain '{{' or '}}': unsafe in export templates"
+            )));
+        }
         VolumeSource::Named(source.to_owned())
     };
     Ok(VolumeBinding {
@@ -639,6 +644,11 @@ mod tests {
     #[test]
     fn parse_volume_string_no_colon_is_error() {
         assert!(parse_volume_string("nodatahere").is_err());
+    }
+
+    #[test]
+    fn parse_volume_string_braces_in_name_is_error() {
+        assert!(parse_volume_string("my{vol}:/data").is_err());
     }
 
     #[test]
