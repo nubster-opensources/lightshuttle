@@ -248,7 +248,9 @@ fn split_env(
 fn probe(hc: &HealthcheckSpec) -> Probe {
     let command = match hc.test.first().map(String::as_str) {
         Some("CMD") => hc.test[1..].to_vec(),
-        Some("CMD-SHELL") => vec!["sh".to_owned(), "-c".to_owned(), hc.test[1..].join(" ")],
+        Some("CMD-SHELL") if hc.test.len() > 1 => {
+            vec!["sh".to_owned(), "-c".to_owned(), hc.test[1..].join(" ")]
+        }
         _ => hc.test.clone(),
     };
     Probe {
@@ -562,4 +564,37 @@ struct PvcSpec {
 #[derive(Serialize)]
 struct PvcResources {
     requests: BTreeMap<String, String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::probe;
+    use lightshuttle_spec::HealthcheckSpec;
+
+    fn hc(test: Vec<&str>) -> HealthcheckSpec {
+        HealthcheckSpec {
+            test: test.into_iter().map(ToOwned::to_owned).collect(),
+            interval: Duration::from_secs(5),
+            timeout: Duration::from_secs(3),
+            retries: 3,
+            start_period: Duration::from_secs(5),
+        }
+    }
+
+    #[test]
+    fn cmd_shell_empty_args_falls_back_to_raw_vector() {
+        let p = probe(&hc(vec!["CMD-SHELL"]));
+        assert_eq!(p.exec.command, vec!["CMD-SHELL"]);
+    }
+
+    #[test]
+    fn cmd_shell_with_args_wraps_in_sh_c() {
+        let p = probe(&hc(vec!["CMD-SHELL", "curl", "-f", "http://localhost/health"]));
+        assert_eq!(
+            p.exec.command,
+            vec!["sh", "-c", "curl -f http://localhost/health"]
+        );
+    }
 }

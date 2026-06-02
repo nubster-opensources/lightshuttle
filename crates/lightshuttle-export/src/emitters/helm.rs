@@ -285,7 +285,9 @@ fn pvc_block(name: &str, volume: &str) -> String {
 fn probe_block(hc: &HealthcheckSpec) -> String {
     let command = match hc.test.first().map(String::as_str) {
         Some("CMD") => hc.test[1..].to_vec(),
-        Some("CMD-SHELL") => vec!["sh".to_owned(), "-c".to_owned(), hc.test[1..].join(" ")],
+        Some("CMD-SHELL") if hc.test.len() > 1 => {
+            vec!["sh".to_owned(), "-c".to_owned(), hc.test[1..].join(" ")]
+        }
         _ => hc.test.clone(),
     };
     let mut s = String::from("          exec:\n            command:\n");
