@@ -12,9 +12,9 @@ use bollard::models::{
     PortBinding as BollardPortBinding,
 };
 use bollard::query_parameters::{
-    BuildImageOptionsBuilder, CreateContainerOptionsBuilder, CreateImageOptionsBuilder,
-    ListContainersOptionsBuilder, LogsOptionsBuilder, RemoveContainerOptionsBuilder,
-    StartContainerOptions, StopContainerOptionsBuilder,
+    BuildImageOptionsBuilder, BuilderVersion, CreateContainerOptionsBuilder,
+    CreateImageOptionsBuilder, ListContainersOptionsBuilder, LogsOptionsBuilder,
+    RemoveContainerOptionsBuilder, StartContainerOptions, StopContainerOptionsBuilder,
 };
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
@@ -132,6 +132,7 @@ impl DockerRuntime {
             .rm(true)
             .buildargs(build_args)
             .target(target.unwrap_or(""))
+            .version(BuilderVersion::BuilderBuildKit)
             .build();
 
         let mut stream = self.client.build_image(
