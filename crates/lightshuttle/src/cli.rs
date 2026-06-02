@@ -119,6 +119,8 @@ pub(crate) enum ExportTarget {
     Compose,
     /// Plain Kubernetes manifests, one file per resource.
     Kubernetes,
+    /// A Helm chart.
+    Helm,
 }
 
 /// Actions for the `alias` subcommand.

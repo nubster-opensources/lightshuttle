@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use lightshuttle_export::{ComposeEmitter, Emitter, KubernetesEmitter, Target, lower};
+use lightshuttle_export::{ComposeEmitter, Emitter, HelmEmitter, KubernetesEmitter, Target, lower};
 use tracing::info;
 
 use super::{ExitOutcome, load_manifest};
@@ -63,6 +63,7 @@ fn emitter_for(target: ExportTarget) -> Box<dyn Emitter> {
     match target {
         ExportTarget::Compose => Box::new(ComposeEmitter),
         ExportTarget::Kubernetes => Box::new(KubernetesEmitter),
+        ExportTarget::Helm => Box::new(HelmEmitter),
     }
 }
 

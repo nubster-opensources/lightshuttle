@@ -19,7 +19,7 @@ mod model;
 pub mod resolve;
 
 pub use crate::emit::Emitter;
-pub use crate::emitters::{ComposeEmitter, KubernetesEmitter};
+pub use crate::emitters::{ComposeEmitter, HelmEmitter, KubernetesEmitter};
 pub use crate::error::{ExportError, Result};
 pub use crate::lower::lower;
 pub use crate::model::{

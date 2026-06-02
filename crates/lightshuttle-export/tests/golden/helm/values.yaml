@@ -1,0 +1,23 @@
+namespace: shop
+services:
+  api:
+    replicas: 1
+    image:
+      repository: alpine
+      tag: '3.20'
+      pullPolicy: IfNotPresent
+    env:
+      LOG_LEVEL: info
+    secrets:
+      API_TOKEN: t0ken
+  db:
+    replicas: 1
+    image:
+      repository: postgres
+      tag: 16-alpine
+      pullPolicy: IfNotPresent
+    env:
+      POSTGRES_DB: db
+      POSTGRES_USER: postgres
+    secrets:
+      POSTGRES_PASSWORD: devsecret

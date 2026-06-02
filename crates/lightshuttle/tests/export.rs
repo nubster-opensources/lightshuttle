@@ -138,16 +138,35 @@ fn export_kubernetes_writes_manifests() {
 }
 
 #[test]
-fn unknown_target_is_rejected() {
+fn export_helm_writes_chart() {
     let home = TempDir::new().expect("temp dir");
     let manifest = write_manifest(home.path());
+    let out = home.path().join("chart");
 
-    // `helm` is not wired into the CLI yet, so clap rejects it.
     Command::cargo_bin("lightshuttle")
         .expect("binary builds")
         .arg("-f")
         .arg(&manifest)
-        .args(["export", "helm"])
+        .args(["export", "helm", "--output"])
+        .arg(&out)
+        .assert()
+        .success();
+
+    assert!(out.join("Chart.yaml").exists());
+    assert!(out.join("values.yaml").exists());
+    assert!(out.join("templates").join("db.yaml").exists());
+}
+
+#[test]
+fn unknown_target_is_rejected() {
+    let home = TempDir::new().expect("temp dir");
+    let manifest = write_manifest(home.path());
+
+    Command::cargo_bin("lightshuttle")
+        .expect("binary builds")
+        .arg("-f")
+        .arg(&manifest)
+        .args(["export", "nomad"])
         .assert()
         .failure();
 }
