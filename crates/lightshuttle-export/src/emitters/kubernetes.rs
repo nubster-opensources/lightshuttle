@@ -594,7 +594,12 @@ mod tests {
 
     #[test]
     fn cmd_shell_with_args_wraps_in_sh_c() {
-        let p = probe(&hc(vec!["CMD-SHELL", "curl", "-f", "http://localhost/health"]));
+        let p = probe(&hc(vec![
+            "CMD-SHELL",
+            "curl",
+            "-f",
+            "http://localhost/health",
+        ]));
         assert_eq!(
             p.exec.command,
             vec!["sh", "-c", "curl -f http://localhost/health"]

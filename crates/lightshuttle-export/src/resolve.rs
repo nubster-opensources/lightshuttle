@@ -16,7 +16,16 @@ use crate::model::Target;
 /// Emitters reference this single slice so the set stays in sync across
 /// all export targets.
 pub const SECRET_MARKERS: &[&str] = &[
-    "PASSWORD", "PASSWD", "PASS", "SECRET", "TOKEN", "KEY", "CREDENTIAL", "AUTH", "CERT", "PWD",
+    "PASSWORD",
+    "PASSWD",
+    "PASS",
+    "SECRET",
+    "TOKEN",
+    "KEY",
+    "CREDENTIAL",
+    "AUTH",
+    "CERT",
+    "PWD",
 ];
 
 /// Default replica count when neither a per-resource nor a per-target
