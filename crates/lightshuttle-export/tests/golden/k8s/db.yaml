@@ -87,7 +87,7 @@ metadata:
   labels:
     app: db
 stringData:
-  POSTGRES_PASSWORD: devsecret
+  POSTGRES_PASSWORD: '***'
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

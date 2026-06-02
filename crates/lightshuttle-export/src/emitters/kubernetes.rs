@@ -226,6 +226,9 @@ fn pod_volume(resource: &str, idx: usize, volume: &VolumeBinding) -> (String, Po
 }
 
 /// Split env into (config, secret) by case-insensitive key marker.
+///
+/// Secret values are replaced with a placeholder so the exported
+/// manifest never contains real credentials.
 fn split_env(
     env: &std::collections::HashMap<String, String>,
 ) -> (BTreeMap<String, String>, BTreeMap<String, String>) {
@@ -234,7 +237,7 @@ fn split_env(
     for (key, value) in env {
         let upper = key.to_ascii_uppercase();
         if SECRET_MARKERS.iter().any(|m| upper.contains(m)) {
-            secret.insert(key.clone(), value.clone());
+            secret.insert(key.clone(), "***".to_owned());
         } else {
             config.insert(key.clone(), value.clone());
         }

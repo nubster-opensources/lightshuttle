@@ -314,6 +314,8 @@ fn named_mounts(spec: &ContainerSpec) -> Vec<(String, &str)> {
         .collect()
 }
 
+/// Secret values are replaced with a placeholder so the exported
+/// chart never contains real credentials.
 fn split_env(
     env: &std::collections::HashMap<String, String>,
 ) -> (BTreeMap<String, String>, BTreeMap<String, String>) {
@@ -324,7 +326,7 @@ fn split_env(
             .iter()
             .any(|m| key.to_ascii_uppercase().contains(m))
         {
-            secret.insert(key.clone(), value.clone());
+            secret.insert(key.clone(), "***".to_owned());
         } else {
             config.insert(key.clone(), value.clone());
         }
