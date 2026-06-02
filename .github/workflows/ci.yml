@@ -101,3 +101,19 @@ jobs:
           key: cargo-audit
       - run: cargo install --locked cargo-audit
       - run: cargo audit
+
+  validate-export:
+    name: Validate export output
+    runs-on: ubuntu-latest
+    # Non-blocking: relies on third-party tools whose versions drift with
+    # the runner image. The ignored tests skip any tool that is missing.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: validate-export
+      # docker compose, kubectl and helm are preinstalled on ubuntu-latest.
+      # Run locally with: cargo test -p lightshuttle-export -- --ignored
+      - run: cargo test -p lightshuttle-export --test compose_emitter --test kubernetes_emitter --test helm_emitter -- --ignored --nocapture
