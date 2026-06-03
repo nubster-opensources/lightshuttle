@@ -83,3 +83,19 @@ fn missing_manifest_reports_user_error() {
         .failure()
         .code(1);
 }
+
+#[test]
+fn up_explicit_env_file_not_found_fails_before_docker() {
+    // load_env is called before DockerRuntime::connect, so a missing
+    // --env-file path produces a clear error without requiring a daemon.
+    let manifest = write_temp_manifest(VALID_MANIFEST);
+    Command::cargo_bin("lightshuttle")
+        .expect("binary exists")
+        .arg("--file")
+        .arg(manifest.path())
+        .args(["up", "--env-file", "/nonexistent/path.env"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("failed to load --env-file"));
+}
