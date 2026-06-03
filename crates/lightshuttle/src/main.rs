@@ -73,6 +73,10 @@ async fn run(cli: Cli) -> anyhow::Result<ExitOutcome> {
         }
         Command::Restart { resource, detach } => commands::restart::run(&resource, detach).await,
         Command::Alias { action } => commands::alias::run(&action),
+        Command::Secrets { action } => {
+            let manifest_path = resolve_manifest(cli.file.as_deref())?;
+            commands::secrets::run(&manifest_path, &action)
+        }
         Command::Export {
             target,
             output,
