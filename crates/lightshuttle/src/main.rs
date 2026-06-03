@@ -46,9 +46,10 @@ async fn run(cli: Cli) -> anyhow::Result<ExitOutcome> {
             grace,
             control_port,
             no_otel,
+            env_file,
         } => {
             let manifest = resolve_manifest(cli.file.as_deref())?;
-            commands::up::run(&manifest, grace.into(), control_port, no_otel).await
+            commands::up::run(&manifest, grace.into(), control_port, no_otel, env_file).await
         }
         Command::Down { grace } => {
             let manifest = resolve_manifest(cli.file.as_deref())?;

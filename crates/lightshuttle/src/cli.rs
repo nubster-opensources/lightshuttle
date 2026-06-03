@@ -44,6 +44,13 @@ pub(crate) enum Command {
         /// manifest.
         #[arg(long)]
         no_otel: bool,
+
+        /// Path to a .env file supplying secret values referenced as
+        /// `${env.VAR}` in the manifest. An explicit path that does not
+        /// exist is an error. The default `.env` is silently skipped
+        /// when absent.
+        #[arg(long)]
+        env_file: Option<PathBuf>,
     },
 
     /// Stop every container managed by this project.
