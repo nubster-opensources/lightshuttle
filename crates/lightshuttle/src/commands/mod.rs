@@ -19,6 +19,7 @@ pub(crate) mod logs;
 pub(crate) mod manifest;
 pub(crate) mod ps;
 pub(crate) mod restart;
+pub(crate) mod secrets;
 pub(crate) mod up;
 pub(crate) mod validate;
 

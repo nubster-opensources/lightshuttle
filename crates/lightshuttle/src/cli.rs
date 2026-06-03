@@ -117,6 +117,13 @@ pub(crate) enum Command {
         #[arg(long)]
         force: bool,
     },
+
+    /// Inspect `${env.*}` variable references in the manifest.
+    Secrets {
+        /// Action to perform.
+        #[command(subcommand)]
+        action: SecretsAction,
+    },
 }
 
 /// Deployment targets the `export` command can generate.
@@ -128,6 +135,18 @@ pub(crate) enum ExportTarget {
     Kubernetes,
     /// A Helm chart.
     Helm,
+}
+
+/// Actions for the `secrets` subcommand.
+#[derive(Debug, Subcommand)]
+pub(crate) enum SecretsAction {
+    /// Report which `${env.*}` variables are set, defaulted, or missing.
+    Check {
+        /// Path to a .env file to check against. Defaults to `.env` when
+        /// present in the working directory; silently skipped when absent.
+        #[arg(long)]
+        env_file: Option<PathBuf>,
+    },
 }
 
 /// Actions for the `alias` subcommand.
