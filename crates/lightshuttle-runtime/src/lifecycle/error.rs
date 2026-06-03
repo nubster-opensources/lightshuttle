@@ -67,4 +67,15 @@ pub enum LifecycleError {
     /// A reference targets a resource that does not exist in the plan.
     #[error("resource `{0}` not found in the current plan")]
     ResourceNotFound(String),
+
+    /// One or more `${env.VAR}` references in the manifest cannot be
+    /// resolved because the variables are unset and have no default.
+    #[error(
+        "missing required environment variable(s): {}",
+        names.join(", ")
+    )]
+    MissingEnvVars {
+        /// Sorted, deduplicated list of missing variable names.
+        names: Vec<String>,
+    },
 }
