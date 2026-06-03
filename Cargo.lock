@@ -1459,7 +1459,7 @@ checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
 name = "lightshuttle"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1487,7 +1487,7 @@ dependencies = [
 
 [[package]]
 name = "lightshuttle-control"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "askama",
  "axum 0.8.9",
@@ -1506,7 +1506,7 @@ dependencies = [
 
 [[package]]
 name = "lightshuttle-export"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "indexmap 2.14.0",
  "lightshuttle-manifest",
@@ -1519,7 +1519,7 @@ dependencies = [
 
 [[package]]
 name = "lightshuttle-manifest"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "indexmap 2.14.0",
  "jsonschema",
@@ -1532,7 +1532,7 @@ dependencies = [
 
 [[package]]
 name = "lightshuttle-otel"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "indexmap 2.14.0",
@@ -1549,7 +1549,7 @@ dependencies = [
 
 [[package]]
 name = "lightshuttle-runtime"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "bollard",
  "bytes",
@@ -1569,7 +1569,7 @@ dependencies = [
 
 [[package]]
 name = "lightshuttle-secrets"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "tempfile",
  "thiserror 2.0.18",
@@ -1577,7 +1577,7 @@ dependencies = [
 
 [[package]]
 name = "lightshuttle-spec"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "indexmap 2.14.0",
  "lightshuttle-manifest",
@@ -3895,7 +3895,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "lightshuttle-manifest",
