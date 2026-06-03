@@ -17,9 +17,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::oneshot;
 use tracing::{info, warn};
 
-use lightshuttle_secrets::{EnvFileSource, SecretSource as _};
-
-use super::{ExitOutcome, load_manifest};
+use super::{ExitOutcome, load_env, load_manifest};
 use crate::control_url;
 
 /// Telemetry handle held for the lifetime of `up`. The `Otel` variant
@@ -131,26 +129,6 @@ pub(crate) async fn run(
 
     stack_result?;
     Ok(ExitOutcome::Success)
-}
-
-/// Load environment variables from a `.env` file.
-///
-/// If `path` is `Some`, the file must exist (explicit user path).
-/// If `path` is `None`, the default `.env` in the working directory is
-/// tried but silently skipped when absent.
-fn load_env(path: Option<PathBuf>) -> Result<HashMap<String, String>> {
-    if let Some(explicit) = path {
-        let source = EnvFileSource::load(&explicit)
-            .with_context(|| format!("failed to load --env-file {}", explicit.display()))?;
-        source
-            .load()
-            .with_context(|| format!("failed to read env file {}", explicit.display()))
-    } else {
-        match EnvFileSource::load_optional(".env").context("failed to parse .env")? {
-            Some(source) => source.load().context("failed to read .env"),
-            None => Ok(HashMap::new()),
-        }
-    }
 }
 
 /// Spawn a task that consumes the lifecycle event broadcast and

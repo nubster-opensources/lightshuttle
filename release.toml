@@ -16,4 +16,7 @@ push = false
 sign-commit = false
 sign-tag = false
 
-pre-release-commit-message = "release: bump workspace to {{version}}"
+# `{{version}}` is not rendered in the consolidated workspace commit context,
+# so the message is kept static to avoid an unrendered placeholder landing in
+# git history. The target version is recorded in CHANGELOG.md and the tag.
+pre-release-commit-message = "release: bump workspace versions"
