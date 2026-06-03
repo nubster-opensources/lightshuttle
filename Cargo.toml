@@ -6,6 +6,7 @@ members = [
     "crates/lightshuttle-export",
     "crates/lightshuttle-manifest",
     "crates/lightshuttle-otel",
+    "crates/lightshuttle-secrets",
     "crates/lightshuttle-runtime",
     "crates/lightshuttle-spec",
     "xtask",
