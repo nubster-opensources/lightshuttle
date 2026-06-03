@@ -2,7 +2,7 @@ name: AI Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, synchronize, labeled]
     branches: [main]
 
 permissions:
@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   review:
+    if: github.event.action != 'labeled'
     uses: nubster-opensources/.github/.github/workflows/ai-review.yml@main
     with:
       pr-number: ${{ github.event.pull_request.number }}
@@ -19,9 +20,19 @@ jobs:
       mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
 
   describe:
+    if: github.event.action != 'labeled'
     uses: nubster-opensources/.github/.github/workflows/ai-review.yml@main
     with:
       pr-number: ${{ github.event.pull_request.number }}
       mode: describe
+    secrets:
+      mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
+
+  team:
+    if: contains(github.event.pull_request.labels.*.name, 'ai:team')
+    uses: nubster-opensources/.github/.github/workflows/ai-review.yml@main
+    with:
+      pr-number: ${{ github.event.pull_request.number }}
+      mode: team
     secrets:
       mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
