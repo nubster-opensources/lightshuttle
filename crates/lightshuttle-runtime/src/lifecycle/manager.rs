@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use lightshuttle_manifest::{InterpolationContext, Interpolator};
+use lightshuttle_manifest::{InterpolationContext, Interpolator, Reference};
 use tokio::sync::{broadcast, watch};
 use tracing::{Instrument, debug, info, info_span, instrument, warn};
 
@@ -54,6 +54,7 @@ pub struct LifecycleManager<R: ContainerRuntime + 'static> {
     runtime: Arc<R>,
     nodes: HashMap<String, NodeHandle>,
     event_tx: broadcast::Sender<LifecycleEvent>,
+    extra_env: Arc<HashMap<String, String>>,
 }
 
 impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
@@ -84,8 +85,57 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
             runtime: Arc::new(runtime),
             nodes,
             event_tx,
+            extra_env: Arc::new(HashMap::new()),
         };
         (manager, event_rx)
+    }
+
+    /// Merge additional environment variables into the interpolation
+    /// context used for every resource.
+    ///
+    /// Variables provided here take precedence over system environment
+    /// variables of the same name. Call before [`start_all`].
+    ///
+    /// [`start_all`]: Self::start_all
+    #[must_use]
+    pub fn with_env(mut self, env: HashMap<String, String>) -> Self {
+        self.extra_env = Arc::new(env);
+        self
+    }
+
+    /// Scan every resource spec for `${env.VAR}` references that cannot
+    /// be resolved and return a single error listing all missing names.
+    ///
+    /// Call before [`start_all`] to surface missing variables before any
+    /// container is started.
+    ///
+    /// [`start_all`]: Self::start_all
+    pub fn check_required_env(&self) -> Result<(), LifecycleError> {
+        let ctx = InterpolationContext::from_env()
+            .with_env(self.extra_env.iter().map(|(k, v)| (k.clone(), v.clone())));
+        let interpolator = Interpolator::new(&ctx);
+
+        let mut missing: Vec<String> = Vec::new();
+
+        for node in self.plan.nodes() {
+            for value in node.spec.env.values() {
+                collect_missing_env_refs(&interpolator, value, &mut missing);
+            }
+            if let Some(args) = &node.spec.command {
+                for arg in args {
+                    collect_missing_env_refs(&interpolator, arg, &mut missing);
+                }
+            }
+        }
+
+        missing.sort();
+        missing.dedup();
+
+        if missing.is_empty() {
+            Ok(())
+        } else {
+            Err(LifecycleError::MissingEnvVars { names: missing })
+        }
     }
 
     /// Start every resource in topological order. Independent branches
@@ -115,6 +165,7 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
             let name = node.name.clone();
             let runtime = Arc::clone(&self.runtime);
             let event_tx = self.event_tx.clone();
+            let extra_env = Arc::clone(&self.extra_env);
 
             let task = tokio::spawn(async move {
                 start_one(
@@ -126,6 +177,7 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
                     dep_status_rxs,
                     dep_outputs_rxs,
                     event_tx,
+                    extra_env,
                 )
                 .await
             });
@@ -292,6 +344,7 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
             dep_status_rxs,
             dep_outputs_rxs,
             self.event_tx.clone(),
+            Arc::clone(&self.extra_env),
         )
         .await
     }
@@ -346,6 +399,7 @@ async fn start_one<R: ContainerRuntime + 'static>(
     dep_status_rxs: HashMap<String, watch::Receiver<NodeStatus>>,
     mut dep_outputs_rxs: HashMap<String, watch::Receiver<Option<ResourceOutputs>>>,
     event_tx: broadcast::Sender<LifecycleEvent>,
+    extra_env: Arc<HashMap<String, String>>,
 ) -> Result<(), LifecycleError> {
     // 1. Wait for every dependency to become ready.
     for (dep_name, mut rx) in dep_status_rxs {
@@ -402,7 +456,7 @@ async fn start_one<R: ContainerRuntime + 'static>(
     }
 
     // 3. Resolve interpolations and inject LSH_<DEP>_<PROP> env vars.
-    let resolved_spec = match interpolate_and_inject(spec, &dep_outputs) {
+    let resolved_spec = match interpolate_and_inject(spec, &dep_outputs, &extra_env) {
         Ok(s) => s,
         Err(reason) => {
             let _ = handle.status_tx.send(NodeStatus::Failed {
@@ -510,6 +564,32 @@ async fn start_one<R: ContainerRuntime + 'static>(
     }
 }
 
+/// Scan `value` for `${env.VAR}` references without a default and append
+/// the names of those that cannot be resolved to `missing`.
+fn collect_missing_env_refs(
+    interpolator: &Interpolator<'_>,
+    value: &str,
+    missing: &mut Vec<String>,
+) {
+    let Ok(refs) = interpolator.scan(value) else {
+        return;
+    };
+    for reference in refs {
+        if let Reference::Env {
+            name,
+            default: None,
+        } = reference
+        {
+            // Probe the context with a synthetic expression. The resolve
+            // call is cheap: it either finds the var or returns EnvUnset.
+            let probe = format!("${{env.{name}}}");
+            if interpolator.resolve(&probe).is_err() {
+                missing.push(name);
+            }
+        }
+    }
+}
+
 /// Apply two-pass interpolation to `spec`: resolve every
 /// `${resources.<name>.<property>}` against `dep_outputs`, then inject
 /// `LSH_<DEP>_<PROPERTY>` automatic environment variables.
@@ -519,8 +599,10 @@ async fn start_one<R: ContainerRuntime + 'static>(
 fn interpolate_and_inject(
     mut spec: ContainerSpec,
     dep_outputs: &HashMap<String, ResourceOutputs>,
+    extra_env: &HashMap<String, String>,
 ) -> std::result::Result<ContainerSpec, String> {
-    let mut ctx = InterpolationContext::from_env();
+    let mut ctx = InterpolationContext::from_env()
+        .with_env(extra_env.iter().map(|(k, v)| (k.clone(), v.clone())));
     for (name, outputs) in dep_outputs {
         ctx = ctx.with_resource(name.clone(), outputs.clone());
     }
