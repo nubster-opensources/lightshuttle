@@ -31,3 +31,6 @@ cobertura.xml
 # OS
 Thumbs.db
 desktop.ini
+
+# Session state (Claude Code remember plugin)
+.remember/
