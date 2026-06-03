@@ -1344,6 +1344,7 @@ dependencies = [
  "lightshuttle-manifest",
  "lightshuttle-otel",
  "lightshuttle-runtime",
+ "lightshuttle-secrets",
  "owo-colors",
  "predicates",
  "reqwest",
