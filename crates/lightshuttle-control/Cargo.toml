@@ -20,7 +20,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-lightshuttle-runtime = { version = "0.3.1", path = "../lightshuttle-runtime" }
+lightshuttle-runtime = { version = "0.4.0", path = "../lightshuttle-runtime" }
 askama.workspace = true
 axum = { workspace = true, features = ["ws"] }
 futures.workspace = true
