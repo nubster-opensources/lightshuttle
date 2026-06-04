@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use lightshuttle_manifest::{InterpolationContext, Interpolator, Reference};
+use lightshuttle_manifest::{InterpolationContext, Interpolator};
 use tokio::sync::{broadcast, watch};
 use tracing::{Instrument, debug, info, info_span, instrument, warn};
 
@@ -106,35 +106,20 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
     /// Scan every resource spec for `${env.VAR}` references that cannot
     /// be resolved and return a single error listing all missing names.
     ///
-    /// Call before [`start_all`] to surface missing variables before any
-    /// container is started.
+    /// Delegates to [`LifecyclePlan::env_report`] so the fail-fast check and
+    /// the `secrets check` diagnostic share one source of truth. Call before
+    /// [`start_all`] to surface missing variables before any container is
+    /// started.
     ///
     /// [`start_all`]: Self::start_all
     pub fn check_required_env(&self) -> Result<(), LifecycleError> {
-        let ctx = InterpolationContext::from_env()
-            .with_env(self.extra_env.iter().map(|(k, v)| (k.clone(), v.clone())));
-        let interpolator = Interpolator::new(&ctx);
-
-        let mut missing: Vec<String> = Vec::new();
-
-        for node in self.plan.nodes() {
-            for value in node.spec.env.values() {
-                collect_missing_env_refs(&interpolator, value, &mut missing);
-            }
-            if let Some(args) = &node.spec.command {
-                for arg in args {
-                    collect_missing_env_refs(&interpolator, arg, &mut missing);
-                }
-            }
-        }
-
-        missing.sort();
-        missing.dedup();
-
-        if missing.is_empty() {
-            Ok(())
+        let report = self.plan.env_report(&self.extra_env);
+        if report.has_missing() {
+            Err(LifecycleError::MissingEnvVars {
+                names: report.missing(),
+            })
         } else {
-            Err(LifecycleError::MissingEnvVars { names: missing })
+            Ok(())
         }
     }
 
@@ -560,32 +545,6 @@ async fn start_one<R: ContainerRuntime + 'static>(
                 resource: name,
                 source,
             })
-        }
-    }
-}
-
-/// Scan `value` for `${env.VAR}` references without a default and append
-/// the names of those that cannot be resolved to `missing`.
-fn collect_missing_env_refs(
-    interpolator: &Interpolator<'_>,
-    value: &str,
-    missing: &mut Vec<String>,
-) {
-    let Ok(refs) = interpolator.scan(value) else {
-        return;
-    };
-    for reference in refs {
-        if let Reference::Env {
-            name,
-            default: None,
-        } = reference
-        {
-            // Probe the context with a synthetic expression. The resolve
-            // call is cheap: it either finds the var or returns EnvUnset.
-            let probe = format!("${{env.{name}}}");
-            if interpolator.resolve(&probe).is_err() {
-                missing.push(name);
-            }
         }
     }
 }

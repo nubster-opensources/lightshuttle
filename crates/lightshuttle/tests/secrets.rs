@@ -34,17 +34,19 @@ resources:
       version: "16"
 "#;
 
-/// Single required variable: `${env.APP_VERSION}`.
+/// Single required variable, in a real interpolation site (`env`).
 const MANIFEST_REQUIRED_VAR: &str = r#"
 project:
   name: app
 resources:
   app:
     container:
-      image: "myapp:${env.APP_VERSION}"
+      image: myapp:latest
+      env:
+        API_TOKEN: "${env.API_TOKEN}"
 "#;
 
-/// Single optional variable with a fallback: `${env.LOG_LEVEL:-info}`.
+/// Single optional variable with a fallback.
 const MANIFEST_OPTIONAL_VAR: &str = r#"
 project:
   name: app
@@ -56,16 +58,28 @@ resources:
         LOG_LEVEL: "${env.LOG_LEVEL:-info}"
 "#;
 
-/// Mixed: one required (`APP_VERSION`) and one optional (`LOG_LEVEL:-info`).
+/// Mixed: one required (`API_TOKEN`) and one optional (`LOG_LEVEL:-info`).
 const MANIFEST_MIXED_VARS: &str = r#"
 project:
   name: app
 resources:
   app:
     container:
-      image: "myapp:${env.APP_VERSION}"
+      image: myapp:latest
       env:
+        API_TOKEN: "${env.API_TOKEN}"
         LOG_LEVEL: "${env.LOG_LEVEL:-info}"
+"#;
+
+/// A reference in an image tag: not an interpolated site, so it must not be
+/// reported by `secrets check`.
+const MANIFEST_IMAGE_REF: &str = r#"
+project:
+  name: app
+resources:
+  app:
+    container:
+      image: "myapp:${env.APP_VERSION}"
 "#;
 
 // ── No references ────────────────────────────────────────────────────────────
@@ -73,11 +87,30 @@ resources:
 #[test]
 fn secrets_check_no_refs_succeeds() {
     let manifest = write_temp_manifest(MANIFEST_NO_REFS);
+    let empty = write_temp_env("");
     Command::cargo_bin("lightshuttle")
         .unwrap()
         .arg("--file")
         .arg(manifest.path())
-        .args(["secrets", "check"])
+        .args(["secrets", "check", "--env-file"])
+        .arg(empty.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no `${env.*}` references found"));
+}
+
+// ── Scope: image references are not checked (regression for F3) ──────────────
+
+#[test]
+fn secrets_check_ignores_references_in_image_tag() {
+    let manifest = write_temp_manifest(MANIFEST_IMAGE_REF);
+    let empty = write_temp_env("");
+    Command::cargo_bin("lightshuttle")
+        .unwrap()
+        .arg("--file")
+        .arg(manifest.path())
+        .args(["secrets", "check", "--env-file"])
+        .arg(empty.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("no `${env.*}` references found"));
@@ -88,11 +121,14 @@ fn secrets_check_no_refs_succeeds() {
 #[test]
 fn secrets_check_required_var_missing_fails() {
     let manifest = write_temp_manifest(MANIFEST_REQUIRED_VAR);
+    let empty = write_temp_env("");
     Command::cargo_bin("lightshuttle")
         .unwrap()
+        .env_remove("API_TOKEN")
         .arg("--file")
         .arg(manifest.path())
-        .args(["secrets", "check"])
+        .args(["secrets", "check", "--env-file"])
+        .arg(empty.path())
         .assert()
         .failure()
         .code(1)
@@ -102,7 +138,7 @@ fn secrets_check_required_var_missing_fails() {
 #[test]
 fn secrets_check_required_var_set_via_env_file_succeeds() {
     let manifest = write_temp_manifest(MANIFEST_REQUIRED_VAR);
-    let env_file = write_temp_env("APP_VERSION=1.2.3\n");
+    let env_file = write_temp_env("API_TOKEN=s3cr3t\n");
     Command::cargo_bin("lightshuttle")
         .unwrap()
         .arg("--file")
@@ -111,8 +147,48 @@ fn secrets_check_required_var_set_via_env_file_succeeds() {
         .arg(env_file.path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("set"))
+        .stdout(predicate::str::contains("set (.env)"))
         .stdout(predicate::str::contains("all required secrets are set"));
+}
+
+// ── Source distinction: resolution from the process environment (F1) ─────────
+
+#[test]
+fn secrets_check_resolves_required_var_from_process_env() {
+    let manifest = write_temp_manifest(MANIFEST_REQUIRED_VAR);
+    // Not in the .env file, but present in the ambient environment: `up`
+    // would resolve it, so `secrets check` must report it set, not missing.
+    let empty = write_temp_env("");
+    Command::cargo_bin("lightshuttle")
+        .unwrap()
+        .env("API_TOKEN", "from-shell")
+        .arg("--file")
+        .arg(manifest.path())
+        .args(["secrets", "check", "--env-file"])
+        .arg(empty.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("set (env)"));
+}
+
+// ── Empty value counts as unset (regression for F2) ──────────────────────────
+
+#[test]
+fn secrets_check_empty_value_is_missing() {
+    let manifest = write_temp_manifest(MANIFEST_REQUIRED_VAR);
+    // An empty value overrides the ambient environment and is treated as
+    // unset by the interpolator, so the required var must be reported missing.
+    let env_file = write_temp_env("API_TOKEN=\n");
+    Command::cargo_bin("lightshuttle")
+        .unwrap()
+        .arg("--file")
+        .arg(manifest.path())
+        .args(["secrets", "check", "--env-file"])
+        .arg(env_file.path())
+        .assert()
+        .failure()
+        .code(1)
+        .stdout(predicate::str::contains("missing"));
 }
 
 // ── Optional variable ────────────────────────────────────────────────────────
@@ -120,11 +196,14 @@ fn secrets_check_required_var_set_via_env_file_succeeds() {
 #[test]
 fn secrets_check_optional_var_shows_default_without_env() {
     let manifest = write_temp_manifest(MANIFEST_OPTIONAL_VAR);
+    let empty = write_temp_env("");
     Command::cargo_bin("lightshuttle")
         .unwrap()
+        .env_remove("LOG_LEVEL")
         .arg("--file")
         .arg(manifest.path())
-        .args(["secrets", "check"])
+        .args(["secrets", "check", "--env-file"])
+        .arg(empty.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("default"));
@@ -142,7 +221,7 @@ fn secrets_check_optional_var_set_shows_set() {
         .arg(env_file.path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("set"));
+        .stdout(predicate::str::contains("set (.env)"));
 }
 
 // ── Mixed variables ──────────────────────────────────────────────────────────
@@ -154,6 +233,7 @@ fn secrets_check_mixed_fails_when_required_var_absent() {
     let env_file = write_temp_env("LOG_LEVEL=debug\n");
     Command::cargo_bin("lightshuttle")
         .unwrap()
+        .env_remove("API_TOKEN")
         .arg("--file")
         .arg(manifest.path())
         .args(["secrets", "check", "--env-file"])
@@ -162,13 +242,13 @@ fn secrets_check_mixed_fails_when_required_var_absent() {
         .failure()
         .code(1)
         .stdout(predicate::str::contains("missing"))
-        .stdout(predicate::str::contains("set"));
+        .stdout(predicate::str::contains("set (.env)"));
 }
 
 #[test]
 fn secrets_check_mixed_succeeds_when_all_vars_provided() {
     let manifest = write_temp_manifest(MANIFEST_MIXED_VARS);
-    let env_file = write_temp_env("APP_VERSION=1.2.3\nLOG_LEVEL=debug\n");
+    let env_file = write_temp_env("API_TOKEN=s3cr3t\nLOG_LEVEL=debug\n");
     Command::cargo_bin("lightshuttle")
         .unwrap()
         .arg("--file")

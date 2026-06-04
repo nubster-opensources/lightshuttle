@@ -80,6 +80,10 @@ fn parse_env_file(path: &Path) -> Result<HashMap<String, String>, SecretError> {
         source,
     })?;
 
+    // Editors on Windows frequently prepend a UTF-8 byte-order mark; strip it
+    // so the first key is not silently misnamed with a leading `\u{feff}`.
+    let content = content.strip_prefix('\u{feff}').unwrap_or(&content);
+
     let mut map = HashMap::new();
 
     for (idx, raw) in content.lines().enumerate() {
@@ -116,15 +120,19 @@ fn parse_env_file(path: &Path) -> Result<HashMap<String, String>, SecretError> {
 }
 
 fn unescape_value(s: &str) -> String {
-    if s.len() >= 2 {
-        let bytes = s.as_bytes();
-        if (bytes[0] == b'"' && bytes[s.len() - 1] == b'"')
-            || (bytes[0] == b'\'' && bytes[s.len() - 1] == b'\'')
-        {
-            return s[1..s.len() - 1].to_owned();
+    let s = s.trim();
+
+    // Quoted value: return the span between the opening quote and its first
+    // matching closing quote, discarding any trailing inline comment. This
+    // lets a quoted value contain ` #` without being truncated.
+    if let Some(quote) = s.chars().next().filter(|c| *c == '"' || *c == '\'') {
+        if let Some(end) = s[1..].find(quote) {
+            return s[1..=end].to_owned();
         }
+        // No closing quote: fall through and treat the value literally.
     }
-    // Strip trailing inline comment from unquoted values: `VALUE # comment`
+
+    // Unquoted value: strip a trailing ` #` inline comment.
     if let Some((value, _comment)) = s.split_once(" #") {
         value.trim_end().to_owned()
     } else {
@@ -209,5 +217,38 @@ mod tests {
         let (_f, path) = write_env("NOT_A_VALID_LINE\n");
         let err = EnvFileSource::load(&path).unwrap_err();
         assert!(matches!(err, SecretError::InvalidSyntax { line: 1, .. }));
+    }
+
+    #[test]
+    fn strips_utf8_bom_from_first_key() {
+        let (_f, path) = write_env("\u{feff}FIRST=value\n");
+        let src = EnvFileSource::load(&path).unwrap();
+        let map = SecretSource::load(&src).unwrap();
+        assert_eq!(map["FIRST"], "value");
+        assert!(!map.contains_key("\u{feff}FIRST"));
+    }
+
+    #[test]
+    fn quoted_value_with_inline_comment_drops_the_comment_and_quotes() {
+        let (_f, path) = write_env("KEY=\"val\" # trailing comment\n");
+        let src = EnvFileSource::load(&path).unwrap();
+        let map = SecretSource::load(&src).unwrap();
+        assert_eq!(map["KEY"], "val");
+    }
+
+    #[test]
+    fn hash_inside_quotes_is_preserved() {
+        let (_f, path) = write_env("PASSWORD=\"a b#c #d\"\n");
+        let src = EnvFileSource::load(&path).unwrap();
+        let map = SecretSource::load(&src).unwrap();
+        assert_eq!(map["PASSWORD"], "a b#c #d");
+    }
+
+    #[test]
+    fn unquoted_value_without_space_hash_keeps_fragment() {
+        let (_f, path) = write_env("URL=https://example.com/p#frag\n");
+        let src = EnvFileSource::load(&path).unwrap();
+        let map = SecretSource::load(&src).unwrap();
+        assert_eq!(map["URL"], "https://example.com/p#frag");
     }
 }

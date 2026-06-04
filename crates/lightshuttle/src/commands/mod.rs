@@ -8,9 +8,11 @@
 //! - 2  runtime error (Docker unreachable, container start fail)
 //! - 130 SIGINT (set by tokio when Ctrl+C arrives)
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use lightshuttle_secrets::{EnvFileSource, SecretSource as _};
 
 pub(crate) mod alias;
 pub(crate) mod down;
@@ -67,4 +69,25 @@ fn manifest_base_dir(path: &Path) -> std::path::PathBuf {
         .filter(|p| !p.as_os_str().is_empty())
         .map_or_else(|| std::path::PathBuf::from("."), Path::to_path_buf);
     std::env::current_dir().map_or_else(|_| dir.clone(), |cwd| cwd.join(&dir))
+}
+
+/// Common helper: load environment variables from a `.env` file.
+///
+/// When `path` is `Some`, the file must exist (an explicit user path such as
+/// `--env-file`). When `path` is `None`, the default `.env` in the working
+/// directory is loaded if present and silently skipped when absent. Shared by
+/// `up` and `secrets check` so both resolve secrets identically.
+pub(crate) fn load_env(path: Option<PathBuf>) -> Result<HashMap<String, String>> {
+    if let Some(explicit) = path {
+        let source = EnvFileSource::load(&explicit)
+            .with_context(|| format!("failed to load --env-file {}", explicit.display()))?;
+        source
+            .load()
+            .with_context(|| format!("failed to read env file {}", explicit.display()))
+    } else {
+        match EnvFileSource::load_optional(".env").context("failed to parse .env")? {
+            Some(source) => source.load().context("failed to read .env"),
+            None => Ok(HashMap::new()),
+        }
+    }
 }

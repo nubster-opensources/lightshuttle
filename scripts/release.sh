@@ -146,10 +146,15 @@ path.write_text(content, encoding="utf-8")
 print(f"CHANGELOG.md graduated: [Unreleased] -> [{new_version}] - {date}")
 PYEOF
 
-# 5. Bump every Cargo.toml version (including inter-crate path deps)
+# 5. Commit the CHANGELOG graduation. cargo-release requires a clean working
+#    tree and would otherwise abort on the modified CHANGELOG.md.
+git add CHANGELOG.md
+git commit -m "chore: graduate changelog for v${NEW_VERSION}"
+
+# 6. Bump every Cargo.toml version (including inter-crate path deps)
 cargo release "${LEVEL}" --workspace --execute --no-confirm
 
-# 6. Pre-flight checks
+# 7. Pre-flight checks
 echo "Running cargo fmt --check"
 cargo fmt --all -- --check
 echo "Running cargo clippy --workspace --all-targets --all-features -- -D warnings"
@@ -157,7 +162,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 echo "Running cargo test --workspace --all-features"
 cargo test --workspace --all-features
 
-# 7. Push branch and open the pull request
+# 8. Push branch and open the pull request
 git push -u origin "${BRANCH}"
 
 PR_BODY=$(cat <<EOF
