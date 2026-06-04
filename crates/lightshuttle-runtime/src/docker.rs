@@ -9,8 +9,8 @@ use std::time::{Duration, Instant, SystemTime};
 use bollard::Docker;
 use bollard::container::LogOutput;
 use bollard::models::{
-    ContainerCreateBody, ContainerSummaryStateEnum, HealthConfig, HostConfig,
-    PortBinding as BollardPortBinding,
+    ContainerCreateBody, ContainerSummaryStateEnum, EndpointSettings, HealthConfig, HostConfig,
+    NetworkCreateRequest, NetworkingConfig, PortBinding as BollardPortBinding,
 };
 use bollard::query_parameters::{
     BuildImageOptionsBuilder, BuilderVersion, CreateContainerOptionsBuilder,
@@ -204,7 +204,66 @@ fn build_tar_archive(context: &Path) -> std::io::Result<Vec<u8>> {
     Ok(buf)
 }
 
+/// Build the Docker network name for a project.
+///
+/// Non-alphanumeric characters are replaced with `-` and the result is
+/// lower-cased so the name is valid across all Docker network name rules.
+fn network_name(project: &str) -> String {
+    let sanitized: String = project
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .to_lowercase();
+    format!("lightshuttle-{sanitized}")
+}
+
 impl ContainerRuntime for DockerRuntime {
+    async fn ensure_project_network(&self, project: &str) -> Result<()> {
+        let name = network_name(project);
+
+        match self.client.inspect_network(&name, None).await {
+            Ok(_) => return Ok(()),
+            Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 404, ..
+            }) => {}
+            Err(e) => return Err(RuntimeError::NetworkCreate { name, source: e }),
+        }
+
+        let mut labels = HashMap::new();
+        labels.insert(LABEL_PROJECT.to_owned(), project.to_owned());
+        let config = NetworkCreateRequest {
+            name: name.clone(),
+            driver: Some("bridge".to_owned()),
+            labels: Some(labels),
+            ..Default::default()
+        };
+        match self.client.create_network(config).await {
+            // 409 = another concurrent start already created the network.
+            Ok(_)
+            | Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 409, ..
+            }) => Ok(()),
+            Err(e) => Err(RuntimeError::NetworkCreate { name, source: e }),
+        }
+    }
+
+    async fn teardown_project_network(&self, project: &str) -> Result<()> {
+        let name = network_name(project);
+        match self.client.remove_network(&name).await {
+            Ok(())
+            | Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 404, ..
+            }) => Ok(()),
+            Err(e) => Err(RuntimeError::NetworkRemove { name, source: e }),
+        }
+    }
+
     async fn start(&self, spec: &ContainerSpec) -> Result<ContainerId> {
         let image_ref = match &spec.image {
             ImageSource::Pull(image) => {
@@ -224,6 +283,15 @@ impl ContainerRuntime for DockerRuntime {
             }
         };
 
+        self.ensure_project_network(&spec.project).await?;
+
+        let net = network_name(&spec.project);
+        let mut endpoints = HashMap::new();
+        endpoints.insert(net, EndpointSettings::default());
+        let networking_config = NetworkingConfig {
+            endpoints_config: Some(endpoints),
+        };
+
         let host_config = build_host_config(&spec.ports, &spec.volumes);
         let exposed_ports = build_exposed_ports(&spec.ports);
         let env = build_env(&spec.env);
@@ -239,6 +307,7 @@ impl ContainerRuntime for DockerRuntime {
             exposed_ports: Some(exposed_ports),
             healthcheck,
             labels: Some(labels),
+            networking_config: Some(networking_config),
             ..Default::default()
         };
 

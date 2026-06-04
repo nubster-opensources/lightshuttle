@@ -97,6 +97,32 @@ async fn builds_and_runs_a_dockerfile_resource() {
 
 #[tokio::test]
 #[ignore = "requires a running Docker daemon"]
+async fn project_network_lifecycle_is_idempotent() {
+    let runtime = DockerRuntime::connect().expect("Docker daemon reachable");
+
+    runtime
+        .ensure_project_network("it-net-test")
+        .await
+        .expect("network created on first call");
+
+    runtime
+        .ensure_project_network("it-net-test")
+        .await
+        .expect("ensure is idempotent");
+
+    runtime
+        .teardown_project_network("it-net-test")
+        .await
+        .expect("network removed");
+
+    runtime
+        .teardown_project_network("it-net-test")
+        .await
+        .expect("teardown is idempotent");
+}
+
+#[tokio::test]
+#[ignore = "requires a running Docker daemon"]
 async fn builds_buildkit_only_dockerfile() {
     let context = tempfile::tempdir().expect("temp dir created");
 
