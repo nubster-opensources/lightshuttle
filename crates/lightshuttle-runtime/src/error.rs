@@ -78,6 +78,10 @@ pub enum RuntimeError {
     #[error("failed to build image from Dockerfile")]
     Build(#[source] bollard::errors::Error),
 
+    /// The `BuildKit` builder reported a failure in its progress stream.
+    #[error("image build failed: {0}")]
+    BuildFailed(String),
+
     /// The provided [`crate::ContainerSpec`] is structurally invalid.
     #[error("invalid container spec: {0}")]
     InvalidSpec(String),
