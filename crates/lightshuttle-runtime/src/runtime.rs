@@ -140,4 +140,24 @@ pub trait ContainerRuntime: Send + Sync {
         id: &ContainerId,
         follow: bool,
     ) -> impl std::future::Future<Output = Result<LogChunkStream>> + Send;
+
+    /// Ensure a per-project user-defined bridge network exists, creating
+    /// it when absent. Idempotent: concurrent calls are safe because a
+    /// `409 Conflict` response (network already exists) is treated as
+    /// success. Containers attached to this network can reach each other
+    /// by their container name, enabling `resources.<name>.url` hostnames
+    /// to resolve without extra configuration.
+    fn ensure_project_network(
+        &self,
+        project: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    /// Remove the per-project bridge network. Idempotent: a `404 Not
+    /// Found` response is treated as success. Call after all containers
+    /// belonging to the project have been removed; Docker refuses to
+    /// delete a network that still has active endpoints.
+    fn teardown_project_network(
+        &self,
+        project: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 }

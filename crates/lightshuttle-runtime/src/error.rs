@@ -74,6 +74,26 @@ pub enum RuntimeError {
     #[error("log stream error")]
     LogStream(#[source] bollard::errors::Error),
 
+    /// Creating the per-project Docker bridge network failed.
+    #[error("failed to create network `{name}`")]
+    NetworkCreate {
+        /// Name of the network that could not be created.
+        name: String,
+        /// Underlying error from the container daemon.
+        #[source]
+        source: bollard::errors::Error,
+    },
+
+    /// Removing the per-project Docker bridge network failed.
+    #[error("failed to remove network `{name}`")]
+    NetworkRemove {
+        /// Name of the network that could not be removed.
+        name: String,
+        /// Underlying error from the container daemon.
+        #[source]
+        source: bollard::errors::Error,
+    },
+
     /// Building an image from a Dockerfile failed.
     #[error("failed to build image from Dockerfile")]
     Build(#[source] bollard::errors::Error),

@@ -193,4 +193,12 @@ impl ContainerRuntime for MockRuntime {
             Box::pin(futures::stream::empty::<Result<LogChunk, RuntimeError>>().map(|x| x));
         Ok(empty)
     }
+
+    async fn ensure_project_network(&self, _project: &str) -> Result<(), RuntimeError> {
+        Ok(())
+    }
+
+    async fn teardown_project_network(&self, _project: &str) -> Result<(), RuntimeError> {
+        Ok(())
+    }
 }

@@ -236,6 +236,16 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
 
         let _ = self.event_tx.send(LifecycleEvent::StackStopped);
 
+        // Remove the per-project bridge network. Containers that failed
+        // to stop may still hold endpoints, causing Docker to reject the
+        // request — log the failure and continue so callers always see
+        // the primary stop errors, not a secondary network error.
+        if let Some(project) = self.plan.nodes().first().map(|n| n.spec.project.as_str()) {
+            if let Err(e) = self.runtime.teardown_project_network(project).await {
+                warn!(error = %e, "could not remove project network");
+            }
+        }
+
         if let Some((resource, source)) = errors.into_iter().next() {
             return Err(LifecycleError::Stop { resource, source });
         }
