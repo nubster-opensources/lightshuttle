@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use bollard::Docker;
@@ -115,6 +116,10 @@ impl DockerRuntime {
         target: Option<&str>,
         tag: &str,
     ) -> Result<()> {
+        // A process-unique id keeps concurrent BuildKit builds from
+        // colliding on the same gRPC session.
+        static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
+
         let context_owned = context.to_owned();
         let tar_bytes =
             tokio::task::spawn_blocking(move || build_tar_archive(Path::new(&context_owned)))
@@ -126,6 +131,11 @@ impl DockerRuntime {
                     RuntimeError::InvalidSpec(format!("failed to build tar archive: {io_err}"))
                 })?;
 
+        let session_id = format!(
+            "lightshuttle-build-{}",
+            SESSION_COUNTER.fetch_add(1, Ordering::Relaxed)
+        );
+
         let options = BuildImageOptionsBuilder::default()
             .dockerfile(dockerfile)
             .t(tag)
@@ -133,6 +143,7 @@ impl DockerRuntime {
             .buildargs(build_args)
             .target(target.unwrap_or(""))
             .version(BuilderVersion::BuilderBuildKit)
+            .session(&session_id)
             .build();
 
         let mut stream = self.client.build_image(
@@ -141,7 +152,13 @@ impl DockerRuntime {
             Some(bollard::body_full(Bytes::from(tar_bytes))),
         );
         while let Some(event) = stream.next().await {
-            event.map_err(RuntimeError::Build)?;
+            let info = event.map_err(RuntimeError::Build)?;
+            if let Some(detail) = info.error_detail {
+                let message = detail
+                    .message
+                    .unwrap_or_else(|| "unknown build error".to_owned());
+                return Err(RuntimeError::BuildFailed(message));
+            }
         }
         Ok(())
     }
