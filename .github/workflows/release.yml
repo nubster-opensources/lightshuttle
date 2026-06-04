@@ -52,56 +52,56 @@ jobs:
           fi
 
       - name: Publish lightshuttle-manifest
-        run: cargo publish -p lightshuttle-manifest ${{ steps.mode.outputs.args }} --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+        run: bash scripts/cargo-publish-idempotent.sh lightshuttle-manifest ${{ steps.mode.outputs.args }} --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
 
       - name: Wait for index propagation
         if: steps.mode.outputs.is_dry == 'false'
         run: sleep 30
 
       - name: Publish lightshuttle-spec
-        run: cargo publish -p lightshuttle-spec ${{ steps.mode.outputs.args }} --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+        run: bash scripts/cargo-publish-idempotent.sh lightshuttle-spec ${{ steps.mode.outputs.args }} --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
 
       - name: Wait for index propagation
         if: steps.mode.outputs.is_dry == 'false'
         run: sleep 30
 
       - name: Publish lightshuttle-runtime
-        run: cargo publish -p lightshuttle-runtime ${{ steps.mode.outputs.args }} --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+        run: bash scripts/cargo-publish-idempotent.sh lightshuttle-runtime ${{ steps.mode.outputs.args }} --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
 
       - name: Wait for index propagation
         if: steps.mode.outputs.is_dry == 'false'
         run: sleep 30
 
       - name: Publish lightshuttle-otel
-        run: cargo publish -p lightshuttle-otel ${{ steps.mode.outputs.args }} --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+        run: bash scripts/cargo-publish-idempotent.sh lightshuttle-otel ${{ steps.mode.outputs.args }} --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
 
       - name: Wait for index propagation
         if: steps.mode.outputs.is_dry == 'false'
         run: sleep 30
 
       - name: Publish lightshuttle-control
-        run: cargo publish -p lightshuttle-control ${{ steps.mode.outputs.args }} --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+        run: bash scripts/cargo-publish-idempotent.sh lightshuttle-control ${{ steps.mode.outputs.args }} --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
 
       - name: Wait for index propagation
         if: steps.mode.outputs.is_dry == 'false'
         run: sleep 30
 
       - name: Publish lightshuttle-secrets
-        run: cargo publish -p lightshuttle-secrets ${{ steps.mode.outputs.args }} --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+        run: bash scripts/cargo-publish-idempotent.sh lightshuttle-secrets ${{ steps.mode.outputs.args }} --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
 
       - name: Wait for index propagation
         if: steps.mode.outputs.is_dry == 'false'
         run: sleep 30
 
       - name: Publish lightshuttle-export
-        run: cargo publish -p lightshuttle-export ${{ steps.mode.outputs.args }} --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+        run: bash scripts/cargo-publish-idempotent.sh lightshuttle-export ${{ steps.mode.outputs.args }} --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
 
       - name: Wait for index propagation
         if: steps.mode.outputs.is_dry == 'false'
         run: sleep 30
 
       - name: Publish lightshuttle (facade / CLI)
-        run: cargo publish -p lightshuttle ${{ steps.mode.outputs.args }} --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+        run: bash scripts/cargo-publish-idempotent.sh lightshuttle ${{ steps.mode.outputs.args }} --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
 
   github-release:
     name: Create GitHub Release
