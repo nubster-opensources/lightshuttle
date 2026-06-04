@@ -13,7 +13,7 @@ use crate::source::SecretSource;
 /// - `KEY=VALUE` — plain value
 /// - `KEY="quoted value"` — double-quoted (quotes stripped)
 /// - `KEY='quoted value'` — single-quoted (quotes stripped)
-/// - `export KEY=VALUE` — optional `export` prefix (ignored)
+/// - `export KEY=VALUE` — optional `export` prefix, followed by spaces or tabs (ignored)
 /// - `# comment` — ignored
 /// - Blank lines — ignored
 /// - Inline comments: `KEY=VALUE # comment` (unquoted values only)
@@ -93,7 +93,7 @@ fn parse_env_file(path: &Path) -> Result<HashMap<String, String>, SecretError> {
             continue;
         }
 
-        let line = line.strip_prefix("export ").map_or(line, str::trim);
+        let line = strip_export_prefix(line);
 
         let Some((key, raw_value)) = line.split_once('=') else {
             return Err(SecretError::InvalidSyntax {
@@ -117,6 +117,16 @@ fn parse_env_file(path: &Path) -> Result<HashMap<String, String>, SecretError> {
     }
 
     Ok(map)
+}
+
+/// Strip an optional `export` keyword followed by horizontal whitespace.
+///
+/// `export KEY=VALUE` and `export<TAB>KEY=VALUE` both yield `KEY=VALUE`, while
+/// `exportKEY=VALUE` is left untouched because `export` is part of the key.
+fn strip_export_prefix(line: &str) -> &str {
+    line.strip_prefix("export")
+        .filter(|rest| rest.starts_with([' ', '\t']))
+        .map_or(line, |rest| rest.trim_start_matches([' ', '\t']))
 }
 
 fn unescape_value(s: &str) -> String {
@@ -250,5 +260,21 @@ mod tests {
         let src = EnvFileSource::load(&path).unwrap();
         let map = SecretSource::load(&src).unwrap();
         assert_eq!(map["URL"], "https://example.com/p#frag");
+    }
+
+    #[test]
+    fn strip_export_prefix_with_tab() {
+        let (_f, path) = write_env("export\tAPI_KEY=secret\n");
+        let src = EnvFileSource::load(&path).unwrap();
+        let map = SecretSource::load(&src).unwrap();
+        assert_eq!(map["API_KEY"], "secret");
+    }
+
+    #[test]
+    fn export_glued_to_key_is_not_stripped() {
+        let (_f, path) = write_env("exportAPI_KEY=secret\n");
+        let src = EnvFileSource::load(&path).unwrap();
+        let map = SecretSource::load(&src).unwrap();
+        assert_eq!(map["exportAPI_KEY"], "secret");
     }
 }

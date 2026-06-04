@@ -50,12 +50,12 @@ fn check(file: &Path, env_file: Option<PathBuf>) -> Result<ExitOutcome> {
             EnvVarStatus::Resolved(EnvSource::Process) => {
                 println!("  {:<32} {}", var.name, "set (env)".green());
             }
-            EnvVarStatus::Defaulted { default } => {
+            EnvVarStatus::Defaulted { defaults } => {
                 println!(
                     "  {:<32} {} ({})",
                     var.name,
                     "default".yellow(),
-                    default.dimmed()
+                    defaults.join(" | ").dimmed()
                 );
             }
             EnvVarStatus::Missing => {

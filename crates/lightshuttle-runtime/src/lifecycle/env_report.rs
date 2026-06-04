@@ -10,7 +10,7 @@
 //!
 //! [`LifecycleManager::check_required_env`]: crate::LifecycleManager::check_required_env
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use lightshuttle_manifest::{InterpolationContext, Interpolator, Reference};
 
@@ -33,8 +33,8 @@ pub enum EnvVarStatus {
     Resolved(EnvSource),
     /// Unset, but every reference supplies a default fallback.
     Defaulted {
-        /// Fallback applied when the variable is unset.
-        default: String,
+        /// Distinct default fallbacks declared across references, sorted.
+        defaults: Vec<String>,
     },
     /// Unset (or empty) and at least one reference has no default.
     Missing,
@@ -90,8 +90,8 @@ impl EnvReport {
 struct Aggregate {
     /// `true` when at least one reference omits a default fallback.
     required: bool,
-    /// First default fallback seen, kept for display.
-    default_hint: Option<String>,
+    /// Distinct default fallbacks seen across references, sorted.
+    defaults: BTreeSet<String>,
 }
 
 impl LifecyclePlan {
@@ -146,8 +146,9 @@ fn collect_env_refs(
             let agg = by_name.entry(name).or_default();
             match default {
                 None => agg.required = true,
-                Some(d) if agg.default_hint.is_none() => agg.default_hint = Some(d),
-                Some(_) => {}
+                Some(d) => {
+                    agg.defaults.insert(d);
+                }
             }
         }
     }
@@ -176,7 +177,7 @@ fn classify(
         EnvVarStatus::Missing
     } else {
         EnvVarStatus::Defaulted {
-            default: agg.default_hint.clone().unwrap_or_default(),
+            defaults: agg.defaults.iter().cloned().collect(),
         }
     }
 }
@@ -190,6 +191,14 @@ mod tests {
     fn plan_with_env(token: &str, level: &str) -> LifecyclePlan {
         let yaml = format!(
             "project:\n  name: app\nresources:\n  app:\n    container:\n      image: myapp:latest\n      env:\n        API_TOKEN: \"{token}\"\n        LOG_LEVEL: \"{level}\"\n"
+        );
+        let manifest = Manifest::parse(&yaml).expect("valid manifest");
+        LifecyclePlan::from_manifest(&manifest).expect("valid plan")
+    }
+
+    fn plan_with_raw_env(env_block: &str) -> LifecyclePlan {
+        let yaml = format!(
+            "project:\n  name: app\nresources:\n  app:\n    container:\n      image: myapp:latest\n      env:\n{env_block}"
         );
         let manifest = Manifest::parse(&yaml).expect("valid manifest");
         LifecyclePlan::from_manifest(&manifest).expect("valid plan")
@@ -225,7 +234,7 @@ mod tests {
         assert_eq!(
             status_of(&report, "LOG_LEVEL"),
             &EnvVarStatus::Defaulted {
-                default: "info".to_owned()
+                defaults: vec!["info".to_owned()]
             }
         );
     }
@@ -241,5 +250,19 @@ mod tests {
         assert_eq!(status_of(&report, "API_TOKEN"), &EnvVarStatus::Missing);
         assert!(report.has_missing());
         assert_eq!(report.missing(), vec!["API_TOKEN".to_owned()]);
+    }
+
+    #[test]
+    fn divergent_defaults_are_all_reported_sorted() {
+        let plan = plan_with_raw_env(
+            "        LOG_A: \"${env.LOG_LEVEL:-info}\"\n        LOG_B: \"${env.LOG_LEVEL:-debug}\"\n",
+        );
+        let report = plan.env_report(&HashMap::new());
+        assert_eq!(
+            status_of(&report, "LOG_LEVEL"),
+            &EnvVarStatus::Defaulted {
+                defaults: vec!["debug".to_owned(), "info".to_owned()]
+            }
+        );
     }
 }
