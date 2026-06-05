@@ -100,26 +100,72 @@ needed for production deployment.
 - `lightshuttle export <target>` where target is `compose`, `kubernetes`
   or `helm`.
 
-## v0.4.0: Polyglot and Extension
+## v0.4.0: Secrets and Env Management
+
+**Goal.** Secrets and environment variables flow from local sources into
+the dev runtime with fail-fast diagnostics, and the dev stack gets a
+per-project network.
+
+**Secrets.**
+- `lightshuttle-secrets` crate: `.env` file source and system environment
+  resolver, pattern-based interpolation.
+- `lightshuttle secrets check` lists required and missing secrets without
+  booting anything, sharing the exact resolution engine used by `up`.
+- `--env-file` flag overriding the default `.env` path.
+- Fail-fast on missing secrets at boot, with every divergent default
+  reported.
+
+**Runtime.**
+- Per-project Docker bridge network; containers reach each other by
+  hostname.
+- BuildKit progress stream handled correctly during image builds.
+
+## v0.5.0: Polish and Stability
+
+**Goal.** LightShuttle is usable by external early adopters without hand
+holding and the documentation lives somewhere permanent.
+
+**Documentation.**
+- Documentation site built with mdBook, published on Pages.
+- Onboarding tutorials per primary stack
+  (Node.js, Python, Go, Rust).
+
+**Testing.**
+- Integration tests built on `testcontainers`.
+- Cross-OS smoke tests in CI (Linux first, macOS next, Windows last).
+
+**Performance.**
+- Cold-start benchmark target: Postgres plus one container booted in
+  under five seconds on a developer-grade laptop.
+
+**Housekeeping.**
+- OpenTelemetry stack upgraded to the 0.32 line.
+- Workspace standards compliance (ADR rust 001).
+
+## v0.6.0: Polyglot Resources
 
 **Goal.** Cover the rest of the common polyglot stack and provide a clean
 migration path from existing `docker-compose` setups.
 
 **Resources.**
 - `mysql`, `mariadb`, `mongodb`.
-- `static` (single-page application bundle served behind a small web server).
+- `static` (single-page application bundle served behind a small web
+  server).
 - `process` (native command running outside any container, for example
-  `cargo run` or `npm run dev`).
+  `cargo run` or `npm run dev`). Requires a prior design pass on
+  networking and discovery, since a native process does not join the
+  per-project Docker network.
 
 **Migration.**
 - `lightshuttle import docker-compose.yml` translates an existing
   Compose file into an equivalent `lightshuttle.yml`.
 
-**Runtime.**
-- Podman runtime, via the Docker-compatible API.
+## v0.7.0: Extension and Lifecycle
 
-**Discovery.**
-- Optional local DNS resolver exposing `<service>.lightshuttle.local`.
+**Goal.** The manifest expresses the full lifecycle of a stack, and power
+users extend the orchestrator without forking it. This is the last
+release allowed to change the shape of the manifest: `manifest-v1`
+freezes when it ships.
 
 **Lifecycle.**
 - Additional startup policies: `wait_for_completion`,
@@ -135,28 +181,26 @@ migration path from existing `docker-compose` setups.
   The orchestrator compiles the user's xtask crate on demand and invokes
   the declared hooks at the right lifecycle moments.
 
-## v0.5.0: Polish and Stability
+**Specification.**
+- `manifest-v1` frozen: only additive changes are accepted until a v2.
 
-**Goal.** LightShuttle is usable by external early adopters without hand
-holding, the public API is frozen, and the documentation lives somewhere
-permanent.
+## v1.0.0: Stable
 
-**Documentation.**
-- Dedicated documentation site or a section on the Nubster docs portal.
-- Onboarding tutorials per primary stack
-  (Node.js, Python, Go, Rust).
-
-**Testing.**
-- Integration tests built on `testcontainers`.
-- Cross-OS smoke tests in CI (Linux first, macOS next, Windows last).
-
-**Performance.**
-- Cold-start benchmark target: Postgres plus one container booted in
-  under five seconds on a developer-grade laptop.
+**Goal.** The public API is frozen, upgrades are predictable and the
+project carries the maturity signals expected from a stable tool.
 
 **API.**
-- Public Rust API surface frozen.
-- Migration plan towards v1.0 documented.
+- Public Rust API surface frozen, with SemVer guarantees documented per
+  crate and enforced in CI.
+- `manifest-v1` is the stable contract.
+
+**Release.**
+- At least one release candidate exercised through the full release
+  pipeline before the final tag.
+- Migration guide from v0.x published in the documentation site.
+
+**Maturity.**
+- OpenSSF Best Practices badge.
 
 ## Post-1.0 backlog
 
@@ -165,9 +209,11 @@ committed to any release. They will only ship if the project gains enough
 traction to justify the maintenance cost, and each will require its own
 design pass before any code lands.
 
+- **Podman runtime.** Second backend, via the Docker-compatible API.
+- **Local DNS resolver.** Optional resolver exposing
+  `<service>.lightshuttle.local`.
 - **DSL Model B.** External Rust crates referenced via `uses:` in the
-  manifest, in the spirit of GitHub Actions imports. Designed for forward
-  compatibility from v0.1.
+  manifest, designed for forward compatibility from v0.1.
 - **Containerd runtime.** Third backend after Docker and Podman.
 - **Plugins ecosystem.** Third-party hook registry.
 - **Live update.** Hot reload of code without rebuilding the container
