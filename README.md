@@ -27,6 +27,8 @@ the [SemVer policy](docs/SEMVER_POLICY.md).
   metrics and the `restart` command.
 - **v0.3.0** Production export: `lightshuttle export`
   to `docker-compose.yml`, Kubernetes manifests or a Helm chart.
+- **v0.4.0** Secrets and env management: `.env` sources, `secrets check`,
+  fail-fast injection at boot, and a per-project Docker network.
 
 See the [roadmap](ROADMAP.md) for what comes next.
 
