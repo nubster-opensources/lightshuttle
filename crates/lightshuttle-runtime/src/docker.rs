@@ -287,7 +287,13 @@ impl ContainerRuntime for DockerRuntime {
 
         let net = network_name(&spec.project);
         let mut endpoints = HashMap::new();
-        endpoints.insert(net, EndpointSettings::default());
+        endpoints.insert(
+            net,
+            EndpointSettings {
+                aliases: Some(vec![spec.resource.clone()]),
+                ..Default::default()
+            },
+        );
         let networking_config = NetworkingConfig {
             endpoints_config: Some(endpoints),
         };
