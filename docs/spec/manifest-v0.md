@@ -7,7 +7,7 @@ the manifest and the orchestrator that interprets it.
 ## Status
 
 `v0` is the stable manifest format shipped with LightShuttle v0.1.0 through
-v0.3.0. It is frozen: breaking changes produce a `v1` specification published
+v0.4.0. It is frozen: breaking changes produce a `v1` specification published
 alongside this one.
 
 ## Scope
@@ -375,6 +375,20 @@ ready before any dependent resource starts. Readiness is decided by:
 
 Shutdown follows the reverse order.
 
+## Networking
+
+Since v0.4.0, each project runs on a dedicated Docker bridge network
+created at `up` time and removed at `down` time. The network is named
+`lightshuttle-<project>`, where `<project>` is the project name
+lowercased with any character outside letters, digits and hyphens
+replaced by `-`.
+
+Every container joins the project network with a DNS alias equal to its
+resource name. Containers of the same project therefore reach each
+other by resource name, which is what the `host` property of a resource
+resolves to. Containers of different projects are isolated by
+construction: they sit on different networks.
+
 ## Variable interpolation
 
 The manifest supports string interpolation in resource configuration
@@ -410,6 +424,26 @@ api:
 - Cyclic references (`a.url` referencing `b.url` referencing `a.url`)
   follow the same cycle rule as `depends_on` and produce a hard error.
 
+### Environment resolution
+
+Since v0.4.0, `${env.<NAME>}` references resolve from two sources:
+
+1. A dotenv file. By default the CLI loads `.env` from the current
+   working directory when it exists. The `--env-file <path>` flag on
+   `lightshuttle up` and `lightshuttle secrets check` points to an
+   explicit file instead, which then **MUST** exist.
+2. The process environment.
+
+When both sources define the same name, the dotenv file **MUST** win. A
+variable set to an empty string **MUST** be treated as unset.
+
+`lightshuttle up` **MUST** refuse to boot while any `${env.<NAME>}`
+reference without a default resolves to nothing, naming every missing
+variable. `lightshuttle secrets check` reports each referenced variable
+with its status and source (dotenv file, process environment, default
+or missing) without starting anything, and **MUST** exit non-zero when
+at least one required variable is missing.
+
 ## Lifecycle
 
 The lifecycle of a resource is driven by the orchestrator. The manifest
@@ -429,8 +463,8 @@ For every resource, the default startup policy is `wait_for_health`:
 Dependent resources **MUST NOT** start before their dependencies are
 ready.
 
-Additional startup policies are planned for v0.4 and are out of scope
-of `v0`.
+Additional startup policies are planned for v0.7.0 and are out of
+scope of `v0`.
 
 ### Shutdown
 
@@ -547,20 +581,23 @@ resources:
 
 ## Forward compatibility
 
-Two optional top-level sections have shipped since `v0` and extend the
-manifest without breaking it: `dashboard:` and `observability:` (see the
-[observability spec](observability.md)) and `export:` (see the
-[export spec](export.md)).
+Several optional extensions have shipped since `v0` without breaking
+it: the `dashboard:` and `observability:` top-level sections (see the
+[observability spec](observability.md)), the `export:` top-level
+section (see the [export spec](export.md)), and the
+[environment resolution](#environment-resolution) and
+[networking](#networking) behaviours introduced in v0.4.0.
 
 The following are explicitly **not** part of `v0` but are reserved for
 later versions. Until they ship, using their keywords at the top level
-or inside a resource produces a warning at validate time.
+or inside a resource produces a warning at validate time. The releases
+named below follow the [roadmap](../../ROADMAP.md).
 
-| Future version | Keyword | Topic |
+| Planned release | Keyword | Topic |
 |---|---|---|
-| `v0.4` | `hooks:` (top-level) | Global lifecycle hooks. |
-| `v0.4` | `${secret.*}` (interpolation) | Secret store integration. |
-| `v0.4` | resource kinds `mysql`, `mariadb`, `mongodb`, `static`, `process` | Additional resource kinds. |
+| `v0.6.0` | resource kinds `mysql`, `mariadb`, `mongodb`, `static`, `process` | Additional resource kinds. |
+| `v0.7.0` | `hooks:` (top-level) | Global lifecycle hooks. |
+| reserved | `${secret.*}` (interpolation) | Secret store integration beyond dotenv files. |
 
 Future versions of this specification **MUST NOT** remove or repurpose
 any keyword defined in `v0`. They **MAY** extend resource kinds with
