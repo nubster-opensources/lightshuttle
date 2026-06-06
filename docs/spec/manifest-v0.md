@@ -397,7 +397,7 @@ values. Three sources are recognised:
 | Syntax | Meaning |
 |---|---|
 | `${resources.<name>.<property>}` | Exposed property of another resource. Creates an implicit dependency on `<name>`. |
-| `${env.<NAME>}` | Host environment variable. Resolution failure **MUST** produce a hard error at validate time. |
+| `${env.<NAME>}` | Environment reference. A reference without a default that resolves to nothing **MUST** abort `lightshuttle up` at boot time; see [Environment resolution](#environment-resolution). |
 | `${env.<NAME>:-<default>}` | Host environment variable with default. The default is used when the variable is unset **or** empty. |
 
 To emit a literal `${...}` sequence, use the escape form `${{...}}`.
