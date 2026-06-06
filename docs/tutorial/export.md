@@ -34,7 +34,7 @@ resources:
     postgres:
       version: "16"
       database: shop
-      password: change-me-in-your-vault
+      password: ${env.SHOP_DB_PASSWORD:-change-me-in-your-vault}
   api:
     container:
       image: nginx:1.27-alpine
@@ -42,7 +42,7 @@ resources:
         - 8080:80
       env:
         LOG_LEVEL: info
-        API_TOKEN: change-me-in-your-vault
+        API_TOKEN: ${env.SHOP_API_TOKEN:-change-me-in-your-vault}
       depends_on: [db]
   worker:
     container:
@@ -133,11 +133,22 @@ helm lint export/helm
 
 ## A note on secrets
 
-The example commits placeholder secrets to keep the export reproducible.
-Real deployments should source secrets from a vault. A `postgres` or
-`redis` resource without an explicit `password` resolves to a freshly
-generated one on every run, which is handy for `up` but means each export
-bakes a different value, so set an explicit password when you export.
+The manifest resolves its secrets through `${env.*}` references with
+explicit defaults: the export stays reproducible out of the box, and
+real values override the placeholders from a `.env` file or the
+process environment (the file wins). Audit the resolution before
+exporting:
+
+```sh
+lightshuttle secrets check
+```
+
+A `postgres` or `redis` resource without any `password` resolves to a
+freshly generated one on every run, which is handy for `up` but means
+each export bakes a different value: keep an explicit password or an
+`${env.*}` reference with a default when you export. Real deployments
+should still source production secrets from a vault, not from the
+exported files.
 
 For the full mapping rules see the
 [export specification](../spec/export.md).
