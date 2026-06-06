@@ -15,21 +15,18 @@ It demonstrates:
   dependencies.
 - Environment defaulting through `${env.LOG_LEVEL:-info}`.
 
-## Caveat: this example is a shape, not a runnable thing
+- A multi-stage local build: `apps/api/Dockerfile` exposes `dev` and
+  `release` stages, and the manifest selects `dev` through `target:`.
 
-The `api` resource references a `./apps/api/Dockerfile` that does not
-exist in this repository. The example is intentionally a *template*:
-it shows what a realistic manifest looks like for a service team, but
-the actual application code is out of scope.
-
-`lightshuttle validate` will still pass on this manifest because the
-build context is only resolved at `lightshuttle up` time.
+## Run it
 
 ```sh
 cd examples/03-full-stack
-lightshuttle validate     # passes
-lightshuttle up           # will fail at the api build step until you provide apps/api/Dockerfile
+lightshuttle up
 ```
 
-To make it runnable, drop a minimal `apps/api/Dockerfile` next to this
-file and rebuild.
+The `api` image builds from `apps/api/Dockerfile` on first boot. The
+shipped Dockerfile is a stand-in that logs and sleeps; replace it with
+your real service to turn this template into your own stack.
+
+`Ctrl+C` for a clean shutdown.
