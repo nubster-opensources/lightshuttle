@@ -29,9 +29,10 @@ resources:
     postgres:
       version: "16"
       database: shop
-      # An explicit password keeps the export reproducible; an unset
-      # password is generated fresh on every run.
-      password: change-me-in-your-vault
+      # An `${env.*}` reference with a default keeps the export
+      # reproducible while letting a .env file override the value;
+      # an unset password is generated fresh on every run.
+      password: ${env.SHOP_DB_PASSWORD:-change-me-in-your-vault}
 
   api:
     container:
@@ -40,7 +41,7 @@ resources:
         - 8080:80
       env:
         LOG_LEVEL: info
-        API_TOKEN: change-me-in-your-vault
+        API_TOKEN: ${env.SHOP_API_TOKEN:-change-me-in-your-vault}
       depends_on:
         - db
 

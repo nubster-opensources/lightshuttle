@@ -576,7 +576,7 @@ resources:
 - [Getting started tutorial](../tutorial/getting-started.md), a
   ten-minute walkthrough of the install, the first manifest and a
   multi-resource stack.
-- [`examples/`](../../examples/), three runnable manifests of growing
+- [`examples/`](../../examples/), six runnable manifests of growing
   complexity, validated against this specification.
 
 ## Forward compatibility

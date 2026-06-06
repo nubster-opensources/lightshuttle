@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/nubster-opensources/lightshuttle/main/docs/spec/manifest-v0.schema.json
+project:
+  name: secrets-demo
+  description: "Secrets from a .env file: required and optional references"
+
+resources:
+  db:
+    postgres:
+      version: "16"
+      # Required reference: `up` refuses to boot while
+      # DEMO_DB_PASSWORD resolves to nothing.
+      password: ${env.DEMO_DB_PASSWORD}
+
+  app:
+    container:
+      image: alpine:3.20
+      command: ["sh", "-c", "echo token=$API_TOKEN && sleep 3600"]
+      env:
+        DATABASE_URL: ${resources.db.url}
+        # Optional reference: falls back to `dev-token` when unset.
+        API_TOKEN: ${env.DEMO_API_TOKEN:-dev-token}
