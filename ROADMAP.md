@@ -129,6 +129,10 @@ holding and the documentation lives somewhere permanent.
 - Documentation site built with mdBook, published on Pages.
 - Onboarding tutorials per primary stack
   (Node.js, Python, Go, Rust).
+- Generated manifest and CLI references, kept fresh by CI.
+- How-to guides (secrets, dependencies, networking, observability),
+  troubleshooting and architecture notes.
+- Every manifest example in the documentation validated in CI.
 
 **Testing.**
 - Integration tests built on `testcontainers`.

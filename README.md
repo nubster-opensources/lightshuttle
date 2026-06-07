@@ -9,7 +9,7 @@
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 [![Made with Rust](https://img.shields.io/badge/made%20with-Rust-orange?logo=rust)](https://www.rust-lang.org/)
 
-LightShuttle (binary: `lightshuttle`) is a developer-time orchestrator written in Rust. You declare your service stack once in `lightshuttle.yml` (databases, queues, containers, Dockerfiles, static SPAs), and `lightshuttle up` boots the whole thing on your laptop with automatic service discovery, an integrated web dashboard, OpenTelemetry traces and logs, and a one-command export to `docker-compose.yml`, Kubernetes manifests or a Helm chart for production.
+LightShuttle (binary: `lightshuttle`) is a developer-time orchestrator written in Rust. You declare your service stack once in `lightshuttle.yml` (databases, queues, containers, Dockerfiles), and `lightshuttle up` boots the whole thing on your laptop with automatic service discovery, an integrated web dashboard, OpenTelemetry traces and logs, and a one-command export to `docker-compose.yml`, Kubernetes manifests or a Helm chart for production.
 
 LightShuttle is sponsored by [Nubster](https://nubster.com).
 
@@ -84,12 +84,12 @@ To stay focused, the following are explicitly out of scope:
 
 - **Not a production runtime.** LightShuttle is a developer-time orchestrator. The production export targets Kubernetes, Helm or plain `docker-compose`, but LightShuttle itself does not run in production.
 - **Not a Kubernetes replacement.** We generate manifests; we do not run a control plane.
-- **Not a service mesh.** Service discovery is provided by environment variables and an optional local DNS; sidecar proxies, mTLS and traffic shaping are deliberately left to dedicated tools.
-- **Not a CI/CD pipeline.** LightShuttle is orthogonal to GitHub Actions, GitLab CI or any other pipeline tool.
+- **Not a service mesh.** Service discovery is provided by environment variables and per-project network hostnames; sidecar proxies, mTLS and traffic shaping are deliberately left to dedicated tools.
+- **Not a CI/CD pipeline.** LightShuttle is orthogonal to existing pipeline tooling.
 
 ## Configuration model
 
-Everything lives in a single `lightshuttle.yml`, a typed declarative manifest readable by every developer regardless of their primary language. It declares a `project`, a set of `resources` (`postgres`, `redis`, `container`, `dockerfile`), their dependencies and `${...}` interpolations, and optional `dashboard`, `observability` and `export` sections. The full schema is in the [manifest specification](docs/spec/manifest-v0.md); a JSON Schema for editor autocompletion ships at [`docs/spec/manifest-v0.schema.json`](docs/spec/manifest-v0.schema.json). Custom lifecycle hooks through a Cargo-style `xtask/` crate are on the [roadmap](ROADMAP.md), not yet implemented.
+Everything lives in a single `lightshuttle.yml`, a typed declarative manifest readable by every developer regardless of their primary language. It declares a `project`, a set of `resources` (`postgres`, `redis`, `container`, `dockerfile`), their dependencies and `${...}` interpolations, and optional `dashboard`, `observability` and `export` sections. Environment references resolve from `.env` files and the system environment, with fail-fast diagnostics at boot when a value is missing. The full schema is in the [manifest specification](docs/spec/manifest-v0.md); a JSON Schema for editor autocompletion ships at [`docs/spec/manifest-v0.schema.json`](docs/spec/manifest-v0.schema.json). Custom lifecycle hooks through a Cargo-style `xtask/` crate are on the [roadmap](ROADMAP.md), not yet implemented.
 
 ## Commands
 
@@ -103,6 +103,7 @@ Everything lives in a single `lightshuttle.yml`, a typed declarative manifest re
 | `lightshuttle validate` | Parse and validate the manifest without starting anything. |
 | `lightshuttle manifest` | Print the resolved manifest. |
 | `lightshuttle export <target>` | Generate `docker-compose.yml`, Kubernetes manifests or a Helm chart. |
+| `lightshuttle secrets check` | List required and missing secrets without booting anything; honours `--env-file`. |
 | `lightshuttle alias install` | Manage the optional `lsh` shell alias. |
 
 ## Documentation
@@ -111,7 +112,7 @@ Everything lives in a single `lightshuttle.yml`, a typed declarative manifest re
 - Specifications: [manifest](docs/spec/manifest-v0.md), [control plane API](docs/spec/control-api.md), [observability](docs/spec/observability.md), [export](docs/spec/export.md).
 - Project policies: [roadmap](ROADMAP.md), [SemVer](docs/SEMVER_POLICY.md), [MSRV](docs/MSRV_POLICY.md), [release process](docs/RELEASE_PROCESS.md), [governance](docs/GOVERNANCE.md).
 
-The workspace is split into published crates: `lightshuttle` (the CLI), `lightshuttle-manifest`, `lightshuttle-spec`, `lightshuttle-runtime`, `lightshuttle-otel`, `lightshuttle-control` and `lightshuttle-export`.
+The workspace is split into published crates: `lightshuttle` (the CLI), `lightshuttle-manifest`, `lightshuttle-spec`, `lightshuttle-runtime`, `lightshuttle-otel`, `lightshuttle-control`, `lightshuttle-secrets` and `lightshuttle-export`.
 
 ## Contributing
 

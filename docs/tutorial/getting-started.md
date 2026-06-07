@@ -58,7 +58,7 @@ Cargo compiles the binary in release mode and drops it in
 
 ```sh
 $ lightshuttle --version
-lightshuttle 0.2.0
+lightshuttle 0.4.0
 ```
 
 If `lightshuttle` is not found, make sure `~/.cargo/bin` is on your
@@ -156,7 +156,7 @@ lightshuttle %*
 
 ```sh
 $ lsh --version
-lightshuttle 0.2.0
+lightshuttle 0.4.0
 ```
 
 If anything in this tutorial reads `lightshuttle`, you can substitute
@@ -280,6 +280,12 @@ connected to postgres://postgres:<generated>@db:5432/db
 
 Add `--follow` (or `-f`) to keep tailing.
 
+Notice the hostname in that URL: `db`, the resource name. Each project
+runs on its own Docker bridge network (`lightshuttle-<project>`), and
+every container joins it with a DNS alias equal to its resource name,
+so containers reach each other by name. Two LightShuttle projects
+running side by side stay isolated: they sit on different networks.
+
 ## Step 5: Shutdown
 
 Back in the first terminal, press `Ctrl+C`. LightShuttle sends
@@ -385,6 +391,58 @@ Shut everything down:
 $ # Ctrl+C in the foreground terminal, then:
 $ lightshuttle down
 ```
+
+## Step 7: Secrets from a `.env` file
+
+The manifest is committed to version control; secrets must not be.
+Since v0.4.0, `${env.<NAME>}` references resolve from a `.env` file or
+the process environment, with the file taking precedence. Add a secret
+to the `app` resource:
+
+```yaml
+  app:
+    container:
+      image: alpine:3.20
+      command:
+        - sh
+        - -c
+        - |
+          echo "db    = $DATABASE_URL"
+          echo "token = $API_TOKEN"
+          sleep 3600
+      env:
+        DATABASE_URL: ${resources.api_db.url}
+        REDIS_URL: ${resources.cache.url}
+        API_TOKEN: ${env.API_TOKEN}
+```
+
+Create a `.env` file next to the manifest, and add it to your
+`.gitignore`:
+
+```sh
+$ echo 'API_TOKEN=dev-secret-token' > .env
+```
+
+Before booting, audit what the stack needs:
+
+```sh
+$ lightshuttle secrets check
+secrets for project `hello`:
+
+  API_TOKEN                        set (.env)
+
+all required secrets are set
+```
+
+Now remove the line from `.env` and run the check again: the variable
+is reported `missing` and the command exits non-zero, which makes it a
+cheap CI gate. `lightshuttle up` applies the same rule and refuses to
+boot while a required variable is missing, so a misconfigured stack
+fails fast instead of half-starting.
+
+A reference without a default (`${env.API_TOKEN}`) is required; the
+form `${env.API_TOKEN:-fallback}` makes it optional. Both `up` and
+`secrets check` accept `--env-file <path>` to point at another file.
 
 ## What's next
 
