@@ -6,11 +6,14 @@
 //! cargo xtask help
 //! cargo xtask schema [--check]
 //! cargo xtask doc-validate
+//! cargo xtask doc-gen manifest [--check]
 //! ```
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+
+mod doc_gen;
 
 /// Path to the canonical JSON Schema, relative to the workspace root.
 const SCHEMA_PATH: &str = "docs/spec/manifest-v0.schema.json";
@@ -20,6 +23,7 @@ fn main() -> Result<()> {
     match args.first().map(String::as_str) {
         Some("schema") => schema_cmd(&args[1..]),
         Some("doc-validate") => doc_validate_cmd(),
+        Some("doc-gen") => doc_gen::cmd(&args[1..]),
         Some("help") | None => {
             print_help();
             Ok(())
@@ -34,6 +38,7 @@ fn print_help() {
     eprintln!("Commands:");
     eprintln!("  schema [--check]   Regenerate or verify the JSON Schema");
     eprintln!("  doc-validate       Validate every manifest example in the book");
+    eprintln!("  doc-gen <target>   Generate reference pages (target: manifest)");
     eprintln!("  help               Show this message");
 }
 
