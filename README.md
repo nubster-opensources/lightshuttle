@@ -42,7 +42,7 @@ Install LightShuttle from crates.io:
 cargo install lightshuttle
 ```
 
-> Typing `lightshuttle` is verbose. If your shell has no `lsh` already (check with `command -v lsh`), see the [optional shell alias](docs/tutorial/getting-started.md#optional-shell-alias-lsh) section of the tutorial.
+> Typing `lightshuttle` is verbose. If your shell has no `lsh` already (check with `command -v lsh`), see the [optional shell alias](https://nubster-opensources.github.io/lightshuttle/tutorials/getting-started.html#optional-shell-alias-lsh) section of the tutorial.
 
 Create a `lightshuttle.yml` file at the root of your project:
 
@@ -64,7 +64,7 @@ $ lightshuttle up
 
 The orchestrator validates the manifest, pulls the image, starts Postgres, waits for the healthcheck to pass and supervises the container until you press `Ctrl+C`. Shutdown is coordinated and idempotent.
 
-For a complete walkthrough see [`docs/tutorial/getting-started.md`](docs/tutorial/getting-started.md). Runnable manifests live in [`examples/`](examples/).
+For a complete walkthrough see the [getting started tutorial](https://nubster-opensources.github.io/lightshuttle/tutorials/getting-started.html). Runnable manifests live in [`examples/`](examples/).
 
 ## Why LightShuttle
 
@@ -108,7 +108,9 @@ Everything lives in a single `lightshuttle.yml`, a typed declarative manifest re
 
 ## Documentation
 
-- Tutorials: [getting started](docs/tutorial/getting-started.md), [the dashboard](docs/tutorial/dashboard.md), [export](docs/tutorial/export.md).
+The full documentation is published at <https://nubster-opensources.github.io/lightshuttle/>.
+
+- Tutorials: [getting started](https://nubster-opensources.github.io/lightshuttle/tutorials/getting-started.html), [the dashboard](https://nubster-opensources.github.io/lightshuttle/tutorials/dashboard.html), [export](https://nubster-opensources.github.io/lightshuttle/tutorials/export.html).
 - Specifications: [manifest](docs/spec/manifest-v0.md), [control plane API](docs/spec/control-api.md), [observability](docs/spec/observability.md), [export](docs/spec/export.md).
 - Project policies: [roadmap](ROADMAP.md), [SemVer](docs/SEMVER_POLICY.md), [MSRV](docs/MSRV_POLICY.md), [release process](docs/RELEASE_PROCESS.md), [governance](docs/GOVERNANCE.md).
 

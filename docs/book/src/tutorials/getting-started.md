@@ -8,7 +8,7 @@ with Docker is assumed.
 
 > **Pre-1.0.** LightShuttle is published and works end to end on a real
 > Docker daemon, but the public API may still change between minor
-> versions. See the [SemVer policy](../SEMVER_POLICY.md).
+> versions. See the [SemVer policy](https://github.com/nubster-opensources/lightshuttle/blob/main/docs/SEMVER_POLICY.md).
 
 A reminder of what LightShuttle is **not**, so the rest of the tutorial
 is read with the right expectations:
@@ -31,7 +31,7 @@ You need:
   of the box; on Linux any modern Docker Engine or `colima` works.
 - A Rust toolchain. The recommended way to install it is
   [`rustup`](https://rustup.rs/). LightShuttle's MSRV is documented in
-  [`docs/MSRV_POLICY.md`](../MSRV_POLICY.md).
+  [`docs/MSRV_POLICY.md`](https://github.com/nubster-opensources/lightshuttle/blob/main/docs/MSRV_POLICY.md).
 - A terminal. Examples below use a POSIX-style shell. On Windows,
   PowerShell works fine; replace the line continuation backticks if you
   copy-paste multi-line commands.
@@ -451,10 +451,10 @@ form `${env.API_TOKEN:-fallback}` makes it optional. Both `up` and
 - Explore the [dashboard tutorial](dashboard.md) for the web UI, live
   logs and the OpenTelemetry collector.
 - Generate deployment artifacts with the [export tutorial](export.md).
-- Browse the [`examples/`](../../examples/) folder for ready-to-run
+- Browse the [`examples/`](https://github.com/nubster-opensources/lightshuttle/tree/main/examples) folder for ready-to-run
   manifests.
-- Track upcoming features in the [roadmap](../../ROADMAP.md).
-- To contribute, read [`CONTRIBUTING.md`](../../CONTRIBUTING.md) and
-  [`SECURITY.md`](../../SECURITY.md) first.
+- Track upcoming features in the [roadmap](https://github.com/nubster-opensources/lightshuttle/blob/main/ROADMAP.md).
+- To contribute, read [`CONTRIBUTING.md`](https://github.com/nubster-opensources/lightshuttle/blob/main/CONTRIBUTING.md) and
+  [`SECURITY.md`](https://github.com/nubster-opensources/lightshuttle/blob/main/SECURITY.md) first.
 
-[spec]: ../spec/manifest-v0.md
+[spec]: https://github.com/nubster-opensources/lightshuttle/blob/main/docs/spec/manifest-v0.md
