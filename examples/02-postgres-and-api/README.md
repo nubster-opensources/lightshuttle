@@ -2,7 +2,7 @@
 
 A Postgres database and a container that reads its connection string.
 Mirrors the example used throughout the
-[getting-started tutorial](../../docs/tutorial/getting-started.md).
+[getting-started tutorial](https://nubster-opensources.github.io/lightshuttle/tutorials/getting-started.html).
 
 It demonstrates:
 

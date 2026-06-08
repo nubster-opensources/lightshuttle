@@ -20,5 +20,5 @@ cd examples/01-hello-world
 lightshuttle up
 ```
 
-For a guided walkthrough see
-[`docs/tutorial/getting-started.md`](../docs/tutorial/getting-started.md).
+For a guided walkthrough see the
+[getting started tutorial](https://nubster-opensources.github.io/lightshuttle/tutorials/getting-started.html).

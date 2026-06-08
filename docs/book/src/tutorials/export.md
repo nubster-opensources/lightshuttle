@@ -4,7 +4,7 @@
 `lightshuttle export` turns the same manifest into the deployment format
 your platform expects, with no second source of truth to keep in sync.
 
-This walkthrough uses [`examples/04-export`](../../examples/04-export),
+This walkthrough uses [`examples/04-export`](https://github.com/nubster-opensources/lightshuttle/tree/main/examples/04-export),
 whose manifest carries an `export:` section that tailors each target.
 
 ## The manifest
@@ -52,7 +52,7 @@ resources:
 
 The `export:` section is optional. Without it every target still
 generates valid output using the defaults described in the
-[export specification](../spec/export.md).
+[export specification](https://github.com/nubster-opensources/lightshuttle/blob/main/docs/spec/export.md).
 
 ## Docker Compose
 
@@ -151,4 +151,4 @@ should still source production secrets from a vault, not from the
 exported files.
 
 For the full mapping rules see the
-[export specification](../spec/export.md).
+[export specification](https://github.com/nubster-opensources/lightshuttle/blob/main/docs/spec/export.md).

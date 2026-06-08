@@ -26,7 +26,7 @@ The output lands under `./export/<target>/` (git-ignored). Pass
 `--output <dir>` to choose another location and `--force` to overwrite a
 non-empty one.
 
-See the [export tutorial](../../docs/tutorial/export.md) for a full
+See the [export tutorial](https://nubster-opensources.github.io/lightshuttle/tutorials/export.html) for a full
 walkthrough and the [export specification](../../docs/spec/export.md) for
 the mapping rules.
 
