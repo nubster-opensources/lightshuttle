@@ -3898,6 +3898,8 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
+ "lightshuttle",
  "lightshuttle-manifest",
  "serde_json",
 ]

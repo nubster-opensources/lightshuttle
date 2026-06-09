@@ -66,6 +66,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo xtask schema --check
       - run: cargo xtask doc-gen manifest --check
+      - run: cargo xtask doc-gen cli --check
 
   doc-examples:
     name: Validate doc manifests
