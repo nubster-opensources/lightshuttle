@@ -7,6 +7,7 @@
 //! cargo xtask schema [--check]
 //! cargo xtask doc-validate
 //! cargo xtask doc-gen manifest [--check]
+//! cargo xtask doc-gen cli [--check]
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -38,7 +39,7 @@ fn print_help() {
     eprintln!("Commands:");
     eprintln!("  schema [--check]   Regenerate or verify the JSON Schema");
     eprintln!("  doc-validate       Validate every manifest example in the book");
-    eprintln!("  doc-gen <target>   Generate reference pages (target: manifest)");
+    eprintln!("  doc-gen <target>   Generate reference pages (targets: manifest, cli)");
     eprintln!("  help               Show this message");
 }
 

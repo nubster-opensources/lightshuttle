@@ -13,7 +13,7 @@ use crate::commands::alias::shell::Shell;
     version,
     about = "Lightweight dev orchestrator for polyglot teams"
 )]
-pub(crate) struct Cli {
+pub struct Cli {
     /// Path to the manifest. Overrides the upward discovery.
     #[arg(long, short = 'f', global = true)]
     pub(crate) file: Option<PathBuf>,
@@ -27,6 +27,15 @@ pub(crate) struct Cli {
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
     /// Boot the stack and supervise it until interrupted.
+    #[command(after_long_help = "Examples:
+  # Boot the stack defined by the nearest manifest
+  lightshuttle up
+
+  # Use an explicit manifest and a custom control plane port
+  lightshuttle -f stack.yaml up --control-port 8080
+
+  # Run without the bundled OpenTelemetry collector
+  lightshuttle up --no-otel")]
     Up {
         /// SIGTERM-to-SIGKILL grace window per resource at shutdown.
         #[arg(long, default_value = "10s")]
@@ -54,6 +63,9 @@ pub(crate) enum Command {
     },
 
     /// Stop every container managed by this project.
+    #[command(after_long_help = "Examples:
+  # Stop every container, allowing 30s for graceful shutdown
+  lightshuttle down --grace 30s")]
     Down {
         /// SIGTERM-to-SIGKILL grace window per container.
         #[arg(long, default_value = "10s")]
@@ -61,9 +73,18 @@ pub(crate) enum Command {
     },
 
     /// List managed resources and their status.
+    #[command(after_long_help = "Examples:
+  # List managed resources and their status
+  lightshuttle ps")]
     Ps,
 
     /// Stream logs of a single resource.
+    #[command(after_long_help = "Examples:
+  # Show the recent logs of the `api` resource
+  lightshuttle logs api
+
+  # Follow the log stream until interrupted
+  lightshuttle logs api --follow")]
     Logs {
         /// Resource name as declared in the manifest.
         resource: String,
@@ -73,6 +94,12 @@ pub(crate) enum Command {
     },
 
     /// Parse and validate the manifest without starting anything.
+    #[command(after_long_help = "Examples:
+  # Validate the manifest
+  lightshuttle validate
+
+  # Fail on warnings, for continuous integration
+  lightshuttle validate --strict")]
     Validate {
         /// Upgrade warnings to errors. Use in continuous integration.
         #[arg(long)]
@@ -80,12 +107,21 @@ pub(crate) enum Command {
     },
 
     /// Dump the resolved manifest to stdout as YAML.
+    #[command(after_long_help = "Examples:
+  # Print the resolved manifest as YAML
+  lightshuttle manifest")]
     Manifest,
 
     /// Restart a single managed resource through the running control
     /// plane. Requires `lightshuttle up` to be active in the same
     /// working directory so the discovery file
     /// `.lightshuttle/control.url` is present.
+    #[command(after_long_help = "Examples:
+  # Restart the `api` resource and wait for it to become healthy again
+  lightshuttle restart api
+
+  # Request the restart and return immediately
+  lightshuttle restart api --detach")]
     Restart {
         /// Resource name as declared in the manifest.
         resource: String,
@@ -98,6 +134,15 @@ pub(crate) enum Command {
     },
 
     /// Manage the optional `lsh` shell alias.
+    #[command(after_long_help = "Examples:
+  # Install the `lsh` alias into your shell's startup file
+  lightshuttle alias install
+
+  # Preview what install would do, without writing anything
+  lightshuttle alias check
+
+  # Remove the alias
+  lightshuttle alias uninstall")]
     Alias {
         /// Action to perform.
         #[command(subcommand)]
@@ -105,6 +150,12 @@ pub(crate) enum Command {
     },
 
     /// Generate deployment artifacts from the manifest.
+    #[command(after_long_help = "Examples:
+  # Generate a docker-compose.yml under ./export/compose
+  lightshuttle export compose
+
+  # Generate Kubernetes manifests into a chosen directory, overwriting it
+  lightshuttle export kubernetes --output ./k8s --force")]
     Export {
         /// Target format to generate.
         target: ExportTarget,
@@ -119,6 +170,12 @@ pub(crate) enum Command {
     },
 
     /// Inspect `${env.*}` variable references in the manifest.
+    #[command(after_long_help = "Examples:
+  # Report which ${env.*} variables are set, defaulted, or missing
+  lightshuttle secrets check
+
+  # Check against a specific .env file
+  lightshuttle secrets check --env-file .env.prod")]
     Secrets {
         /// Action to perform.
         #[command(subcommand)]

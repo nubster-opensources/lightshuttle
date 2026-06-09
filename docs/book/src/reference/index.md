@@ -35,5 +35,6 @@ The Rust API of every published crate is documented on docs.rs:
 - [`lightshuttle-export`](https://docs.rs/lightshuttle-export)
 
 The **[manifest reference](manifest/index.md)** is generated from the JSON
-Schema and documents every top-level section and resource kind. A CLI reference,
-generated from the command definitions, is planned for this section.
+Schema and documents every top-level section and resource kind. The **[CLI
+reference](cli/index.md)** is generated from the command definitions and
+documents every subcommand, its flags and examples.

@@ -25,6 +25,17 @@
   - [container](reference/manifest/container.md)
   - [dockerfile](reference/manifest/dockerfile.md)
   - [Common types](reference/manifest/common-types.md)
+- [CLI reference](reference/cli/index.md)
+  - [up](reference/cli/up.md)
+  - [down](reference/cli/down.md)
+  - [ps](reference/cli/ps.md)
+  - [logs](reference/cli/logs.md)
+  - [validate](reference/cli/validate.md)
+  - [manifest](reference/cli/manifest.md)
+  - [restart](reference/cli/restart.md)
+  - [alias](reference/cli/alias.md)
+  - [export](reference/cli/export.md)
+  - [secrets](reference/cli/secrets.md)
 
 # Explanation
 

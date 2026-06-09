@@ -8,10 +8,11 @@
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
-use std::path::PathBuf;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use serde_json::{Map, Value};
+
+use super::{cell, page, write_or_check};
 
 /// Canonical JSON Schema, relative to the workspace root.
 const SCHEMA_PATH: &str = "docs/spec/manifest-v0.schema.json";
@@ -37,24 +38,8 @@ const KINDS: &[(&str, &str, &str)] = &[
     ("dockerfile", "DockerfileConfig", "dockerfile"),
 ];
 
-/// One generated page: its path under the book and its markdown body.
-struct GeneratedPage {
-    path: PathBuf,
-    body: String,
-}
-
-/// `doc-gen <target> [--check]`: regenerate or verify generated documentation.
-pub(crate) fn cmd(args: &[String]) -> Result<()> {
-    let check = args.iter().any(|a| a == "--check");
-    match args.first().map(String::as_str) {
-        Some("manifest") => manifest(check),
-        Some(other) if !other.starts_with("--") => bail!("unknown doc-gen target: {other}"),
-        _ => bail!("usage: cargo xtask doc-gen manifest [--check]"),
-    }
-}
-
 /// Generate (or verify with `--check`) the manifest reference pages.
-fn manifest(check: bool) -> Result<()> {
+pub(super) fn manifest(check: bool) -> Result<()> {
     let raw = std::fs::read_to_string(SCHEMA_PATH)
         .with_context(|| format!("failed to read {SCHEMA_PATH}"))?;
     let schema: Value =
@@ -81,21 +66,21 @@ fn manifest(check: bool) -> Result<()> {
         }
     };
 
-    let mut pages = vec![page("index.md", render_index())];
+    let mut pages = vec![page(MANIFEST_REF_DIR, "index.md", render_index())];
     for (stem, def, title) in SECTIONS.iter().chain(KINDS) {
         let body = format!(
             "{GENERATED_NOTE}{}",
             render_type(defs, def, title, 1, &link)
         );
-        pages.push(page(&format!("{stem}.md"), body));
+        pages.push(page(MANIFEST_REF_DIR, &format!("{stem}.md"), body));
     }
-    pages.push(page("common-types.md", render_common(defs, &shared, &link)));
+    pages.push(page(
+        MANIFEST_REF_DIR,
+        "common-types.md",
+        render_common(defs, &shared, &link),
+    ));
 
-    if check {
-        verify_fresh(&pages)
-    } else {
-        write_pages(&pages)
-    }
+    write_or_check("manifest", MANIFEST_REF_DIR, &pages, check)
 }
 
 /// Transitive closure of `$defs` reachable from the page defs but not themselves
@@ -295,14 +280,6 @@ fn render_index() -> String {
     )
 }
 
-/// Collapse whitespace and escape table separators so prose fits one table cell.
-fn cell(text: &str) -> String {
-    text.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .replace('|', "\\|")
-}
-
 /// The final segment of a `#/$defs/Name` reference.
 fn ref_name(reference: &str) -> &str {
     reference.rsplit('/').next().unwrap_or(reference)
@@ -311,48 +288,4 @@ fn ref_name(reference: &str) -> &str {
 /// The mdBook heading anchor for a shared type on `common-types.md`.
 fn anchor(name: &str) -> String {
     name.to_lowercase()
-}
-
-/// Build a page with a trailing newline and its path under the reference dir.
-fn page(name: &str, mut body: String) -> GeneratedPage {
-    if !body.ends_with('\n') {
-        body.push('\n');
-    }
-    GeneratedPage {
-        path: PathBuf::from(MANIFEST_REF_DIR).join(name),
-        body,
-    }
-}
-
-/// Write every generated page, creating the reference directory if needed.
-fn write_pages(pages: &[GeneratedPage]) -> Result<()> {
-    std::fs::create_dir_all(MANIFEST_REF_DIR)
-        .with_context(|| format!("failed to create {MANIFEST_REF_DIR}"))?;
-    for page in pages {
-        std::fs::write(&page.path, &page.body)
-            .with_context(|| format!("failed to write {}", page.path.display()))?;
-    }
-    println!("doc-gen manifest: wrote {} page(s)", pages.len());
-    Ok(())
-}
-
-/// Fail if any checked-in page differs from its freshly generated counterpart.
-fn verify_fresh(pages: &[GeneratedPage]) -> Result<()> {
-    let mut stale = Vec::new();
-    for page in pages {
-        let actual = std::fs::read_to_string(&page.path)
-            .unwrap_or_default()
-            .replace("\r\n", "\n");
-        if actual != page.body {
-            stale.push(page.path.display().to_string());
-        }
-    }
-    if !stale.is_empty() {
-        bail!(
-            "stale generated reference page(s): {}; run `cargo xtask doc-gen manifest`",
-            stale.join(", ")
-        );
-    }
-    println!("doc-gen manifest: {} page(s) up to date", pages.len());
-    Ok(())
 }
