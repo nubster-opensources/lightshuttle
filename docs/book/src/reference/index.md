@@ -34,5 +34,6 @@ The Rust API of every published crate is documented on docs.rs:
 - [`lightshuttle-secrets`](https://docs.rs/lightshuttle-secrets)
 - [`lightshuttle-export`](https://docs.rs/lightshuttle-export)
 
-A manifest reference and a CLI reference, generated from the source so they
-never drift, are planned for this section.
+The **[manifest reference](manifest/index.md)** is generated from the JSON
+Schema and documents every top-level section and resource kind. A CLI reference,
+generated from the command definitions, is planned for this section.
