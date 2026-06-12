@@ -70,7 +70,7 @@ fn check(file: &Path, env_file: Option<PathBuf>) -> Result<ExitOutcome> {
         Ok(ExitOutcome::Success)
     } else {
         Err(anyhow::anyhow!(
-            "{} required variable(s) not set: {} \u{2014} add them to a .env file or pass --env-file <PATH>",
+            "{} required variable(s) not set: {} (add them to a .env file or pass --env-file <PATH>)",
             missing.len(),
             missing.join(", "),
         ))
