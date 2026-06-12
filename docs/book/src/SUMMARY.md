@@ -11,6 +11,7 @@
 # How-to guides
 
 - [Overview](how-to/index.md)
+- [Manage secrets and env](how-to/secrets-and-env.md)
 
 # Reference
 

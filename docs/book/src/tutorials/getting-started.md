@@ -396,8 +396,11 @@ $ lightshuttle down
 
 The manifest is committed to version control; secrets must not be.
 Since v0.4.0, `${env.<NAME>}` references resolve from a `.env` file or
-the process environment, with the file taking precedence. Add a secret
-to the `app` resource:
+the process environment, with the file taking precedence. This section
+covers the essentials; for the full workflow (optional values, CI gates,
+divergent defaults) see the how-to guide
+[Manage secrets and environment variables](../how-to/secrets-and-env.md).
+Add a secret to the `app` resource:
 
 ```yaml
   app:
