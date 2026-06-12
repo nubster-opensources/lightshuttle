@@ -20,6 +20,7 @@
 - [Dependencies and health](how-to/dependencies-and-health.md)
 - [Networking and discovery](how-to/networking-and-discovery.md)
 - [Observability](how-to/observability.md)
+- [Troubleshooting and FAQ](how-to/troubleshooting.md)
 
 # Reference
 
