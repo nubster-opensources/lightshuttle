@@ -12,6 +12,9 @@
 
 - [Overview](how-to/index.md)
 - [Manage secrets and env](how-to/secrets-and-env.md)
+- [Dependencies and health](how-to/dependencies-and-health.md)
+- [Networking and discovery](how-to/networking-and-discovery.md)
+- [Observability](how-to/observability.md)
 
 # Reference
 
