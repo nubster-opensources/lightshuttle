@@ -23,6 +23,21 @@ resources:
       image: alpine
 ";
 
+/// A required `${env.*}` reference with no default. Used to lock the lazy
+/// `validate` behaviour decided in issue #200: static validation never
+/// resolves environment references, so a missing secret is not a validation
+/// error. The fail-fast guard lives in `up`, and `secrets check` is the audit.
+const MANIFEST_REQUIRED_ENV: &str = r#"
+project:
+  name: app
+resources:
+  app:
+    container:
+      image: myapp:latest
+      env:
+        API_TOKEN: "${env.API_TOKEN}"
+"#;
+
 fn write_temp_manifest(content: &str) -> tempfile::NamedTempFile {
     let mut file = tempfile::Builder::new()
         .suffix(".yml")
@@ -56,6 +71,25 @@ fn validate_rejects_an_invalid_manifest_with_exit_code_1() {
         .assert()
         .failure()
         .code(1);
+}
+
+#[test]
+fn validate_passes_with_an_unresolvable_required_env_reference() {
+    // Issue #200: `validate` is intentionally lazy on `${env.*}`. It has no
+    // `--env-file` flag and cannot see a dotenv file, so failing here would
+    // be a false negative for the normal secrets workflow. A missing required
+    // secret must therefore pass `validate` and only be caught by `up` or
+    // `secrets check`.
+    let manifest = write_temp_manifest(MANIFEST_REQUIRED_ENV);
+    Command::cargo_bin("lightshuttle")
+        .expect("binary exists")
+        .env_remove("API_TOKEN")
+        .arg("--file")
+        .arg(manifest.path())
+        .arg("validate")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ok: project `app`"));
 }
 
 #[test]
