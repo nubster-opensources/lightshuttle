@@ -7,6 +7,11 @@
 - [Getting started](tutorials/getting-started.md)
 - [The dashboard](tutorials/dashboard.md)
 - [Exporting to production](tutorials/export.md)
+- [Onboarding by language](tutorials/onboarding/index.md)
+  - [Node.js](tutorials/onboarding/nodejs.md)
+  - [Python](tutorials/onboarding/python.md)
+  - [Go](tutorials/onboarding/go.md)
+  - [Rust](tutorials/onboarding/rust.md)
 
 # How-to guides
 
