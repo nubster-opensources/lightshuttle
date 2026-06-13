@@ -1,4 +1,4 @@
-//! `GET /metrics` — Prometheus text exposition format.
+//! `GET /metrics`: Prometheus text exposition format.
 
 use axum::extract::State;
 use axum::http::{StatusCode, header};
@@ -10,7 +10,7 @@ use crate::state::ControlState;
 /// Prometheus exposition content type per the text format spec.
 const PROM_CONTENT_TYPE: &str = "text/plain; version=0.0.4; charset=utf-8";
 
-/// `GET /metrics` — refresh scrape-time gauges and render.
+/// `GET /metrics`: refresh scrape-time gauges and render.
 pub(crate) async fn metrics<H>(State(state): State<ControlState<H>>) -> Response
 where
     H: LifecycleHandle + Clone + Send + Sync + 'static,

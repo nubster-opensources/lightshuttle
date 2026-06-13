@@ -9,7 +9,7 @@ use lightshuttle_runtime::{LifecycleHandle, ResourceView};
 use crate::error::ApiError;
 use crate::state::ControlState;
 
-/// `GET /api/resources` — list every resource managed by the stack.
+/// `GET /api/resources`: list every resource managed by the stack.
 pub(crate) async fn list_resources<H>(
     State(state): State<ControlState<H>>,
 ) -> Result<Json<Vec<ResourceView>>, ApiError>
@@ -20,7 +20,7 @@ where
     Ok(Json(views))
 }
 
-/// `GET /api/resources/:name` — fetch a single resource view.
+/// `GET /api/resources/:name`: fetch a single resource view.
 pub(crate) async fn get_resource<H>(
     State(state): State<ControlState<H>>,
     Path(name): Path<String>,
@@ -32,7 +32,7 @@ where
     Ok(Json(view))
 }
 
-/// `POST /api/resources/:name/restart` — schedule a restart and return
+/// `POST /api/resources/:name/restart`: schedule a restart and return
 /// immediately. The actual outcome is observable on `/ws/events`.
 ///
 /// Existence of the resource is verified synchronously so the response

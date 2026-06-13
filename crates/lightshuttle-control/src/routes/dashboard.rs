@@ -64,7 +64,7 @@ struct ResourceTemplate<'a> {
     resource: &'a ResourceCard,
 }
 
-/// `GET /` — index page listing every managed resource.
+/// `GET /`: index page listing every managed resource.
 pub(crate) async fn index<H>(State(state): State<ControlState<H>>) -> Response
 where
     H: LifecycleHandle + Clone + Send + Sync + 'static,
@@ -77,7 +77,7 @@ where
     render(&template)
 }
 
-/// `GET /_partials/resources` — HTMX partial reused by polling.
+/// `GET /_partials/resources`: HTMX partial reused by polling.
 pub(crate) async fn status_table<H>(State(state): State<ControlState<H>>) -> Response
 where
     H: LifecycleHandle + Clone + Send + Sync + 'static,
@@ -87,7 +87,7 @@ where
     render(&template)
 }
 
-/// `GET /resources/{name}` — detail page for a single resource.
+/// `GET /resources/{name}`: detail page for a single resource.
 pub(crate) async fn resource<H>(
     State(state): State<ControlState<H>>,
     Path(name): Path<String>,
