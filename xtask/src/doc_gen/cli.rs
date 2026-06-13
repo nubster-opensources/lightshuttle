@@ -46,7 +46,7 @@ fn render_index(root: &Command) -> String {
     );
 
     if let Some(about) = root.get_about() {
-        writeln!(out, "`{}` — {about}\n", root.get_name())
+        writeln!(out, "`{}`: {about}\n", root.get_name())
             .expect("writing to a String is infallible");
     }
 

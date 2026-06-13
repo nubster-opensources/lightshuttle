@@ -238,7 +238,7 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
 
         // Remove the per-project bridge network. Containers that failed
         // to stop may still hold endpoints, causing Docker to reject the
-        // request — log the failure and continue so callers always see
+        // request: log the failure and continue so callers always see
         // the primary stop errors, not a secondary network error.
         if let Some(project) = self.plan.nodes().first().map(|n| n.spec.project.as_str()) {
             if let Err(e) = self.runtime.teardown_project_network(project).await {

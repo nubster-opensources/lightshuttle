@@ -1,4 +1,4 @@
-//! `GET /ws/events` — broadcast lifecycle events as JSON text frames.
+//! `GET /ws/events`: broadcast lifecycle events as JSON text frames.
 
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade, close_code};

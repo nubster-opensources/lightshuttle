@@ -10,12 +10,12 @@ use crate::source::SecretSource;
 ///
 /// The file is parsed once at construction time. Supported syntax:
 ///
-/// - `KEY=VALUE` — plain value
-/// - `KEY="quoted value"` — double-quoted (quotes stripped)
-/// - `KEY='quoted value'` — single-quoted (quotes stripped)
-/// - `export KEY=VALUE` — optional `export` prefix, followed by spaces or tabs (ignored)
-/// - `# comment` — ignored
-/// - Blank lines — ignored
+/// - `KEY=VALUE`: plain value
+/// - `KEY="quoted value"`: double-quoted (quotes stripped)
+/// - `KEY='quoted value'`: single-quoted (quotes stripped)
+/// - `export KEY=VALUE`: optional `export` prefix, followed by spaces or tabs (ignored)
+/// - `# comment`: ignored
+/// - Blank lines: ignored
 /// - Inline comments: `KEY=VALUE # comment` (unquoted values only)
 #[derive(Debug)]
 pub struct EnvFileSource {

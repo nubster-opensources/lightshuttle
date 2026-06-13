@@ -1,4 +1,4 @@
-//! `GET /ws/logs/:name` — stream container logs over a WebSocket.
+//! `GET /ws/logs/:name`: stream container logs over a WebSocket.
 
 use std::time::SystemTime;
 

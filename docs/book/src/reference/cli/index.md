@@ -4,7 +4,7 @@
 
 These pages are generated from the `clap` command definitions by `cargo xtask doc-gen cli`. Do not edit them by hand.
 
-`lightshuttle` — Lightweight dev orchestrator for polyglot teams
+`lightshuttle`: Lightweight dev orchestrator for polyglot teams
 
 ## Global options
 
