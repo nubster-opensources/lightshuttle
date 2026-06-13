@@ -10,8 +10,10 @@ Available guides:
 - [Wire dependencies and gate on readiness](dependencies-and-health.md)
 - [Reach one resource from another](networking-and-discovery.md)
 - [Collect traces and metrics locally](observability.md)
+- [Troubleshooting and FAQ](troubleshooting.md)
 
-More guides, including a troubleshooting guide, are being added to this
-section. In the meantime, the
-[getting started tutorial](../tutorials/getting-started.md) covers the most
-common tasks end to end.
+When something fails, [Troubleshooting and FAQ](troubleshooting.md) matches
+the common errors to a cause and a remedy. For an end-to-end walkthrough of
+the most common tasks, the
+[getting started tutorial](../tutorials/getting-started.md) covers them in
+order.
