@@ -112,3 +112,6 @@ $ lightshuttle validate --strict
 
 Shutdown follows the reverse order: dependents stop before the resources
 they relied on.
+
+For the reasoning behind this ordering, readiness gating and the shutdown grace
+window, see [The resource lifecycle](../explanation/lifecycle.md).

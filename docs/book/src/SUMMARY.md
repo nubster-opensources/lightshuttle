@@ -50,3 +50,6 @@
 # Explanation
 
 - [Overview](explanation/index.md)
+- [The crate architecture](explanation/architecture.md)
+- [The resource lifecycle](explanation/lifecycle.md)
+- [Networking and service discovery](explanation/networking.md)

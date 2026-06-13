@@ -5,8 +5,12 @@ authors = ["The LightShuttle contributors"]
 language = "en"
 src = "src"
 
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
 [output.html]
 default-theme = "rust"
 preferred-dark-theme = "ayu"
 git-repository-url = "https://github.com/nubster-opensources/lightshuttle"
 edit-url-template = "https://github.com/nubster-opensources/lightshuttle/edit/main/docs/book/{path}"
+additional-js = ["mermaid.min.js", "mermaid-init.js"]

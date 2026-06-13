@@ -4,7 +4,9 @@ Every LightShuttle project runs on its own network where containers find
 each other by name. This guide shows how that network works, how to address
 a resource, and the two ways a container can discover its dependencies.
 
-For the underlying rules, see the [Networking section of the manifest
+For the reasoning behind the per-project network and the two wiring styles, see
+[Networking and service discovery](../explanation/networking.md). For the
+underlying rules, see the [Networking section of the manifest
 specification](https://github.com/nubster-opensources/lightshuttle/blob/main/docs/spec/manifest-v0.md).
 
 ## Address a resource by its name
