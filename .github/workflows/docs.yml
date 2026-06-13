@@ -25,6 +25,12 @@ jobs:
         with:
           mdbook-version: latest
 
+      - name: Install mdbook-mermaid
+        run: cargo install mdbook-mermaid --locked
+
+      - name: Generate mermaid assets
+        run: mdbook-mermaid install docs/book
+
       - name: Build the book
         run: mdbook build docs/book
 
