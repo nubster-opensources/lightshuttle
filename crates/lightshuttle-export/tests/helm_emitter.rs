@@ -88,6 +88,71 @@ fn templates_reference_values() {
     assert!(db.contains("range $k, $v := $svc.env"), "got:\n{db}");
 }
 
+// --- portless + split_env characterisation tests ---
+
+const PORTLESS_STACK: &str = r"
+project:
+  name: shop
+resources:
+  worker:
+    container:
+      image: alpine:3.20
+      env:
+        DB_URL: postgres://db:5432/app
+        DB_PASSWORD: s3cret
+";
+
+#[test]
+fn portless_service_emits_no_helm_service() {
+    let a = artifacts(PORTLESS_STACK);
+    let worker_template = file(&a, "templates/worker.yaml");
+    assert!(
+        !worker_template.contains("kind: Service"),
+        "worker has no ports so no Service block should be emitted, got:\n{worker_template}"
+    );
+}
+
+#[test]
+fn mixed_env_routes_to_values() {
+    let a = artifacts(PORTLESS_STACK);
+    let values = file(&a, "values.yaml");
+    let worker_template = file(&a, "templates/worker.yaml");
+    // DB_URL is plain config: appears in values.yaml env section.
+    assert!(
+        values.contains("DB_URL"),
+        "DB_URL missing from values.yaml, got:\n{values}"
+    );
+    // DB_PASSWORD matches SECRET_MARKERS: appears as placeholder in secrets section.
+    assert!(
+        values.contains("DB_PASSWORD: '***'"),
+        "DB_PASSWORD placeholder missing from values.yaml, got:\n{values}"
+    );
+    // Real credential must never appear anywhere.
+    assert!(
+        !values.contains("s3cret"),
+        "real secret value leaked into values.yaml, got:\n{values}"
+    );
+    // Template wires env and secrets from values.
+    assert!(
+        worker_template.contains("range $k, $v := $svc.env"),
+        "env range missing from worker template, got:\n{worker_template}"
+    );
+    assert!(
+        worker_template.contains("range $k, $v := $svc.secrets"),
+        "secrets range missing from worker template, got:\n{worker_template}"
+    );
+}
+
+#[test]
+fn portless_worker_matches_golden() {
+    let a = artifacts(PORTLESS_STACK);
+    assert_eq!(
+        file(&a, "templates/worker.yaml"),
+        include_str!("golden/helm/worker.yaml"),
+        "templates/worker.yaml drifted from the golden file"
+    );
+}
+
 /// Validates the generated chart with the real `helm` CLI.
 /// Ignored by default: it needs Helm on the host.
 #[test]

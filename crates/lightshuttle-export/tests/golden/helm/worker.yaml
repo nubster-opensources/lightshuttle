@@ -1,0 +1,51 @@
+{{- $svc := index .Values.services "worker" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: worker
+spec:
+  replicas: {{ $svc.replicas }}
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+      - name: worker
+        image: "{{ $svc.image.repository }}:{{ $svc.image.tag }}"
+        imagePullPolicy: {{ $svc.image.pullPolicy }}
+        envFrom:
+        - configMapRef:
+            name: worker-config
+        - secretRef:
+            name: worker-secret
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: worker-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: worker
+data:
+{{- range $k, $v := $svc.env }}
+  {{ $k }}: {{ $v | quote }}
+{{- end }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: worker-secret
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: worker
+stringData:
+{{- range $k, $v := $svc.secrets }}
+  {{ $k }}: {{ $v | quote }}
+{{- end }}

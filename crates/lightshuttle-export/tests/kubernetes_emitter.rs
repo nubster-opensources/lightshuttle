@@ -148,3 +148,66 @@ fn postgres_gets_probe_and_pvc() {
     assert!(db.contains("pg_isready"), "got:\n{db}");
     assert!(db.contains("kind: PersistentVolumeClaim"), "got:\n{db}");
 }
+
+// --- portless + split_env characterisation tests ---
+
+const PORTLESS_STACK: &str = r"
+project:
+  name: shop
+resources:
+  worker:
+    container:
+      image: alpine:3.20
+      env:
+        DB_URL: postgres://db:5432/app
+        DB_PASSWORD: s3cret
+";
+
+#[test]
+fn portless_service_emits_no_k8s_service() {
+    let a = artifacts(PORTLESS_STACK);
+    let worker = file(&a, "worker.yaml");
+    assert!(
+        !worker.contains("kind: Service"),
+        "worker has no ports so no Service should be emitted, got:\n{worker}"
+    );
+}
+
+#[test]
+fn mixed_env_routes_to_secret_and_configmap() {
+    let a = artifacts(PORTLESS_STACK);
+    let worker = file(&a, "worker.yaml");
+    // DB_PASSWORD matches SECRET_MARKERS -> Secret, value replaced.
+    assert!(
+        worker.contains("kind: Secret"),
+        "missing Secret, got:\n{worker}"
+    );
+    assert!(
+        worker.contains("DB_PASSWORD"),
+        "missing DB_PASSWORD key, got:\n{worker}"
+    );
+    // DB_URL is plain config -> ConfigMap.
+    assert!(
+        worker.contains("kind: ConfigMap"),
+        "missing ConfigMap, got:\n{worker}"
+    );
+    assert!(
+        worker.contains("DB_URL"),
+        "missing DB_URL key, got:\n{worker}"
+    );
+    // Real credential must never appear in the exported manifest.
+    assert!(
+        !worker.contains("s3cret"),
+        "real secret value leaked into manifest, got:\n{worker}"
+    );
+}
+
+#[test]
+fn portless_worker_matches_golden() {
+    let a = artifacts(PORTLESS_STACK);
+    assert_eq!(
+        file(&a, "worker.yaml"),
+        include_str!("golden/k8s/worker.yaml"),
+        "worker.yaml drifted from the golden file"
+    );
+}
