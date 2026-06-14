@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Manifest",
-  "description": "Top-level `lightshuttle.yml` model.",
+  "description": "Top-level `lightshuttle.yml` model.\n\nParse a YAML string with [`Manifest::parse`], which runs both structural\ndecoding and semantic validation in one step.\n\n```rust,no_run\nuse lightshuttle_manifest::Manifest;\n\nlet yaml = r#\"\nproject:\n  name: my-app\nresources:\n  cache:\n    redis:\n      version: \"7\"\n\"#;\n\nlet manifest = Manifest::parse(yaml).unwrap();\nassert_eq!(manifest.project.name, \"my-app\");\nassert_eq!(manifest.resources.len(), 1);\n```",
   "type": "object",
   "properties": {
     "dashboard": {
-      "description": "Optional local dashboard settings.",
+      "description": "Optional settings for the local control-plane HTTP server.\n\nWhen absent the dashboard uses a random free port at startup.",
       "anyOf": [
         {
           "$ref": "#/$defs/DashboardConfig"
@@ -16,7 +16,7 @@
       ]
     },
     "export": {
-      "description": "Optional export settings (per-target overrides for\n`lightshuttle export`).",
+      "description": "Optional per-target overrides consumed by `lightshuttle export`.\n\nSee [`ExportConfig`] for the supported targets.",
       "anyOf": [
         {
           "$ref": "#/$defs/ExportConfig"
@@ -27,7 +27,7 @@
       ]
     },
     "lightshuttle": {
-      "description": "Optional manifest version discriminator. Absent means `v0`.",
+      "description": "Optional manifest version discriminator. Absent means [`Version::V0`].",
       "anyOf": [
         {
           "$ref": "#/$defs/Version"
@@ -38,7 +38,7 @@
       ]
     },
     "observability": {
-      "description": "Optional observability settings (collector toggle, ...).",
+      "description": "Optional observability settings (OpenTelemetry collector toggle).",
       "anyOf": [
         {
           "$ref": "#/$defs/ObservabilityConfig"
@@ -49,11 +49,11 @@
       ]
     },
     "project": {
-      "description": "Project metadata.",
+      "description": "Project metadata (name, optional version label, optional description).",
       "$ref": "#/$defs/Project"
     },
     "resources": {
-      "description": "Declared resources, keyed by name.",
+      "description": "Declared resources, keyed by their manifest name.\n\nEach value is a [`ResourceKind`] variant that carries the\nkind-specific configuration. The map preserves insertion order.",
       "type": "object",
       "additionalProperties": {
         "$ref": "#/$defs/ResourceKind"
@@ -67,14 +67,14 @@
   ],
   "$defs": {
     "Command": {
-      "description": "Entry point override.\n\nThe short string form is convenient for one-liners; the list form is\nrequired when arguments need precise quoting.",
+      "description": "Container entrypoint override.\n\nTwo forms are accepted in the manifest YAML:\n\n- A single string is interpreted shell-style, equivalent to wrapping\n  the value in `sh -c \"...\"`. Convenient for one-liners.\n- An array of strings is passed directly to the container runtime as\n  an argument vector, giving precise control over quoting and\n  whitespace.\n\nUsed in the `command` field of [`crate::ContainerConfig`] and\n[`crate::DockerfileConfig`].",
       "anyOf": [
         {
-          "description": "Single command line, shell-style.",
+          "description": "Shell-style one-liner, e.g. `\"./start.sh --port 8080\"`.",
           "type": "string"
         },
         {
-          "description": "Explicit argument list.",
+          "description": "Explicit argument vector, e.g. `[\"./start.sh\", \"--port\", \"8080\"]`.",
           "type": "array",
           "items": {
             "type": "string"
@@ -83,11 +83,11 @@
       ]
     },
     "ComposeExport": {
-      "description": "Overrides applied when exporting to `docker-compose`.",
+      "description": "Global overrides for the `docker-compose` export target.\n\nNested under [`ExportConfig::compose`]. All resource keys in `resources`\nmust reference a name declared in [`crate::Manifest::resources`], enforced by\n[`crate::Manifest::validate`].",
       "type": "object",
       "properties": {
         "resources": {
-          "description": "Per-resource overrides, keyed by manifest resource name.",
+          "description": "Per-resource overrides, keyed by manifest resource name.\n\nResources not listed here receive the default behaviour (included,\nstandard image naming).",
           "type": "object",
           "additionalProperties": {
             "$ref": "#/$defs/ComposeResourceExport"
@@ -97,11 +97,11 @@
       "additionalProperties": false
     },
     "ComposeResourceExport": {
-      "description": "Per-resource overrides for the `docker-compose` target.",
+      "description": "Per-resource overrides for the `docker-compose` export target.\n\nUsed as the value type in [`ComposeExport::resources`].",
       "type": "object",
       "properties": {
         "enabled": {
-          "description": "When `Some(false)`, the resource is omitted from the export.\nAbsent or `Some(true)` keeps it.",
+          "description": "Whether this resource is included in the export.\n\n`None` or `Some(true)` includes the resource. `Some(false)` omits it.",
           "type": [
             "boolean",
             "null"
@@ -111,11 +111,11 @@
       "additionalProperties": false
     },
     "ContainerConfig": {
-      "description": "Configuration of a container resource pulled from a registry.",
+      "description": "Configuration of a `container` resource backed by a registry image.\n\nCorresponds to the `container:` key in a resource entry. The runtime\npulls `image`, applies the declared port mappings, mounts volumes,\nand injects environment variables before starting the container.\n\nSee [`crate::DockerfileConfig`] for the locally-built equivalent.",
       "type": "object",
       "properties": {
         "command": {
-          "description": "Override of the image entrypoint.",
+          "description": "Optional entrypoint override. See [`Command`] for the two accepted\nforms (string or argument list).",
           "anyOf": [
             {
               "$ref": "#/$defs/Command"
@@ -126,21 +126,21 @@
           ]
         },
         "depends_on": {
-          "description": "Names of resources this container explicitly depends on.",
+          "description": "Names of other resources this container must wait for before\nstarting. Validated by [`crate::Manifest::validate`].",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "env": {
-          "description": "Environment variables injected into the container. Values support\ninterpolation.",
+          "description": "Environment variables injected into the container at startup.\n\nValues are interpolated: `${env.NAME}` and\n`${resources.name.property}` expressions are resolved at runtime.",
           "type": "object",
           "additionalProperties": {
             "type": "string"
           }
         },
         "healthcheck": {
-          "description": "Optional healthcheck.",
+          "description": "Optional healthcheck. Overrides whatever is baked into the image.\n\nSee [`Healthcheck`] for field semantics and defaults.",
           "anyOf": [
             {
               "$ref": "#/$defs/Healthcheck"
@@ -151,25 +151,25 @@
           ]
         },
         "image": {
-          "description": "Full image reference, including the tag.",
+          "description": "Full image reference including the tag, e.g. `\"nginx:1.25-alpine\"`.",
           "type": "string"
         },
         "ports": {
-          "description": "Port mappings.",
+          "description": "Port mappings between the host and the container.\n\nEach element is a [`PortMapping`]: either a bare container port\n(mirrored on the host) or a full `\"host:container\"` string.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/PortMapping"
           }
         },
         "volumes": {
-          "description": "Volume mappings, in `\"host:container\"` or `\"named:container\"` form.",
+          "description": "Volume mappings in `\"host:container\"` or `\"named:container\"` form.\n\nRelative host paths (starting with `.`) are resolved against the\nmanifest directory by [`crate::Manifest::resolve_host_volume_paths`] before\nthey reach the runtime.",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "working_dir": {
-          "description": "Override of the image working directory.",
+          "description": "Optional working directory override inside the container.",
           "type": [
             "string",
             "null"
@@ -182,11 +182,11 @@
       ]
     },
     "DashboardConfig": {
-      "description": "Settings for the local control plane HTTP server.",
+      "description": "Settings for the local control-plane HTTP server (the dashboard).\n\nStored in [`crate::Manifest::dashboard`]. When the whole `dashboard:` section\nis absent from the manifest, the runtime uses its built-in defaults\n(random free port, all-loopback binding).",
       "type": "object",
       "properties": {
         "port": {
-          "description": "Fixed TCP port for the dashboard. Absent or `null` lets\n`lightshuttle up` pick a random free port. Zero is rejected as\nit would be indistinguishable from \"no preference\" at the\nruntime layer.",
+          "description": "Fixed TCP port for the dashboard HTTP server.\n\n- Absent or `null`: the runtime picks a random free port at startup.\n- `0`: rejected by [`crate::Manifest::validate`] with\n  [`crate::ManifestError::InvalidDashboardPort`] (indistinguishable from\n  \"no preference\" at the OS level).\n- `1..=65535`: the dashboard binds to this port.",
           "type": [
             "integer",
             "null"
@@ -199,18 +199,18 @@
       "additionalProperties": false
     },
     "DockerfileConfig": {
-      "description": "Configuration of a resource built locally from a Dockerfile.",
+      "description": "Configuration of a `dockerfile` resource built locally before being run.\n\nThe runtime performs a `docker build` in `context`, then starts the\nresulting image as it would for a [`crate::ContainerConfig`].",
       "type": "object",
       "properties": {
         "build_args": {
-          "description": "Build-time arguments.",
+          "description": "Build-time `ARG` values passed to `docker build --build-arg`.",
           "type": "object",
           "additionalProperties": {
             "type": "string"
           }
         },
         "command": {
-          "description": "Override of the image entrypoint.",
+          "description": "Optional entrypoint override. See [`Command`] for accepted forms.",
           "anyOf": [
             {
               "$ref": "#/$defs/Command"
@@ -221,30 +221,30 @@
           ]
         },
         "context": {
-          "description": "Build context, relative to the manifest file.",
+          "description": "Build context path, relative to the manifest file.\n\nResolved to an absolute path by\n[`crate::Manifest::resolve_host_volume_paths`] before it is handed to the\nruntime.",
           "type": "string"
         },
         "depends_on": {
-          "description": "Names of resources this build explicitly depends on.",
+          "description": "Names of other resources this build must wait for before starting.\nValidated by [`crate::Manifest::validate`].",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "dockerfile": {
-          "description": "Dockerfile path within the context. Defaults to `\"Dockerfile\"`.",
+          "description": "Path to the Dockerfile within `context`. Defaults to `\"Dockerfile\"`.",
           "type": "string",
           "default": "Dockerfile"
         },
         "env": {
-          "description": "Environment variables injected at runtime. Values support\ninterpolation.",
+          "description": "Environment variables injected into the container at runtime.\n\nValues support `${env.NAME}` and `${resources.name.property}`\ninterpolation.",
           "type": "object",
           "additionalProperties": {
             "type": "string"
           }
         },
         "healthcheck": {
-          "description": "Optional healthcheck.",
+          "description": "Optional healthcheck override. See [`Healthcheck`] for field semantics.",
           "anyOf": [
             {
               "$ref": "#/$defs/Healthcheck"
@@ -255,28 +255,28 @@
           ]
         },
         "ports": {
-          "description": "Port mappings.",
+          "description": "Port mappings between the host and the container. See [`PortMapping`].",
           "type": "array",
           "items": {
             "$ref": "#/$defs/PortMapping"
           }
         },
         "target": {
-          "description": "Multi-stage build target.",
+          "description": "Multi-stage build target passed to `docker build --target`.",
           "type": [
             "string",
             "null"
           ]
         },
         "volumes": {
-          "description": "Volume mappings.",
+          "description": "Volume mappings in `\"host:container\"` or `\"named:container\"` form.\n\nRelative host paths are resolved by\n[`crate::Manifest::resolve_host_volume_paths`].",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "working_dir": {
-          "description": "Override of the image working directory.",
+          "description": "Optional working directory override inside the container.",
           "type": [
             "string",
             "null"
@@ -289,11 +289,11 @@
       ]
     },
     "ExportConfig": {
-      "description": "Top-level `export` settings, one optional sub-table per target.",
+      "description": "Top-level `export` settings, one optional sub-table per export target.\n\nStored in [`crate::Manifest::export`]. The section is purely structural: it\ncarries raw optional values only. Defaults such as the chart name, the\nKubernetes namespace, and replica counts are resolved during the lowering\nstep in `lightshuttle-export`, so this crate never owns export semantics.\n\nAll resource keys in sub-tables are validated against the manifest's\ndeclared resources by [`crate::Manifest::validate`].",
       "type": "object",
       "properties": {
         "compose": {
-          "description": "Overrides for the `docker-compose` target.",
+          "description": "Per-resource overrides for the `docker-compose` export target.",
           "anyOf": [
             {
               "$ref": "#/$defs/ComposeExport"
@@ -304,7 +304,7 @@
           ]
         },
         "helm": {
-          "description": "Overrides for the Helm chart target.",
+          "description": "Per-resource overrides for the Helm chart target.",
           "anyOf": [
             {
               "$ref": "#/$defs/HelmExport"
@@ -315,7 +315,7 @@
           ]
         },
         "kubernetes": {
-          "description": "Overrides for the Kubernetes manifests target.",
+          "description": "Per-resource overrides for the raw Kubernetes manifests target.",
           "anyOf": [
             {
               "$ref": "#/$defs/KubernetesExport"
@@ -329,35 +329,35 @@
       "additionalProperties": false
     },
     "Healthcheck": {
-      "description": "Per-resource healthcheck configuration.\n\nThe field semantics mirror those used by Docker Compose so that\ndevelopers already familiar with `docker-compose.yml` translate their\nknowledge directly to LightShuttle manifests.",
+      "description": "Per-resource healthcheck configuration.\n\nField semantics mirror Docker Compose so that existing knowledge\ntransfers directly. Duration fields (`interval`, `timeout`,\n`start_period`) accept strings like `\"5s\"`, `\"200ms\"`, or `\"2m\"` and\nare validated by [`crate::Manifest::validate`].\n\nA `Healthcheck` is embedded in [`crate::PostgresConfig`], [`crate::RedisConfig`],\n[`crate::ContainerConfig`], and [`crate::DockerfileConfig`] via their `healthcheck`\nfield, and is also accessible through [`crate::ResourceKind::healthcheck`].",
       "type": "object",
       "properties": {
         "interval": {
-          "description": "Interval between consecutive checks. Default `\"5s\"`.",
+          "description": "Time between consecutive check executions. Default `\"5s\"`.\n\nAccepted suffixes: `ns`, `us`, `ms`, `s`, `m`, `h`.",
           "type": "string",
           "default": "5s"
         },
         "retries": {
-          "description": "Number of consecutive failed checks required to mark the resource\nas unhealthy. Default `5`.",
+          "description": "Number of consecutive failures needed to declare the resource\nunhealthy. Default `5`.",
           "type": "integer",
           "format": "uint32",
           "default": 5,
           "minimum": 0
         },
         "start_period": {
-          "description": "Grace period after the resource starts during which check\nfailures are not counted. Default `\"5s\"`.",
+          "description": "Grace period at startup during which check failures are not\ncounted toward `retries`. Default `\"5s\"`.",
           "type": "string",
           "default": "5s"
         },
         "test": {
-          "description": "Command to run. The first element should be `\"CMD\"` or\n`\"CMD-SHELL\"`.",
+          "description": "Command to run. The first element must be `\"CMD\"` or `\"CMD-SHELL\"`.\n\nCannot be empty (enforced by [`crate::Manifest::validate`]).",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "timeout": {
-          "description": "Maximum time a single check is allowed to run before being\nconsidered failed. Default `\"3s\"`.",
+          "description": "Maximum duration a single check execution may take before the\nruntime treats it as failed. Default `\"3s\"`.",
           "type": "string",
           "default": "3s"
         }
@@ -368,7 +368,7 @@
       ]
     },
     "HelmExport": {
-      "description": "Overrides applied when exporting to a Helm chart.",
+      "description": "Global overrides for the Helm chart export target.\n\nNested under [`ExportConfig::helm`]. The chart name and version default\nto the project name and version respectively, resolved by\n`lightshuttle-export` during lowering.",
       "type": "object",
       "properties": {
         "chart_name": {
@@ -379,14 +379,14 @@
           ]
         },
         "chart_version": {
-          "description": "Chart version. Defaults to the project version, else `0.1.0`.",
+          "description": "Chart version (`SemVer` string). Defaults to the project version when\nset, otherwise `\"0.1.0\"`.",
           "type": [
             "string",
             "null"
           ]
         },
         "replicas": {
-          "description": "Default replica count exposed through chart values.",
+          "description": "Default replica count exposed via the generated chart's `values.yaml`.",
           "type": [
             "integer",
             "null"
@@ -405,18 +405,18 @@
       "additionalProperties": false
     },
     "HelmResourceExport": {
-      "description": "Per-resource overrides for the Helm target.",
+      "description": "Per-resource overrides for the Helm chart export target.\n\nUsed as the value type in [`HelmExport::resources`].",
       "type": "object",
       "properties": {
         "enabled": {
-          "description": "When `Some(false)`, the resource is omitted from the chart.",
+          "description": "Whether this resource is included in the chart.\n\n`None` or `Some(true)` includes the resource. `Some(false)` omits it.",
           "type": [
             "boolean",
             "null"
           ]
         },
         "replicas": {
-          "description": "Replica count override for this resource.",
+          "description": "Replica count override for this resource, taking precedence over\n[`HelmExport::replicas`].",
           "type": [
             "integer",
             "null"
@@ -428,31 +428,31 @@
       "additionalProperties": false
     },
     "ImagePullPolicy": {
-      "description": "Kubernetes image pull policy.",
+      "description": "Kubernetes image pull policy, used in [`KubernetesExport`] and\n[`KubernetesResourceExport`].\n\nMaps directly to the `imagePullPolicy` field in a Kubernetes\n`Container` spec.",
       "oneOf": [
         {
-          "description": "Always pull the image.",
+          "description": "Always pull the image, regardless of whether a local copy exists.",
           "type": "string",
           "const": "Always"
         },
         {
-          "description": "Pull only when the image is not present locally.",
+          "description": "Pull the image only when it is not already present on the node.\nThis is the default.",
           "type": "string",
           "const": "IfNotPresent"
         },
         {
-          "description": "Never pull; the image must already be present.",
+          "description": "Never pull the image; it must already be present on the node.",
           "type": "string",
           "const": "Never"
         }
       ]
     },
     "KubernetesExport": {
-      "description": "Overrides applied when exporting to Kubernetes manifests.",
+      "description": "Global overrides for the raw Kubernetes manifests export target.\n\nNested under [`ExportConfig::kubernetes`]. Defaults (namespace, replica\ncount, pull policy) are resolved by `lightshuttle-export` during\nlowering.",
       "type": "object",
       "properties": {
         "image_pull_policy": {
-          "description": "Default image pull policy for every resource.",
+          "description": "Default image pull policy applied to every resource.\n\nSee [`ImagePullPolicy`] for accepted values. Defaults to\n[`ImagePullPolicy::IfNotPresent`].",
           "anyOf": [
             {
               "$ref": "#/$defs/ImagePullPolicy"
@@ -463,14 +463,14 @@
           ]
         },
         "namespace": {
-          "description": "Target namespace. Defaults to the project name during lowering.",
+          "description": "Target Kubernetes namespace.\n\nDefaults to the project name when absent.",
           "type": [
             "string",
             "null"
           ]
         },
         "replicas": {
-          "description": "Default replica count for every resource.",
+          "description": "Default replica count for every resource that supports it.",
           "type": [
             "integer",
             "null"
@@ -489,18 +489,18 @@
       "additionalProperties": false
     },
     "KubernetesResourceExport": {
-      "description": "Per-resource overrides for the Kubernetes target.",
+      "description": "Per-resource overrides for the Kubernetes manifests export target.\n\nUsed as the value type in [`KubernetesExport::resources`].",
       "type": "object",
       "properties": {
         "enabled": {
-          "description": "When `Some(false)`, the resource is omitted from the export.",
+          "description": "Whether this resource is included in the export.\n\n`None` or `Some(true)` includes the resource. `Some(false)` omits it.",
           "type": [
             "boolean",
             "null"
           ]
         },
         "image_pull_policy": {
-          "description": "Image pull policy override for this resource.",
+          "description": "Image pull policy override for this specific resource, taking\nprecedence over [`KubernetesExport::image_pull_policy`].",
           "anyOf": [
             {
               "$ref": "#/$defs/ImagePullPolicy"
@@ -511,7 +511,7 @@
           ]
         },
         "replicas": {
-          "description": "Replica count override for this resource.",
+          "description": "Replica count override for this specific resource, taking precedence\nover [`KubernetesExport::replicas`].",
           "type": [
             "integer",
             "null"
@@ -523,11 +523,11 @@
       "additionalProperties": false
     },
     "ObservabilityConfig": {
-      "description": "Top-level observability settings.",
+      "description": "Top-level observability settings, corresponding to the `observability:`\nsection in `lightshuttle.yml`.\n\nCurrently only controls the bundled OpenTelemetry collector via\n[`OtelConfig`]. More toggles (tracing, profiling) may be added in\nfuture specification revisions.",
       "type": "object",
       "properties": {
         "otel": {
-          "description": "OpenTelemetry collector toggle.",
+          "description": "OpenTelemetry collector configuration.\n\n`None` preserves the default-on behaviour (the bundled collector\nstarts alongside the project resources).",
           "anyOf": [
             {
               "$ref": "#/$defs/OtelConfig"
@@ -541,11 +541,11 @@
       "additionalProperties": false
     },
     "OtelConfig": {
-      "description": "Per-feature `OTel` collector toggle.",
+      "description": "Toggle for the bundled OpenTelemetry collector.\n\nNested under [`ObservabilityConfig::otel`] in the manifest.",
       "type": "object",
       "properties": {
         "enabled": {
-          "description": "When `Some(false)`, `lightshuttle up` skips both the bundled\ncollector and the env injection. Absent or `Some(true)` keeps\nthe default-on behaviour.",
+          "description": "Whether the bundled OpenTelemetry collector is active.\n\n- `None` or `Some(true)`: the collector starts and OTLP environment\n  variables are injected into every container.\n- `Some(false)`: `lightshuttle up` skips the collector and does not\n  inject any OTLP variables.",
           "type": [
             "boolean",
             "null"
@@ -555,41 +555,41 @@
       "additionalProperties": false
     },
     "PortMapping": {
-      "description": "Port mapping for a container.\n\nThe short integer form exposes a single container port that the\nruntime mirrors on the host. The string form supports the full\nCompose syntax (`\"host:container\"`, `\"bind:host:container\"`).",
+      "description": "Port mapping for a container resource.\n\nTwo forms are accepted in the manifest:\n\n- Integer short form: the runtime mirrors the container port on an\n  identical host port. Example: `8080` maps `0.0.0.0:8080 -> 8080`.\n- String full form: supports the `\"host:container\"` and\n  `\"bind_addr:host:container\"` syntaxes understood by the container\n  runtime. Example: `\"127.0.0.1:9090:9090\"`.\n\nUsed in the `ports` field of [`crate::ContainerConfig`] and\n[`crate::DockerfileConfig`].",
       "anyOf": [
         {
-          "description": "Short form: just the container port. Host port mirrors it.",
+          "description": "Short form: just the container port number. The runtime mirrors it\non the same host port.",
           "type": "integer",
           "format": "uint16",
           "maximum": 65535,
           "minimum": 0
         },
         {
-          "description": "Full form: `\"9090:9090\"` or `\"127.0.0.1:9090:9090\"`.",
+          "description": "Full form: `\"host:container\"` or `\"bind_addr:host:container\"`.",
           "type": "string"
         }
       ]
     },
     "PostgresConfig": {
-      "description": "Configuration of a PostgreSQL resource.",
+      "description": "Configuration of a managed PostgreSQL instance.\n\nThe runtime resolves the effective image using the following priority\norder: `image` (if set) takes precedence; otherwise `version` is\nexpanded to `postgres:<version>-alpine`; if neither is set the\nruntime picks its own default.\n\nThe `database` field must match `^[a-z][a-z0-9_]{0,62}$` and is\nvalidated by [`crate::Manifest::validate`].",
       "type": "object",
       "properties": {
         "database": {
-          "description": "Initial database name. Defaults to the resource name when unset.",
+          "description": "Initial database name created at first startup.\n\nMust match `^[a-z][a-z0-9_]{0,62}$`. Defaults to the resource\nname when unset.",
           "type": [
             "string",
             "null"
           ]
         },
         "depends_on": {
-          "description": "Names of resources this PostgreSQL instance explicitly depends on.",
+          "description": "Names of other resources this instance must wait for before starting.",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "healthcheck": {
-          "description": "Override of the default `pg_isready` healthcheck.",
+          "description": "Healthcheck override. Replaces the built-in `pg_isready` check.\n\nSee [`Healthcheck`] for field semantics and defaults.",
           "anyOf": [
             {
               "$ref": "#/$defs/Healthcheck"
@@ -600,21 +600,21 @@
           ]
         },
         "image": {
-          "description": "Explicit image reference. Takes precedence over `version` when\nboth are set.",
+          "description": "Explicit image reference. Takes precedence over `version`.\n\nUse this to pin a specific digest or to point to a private registry.",
           "type": [
             "string",
             "null"
           ]
         },
         "password": {
-          "description": "Superuser password. Generated by the runtime when unset.",
+          "description": "Superuser password. The runtime generates a random password when\nthis is unset and exposes it via `${resources.name.password}`.",
           "type": [
             "string",
             "null"
           ]
         },
         "port": {
-          "description": "Container port. Defaults to `5432` when unset.",
+          "description": "Host port the container port `5432` is mapped to.\n\nThe runtime chooses a random free port when unset.",
           "type": [
             "integer",
             "null"
@@ -624,21 +624,21 @@
           "minimum": 0
         },
         "user": {
-          "description": "Superuser name. Defaults to `\"postgres\"` when unset.",
+          "description": "Superuser account name. Defaults to `\"postgres\"` when unset.",
           "type": [
             "string",
             "null"
           ]
         },
         "version": {
-          "description": "Major version. Expanded into `postgres:<version>-alpine` by the\nruntime when `image` is unset.",
+          "description": "PostgreSQL major version, e.g. `\"16\"`.\n\nExpanded into `postgres:<version>-alpine` when `image` is absent.\nIgnored when `image` is set.",
           "type": [
             "string",
             "null"
           ]
         },
         "volume": {
-          "description": "Persistent volume configuration. Defaults to an auto-named\nvolume when unset.",
+          "description": "Persistent volume configuration. See [`Volume`] for the accepted forms.\n\nDefaults to an auto-named volume when unset.",
           "anyOf": [
             {
               "$ref": "#/$defs/Volume"
@@ -652,22 +652,22 @@
       "additionalProperties": false
     },
     "Project": {
-      "description": "Project section of the manifest.",
+      "description": "Project metadata, corresponding to the `project:` section of the manifest.\n\nThe `name` field must match the pattern `^[a-z][a-z0-9_-]{0,31}$` and is\nvalidated by [`Manifest::validate`]. It is used by the runtime as a prefix\nfor container and network names, and by `lightshuttle-export` as the\ndefault Helm chart name and Kubernetes namespace.",
       "type": "object",
       "properties": {
         "description": {
-          "description": "Free-form description shown in the dashboard.",
+          "description": "Free-form description displayed in the local dashboard.",
           "type": [
             "string",
             "null"
           ]
         },
         "name": {
-          "description": "Project name, used as a prefix in runtime resource names.",
+          "description": "Project name. Must match `^[a-z][a-z0-9_-]{0,31}$`.\n\nUsed as a prefix for all runtime resource names (containers, networks,\nvolumes) so it must be stable across machines.",
           "type": "string"
         },
         "version": {
-          "description": "Free-form version label. Informational only.",
+          "description": "Free-form version label. Informational only; not validated.",
           "type": [
             "string",
             "null"
@@ -680,18 +680,18 @@
       ]
     },
     "RedisConfig": {
-      "description": "Configuration of a Redis resource.",
+      "description": "Configuration of a managed Redis instance.\n\nThe runtime resolves the effective image using the same priority as\n[`crate::PostgresConfig`]: `image` takes precedence; otherwise `version` is\nexpanded to `redis:<version>-alpine`.",
       "type": "object",
       "properties": {
         "depends_on": {
-          "description": "Names of resources this Redis instance explicitly depends on.",
+          "description": "Names of other resources this instance must wait for before starting.",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "healthcheck": {
-          "description": "Override of the default `redis-cli PING` healthcheck.",
+          "description": "Healthcheck override. Replaces the built-in `redis-cli PING` check.\n\nSee [`Healthcheck`] for field semantics and defaults.",
           "anyOf": [
             {
               "$ref": "#/$defs/Healthcheck"
@@ -702,21 +702,21 @@
           ]
         },
         "image": {
-          "description": "Explicit image reference.",
+          "description": "Explicit image reference. Takes precedence over `version`.",
           "type": [
             "string",
             "null"
           ]
         },
         "password": {
-          "description": "Authentication password. An empty string disables authentication.",
+          "description": "Authentication password for the `requirepass` directive.\n\nAn empty string or `None` runs Redis without authentication.",
           "type": [
             "string",
             "null"
           ]
         },
         "port": {
-          "description": "Container port. Defaults to `6379` when unset.",
+          "description": "Host port the container port `6379` is mapped to.\n\nThe runtime chooses a random free port when unset.",
           "type": [
             "integer",
             "null"
@@ -726,14 +726,14 @@
           "minimum": 0
         },
         "version": {
-          "description": "Major version. Expanded into `redis:<version>-alpine` when\n`image` is unset.",
+          "description": "Redis major version, e.g. `\"7\"`.\n\nExpanded into `redis:<version>-alpine` when `image` is absent.",
           "type": [
             "string",
             "null"
           ]
         },
         "volume": {
-          "description": "Persistent volume configuration. Defaults to an auto-named\nvolume when unset.",
+          "description": "Persistent volume configuration. See [`Volume`] for accepted forms.\n\nDefaults to an auto-named volume when unset.",
           "anyOf": [
             {
               "$ref": "#/$defs/Volume"
@@ -747,10 +747,10 @@
       "additionalProperties": false
     },
     "ResourceKind": {
-      "description": "Kind-specific configuration of a resource.\n\nThe variant is selected by the YAML key under the resource entry\n(externally tagged shape):\n\n```yaml\napi_db:\n  postgres:    # ← variant is ResourceKind::Postgres\n    version: \"16\"\n```\n\nSerde's default external tagging produces a YAML tag (`!postgres\n...`) rather than a map entry, so this enum implements `Serialize`\nand `Deserialize` manually to keep the manifest format identical to\nthe specification.",
+      "description": "Kind-specific configuration of a resource declared in `resources:`.\n\nThe variant is selected by the single YAML key nested under a resource\nname:\n\n```yaml\napi_db:\n  postgres:    # selects ResourceKind::Postgres\n    version: \"16\"\ncache:\n  redis: {}   # selects ResourceKind::Redis\n```\n\n`serde`'s default external tagging would emit a YAML tag (`!postgres`)\nrather than a plain map key, so `Serialize` and `Deserialize` are\nimplemented manually to preserve the format defined by the specification.\n\nUse [`ResourceKind::depends_on`], [`ResourceKind::healthcheck`], and\n[`ResourceKind::kind_name`] to query cross-cutting properties without\npattern-matching on the variant.",
       "oneOf": [
         {
-          "description": "PostgreSQL resource.",
+          "description": "Managed PostgreSQL instance. Configuration carried by [`PostgresConfig`].",
           "type": "object",
           "properties": {
             "postgres": {
@@ -763,7 +763,7 @@
           ]
         },
         {
-          "description": "Redis resource.",
+          "description": "Managed Redis instance. Configuration carried by [`RedisConfig`].",
           "type": "object",
           "properties": {
             "redis": {
@@ -776,7 +776,7 @@
           ]
         },
         {
-          "description": "Container pulled from a registry.",
+          "description": "Container pulled from a registry. Configuration carried by [`ContainerConfig`].",
           "type": "object",
           "properties": {
             "container": {
@@ -789,7 +789,7 @@
           ]
         },
         {
-          "description": "Container built locally from a Dockerfile.",
+          "description": "Container built locally from a Dockerfile. Configuration carried by [`DockerfileConfig`].",
           "type": "object",
           "properties": {
             "dockerfile": {
@@ -804,24 +804,24 @@
       ]
     },
     "Version": {
-      "description": "Manifest specification version.",
+      "description": "Manifest specification version discriminator.\n\nCarried by the optional top-level `lightshuttle` key in the YAML file.\nAbsent means `v0`. Future specification revisions will introduce new\nvariants here so tooling can reject manifests it does not understand.",
       "oneOf": [
         {
-          "description": "The `v0` specification.",
+          "description": "The `v0` specification (current).",
           "type": "string",
           "const": "v0"
         }
       ]
     },
     "Volume": {
-      "description": "Volume specification.\n\n`true` requests an auto-named persistent volume, `false` opts out (the\ndata is lost on `down`), and a string supplies an explicit named\nvolume.",
+      "description": "Volume persistence specification for a managed resource.\n\nThree forms are accepted in the manifest:\n\n- `true` (default): the runtime provisions an auto-named volume.\n- `false`: no volume; the container data directory is ephemeral and lost\n  when `lightshuttle down` removes the container.\n- A string such as `\"my-db-data\"`: an explicitly named volume,\n  shared across projects or preserved with a predictable name.\n\nUsed in the `volume` field of [`crate::PostgresConfig`] and [`crate::RedisConfig`].",
       "anyOf": [
         {
-          "description": "Boolean form: enable or disable an auto-named persistent volume.",
+          "description": "Boolean form: `true` enables an auto-named volume; `false` disables\npersistence.",
           "type": "boolean"
         },
         {
-          "description": "String form: explicit named volume.",
+          "description": "String form: explicit named volume identifier.",
           "type": "string"
         }
       ]
