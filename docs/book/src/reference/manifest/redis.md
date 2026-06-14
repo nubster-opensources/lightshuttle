@@ -2,15 +2,19 @@
 
 # redis
 
-Configuration of a Redis resource.
+Configuration of a managed Redis instance.
+
+The runtime resolves the effective image using the same priority as
+[`crate::PostgresConfig`]: `image` takes precedence; otherwise `version` is
+expanded to `redis:<version>-alpine`.
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `depends_on` | array of string | no |  | Names of resources this Redis instance explicitly depends on. |
-| `healthcheck` | [Healthcheck](common-types.md#healthcheck) | no |  | Override of the default `redis-cli PING` healthcheck. |
-| `image` | string | no |  | Explicit image reference. |
-| `password` | string | no |  | Authentication password. An empty string disables authentication. |
-| `port` | integer | no |  | Container port. Defaults to `6379` when unset. |
-| `version` | string | no |  | Major version. Expanded into `redis:<version>-alpine` when `image` is unset. |
-| `volume` | [Volume](common-types.md#volume) | no |  | Persistent volume configuration. Defaults to an auto-named volume when unset. |
+| `depends_on` | array of string | no |  | Names of other resources this instance must wait for before starting. |
+| `healthcheck` | [Healthcheck](common-types.md#healthcheck) | no |  | Healthcheck override. Replaces the built-in `redis-cli PING` check. See [`Healthcheck`] for field semantics and defaults. |
+| `image` | string | no |  | Explicit image reference. Takes precedence over `version`. |
+| `password` | string | no |  | Authentication password for the `requirepass` directive. An empty string or `None` runs Redis without authentication. |
+| `port` | integer | no |  | Host port the container port `6379` is mapped to. The runtime chooses a random free port when unset. |
+| `version` | string | no |  | Redis major version, e.g. `"7"`. Expanded into `redis:<version>-alpine` when `image` is absent. |
+| `volume` | [Volume](common-types.md#volume) | no |  | Persistent volume configuration. See [`Volume`] for accepted forms. Defaults to an auto-named volume when unset. |
 

@@ -6,109 +6,159 @@ Shared configuration types referenced from the manifest sections and resource ki
 
 ## Command
 
-Entry point override.
+Container entrypoint override.
 
-The short string form is convenient for one-liners; the list form is
-required when arguments need precise quoting.
+Two forms are accepted in the manifest YAML:
+
+- A single string is interpreted shell-style, equivalent to wrapping
+  the value in `sh -c "..."`. Convenient for one-liners.
+- An array of strings is passed directly to the container runtime as
+  an argument vector, giving precise control over quoting and
+  whitespace.
+
+Used in the `command` field of [`crate::ContainerConfig`] and
+[`crate::DockerfileConfig`].
 
 ## ComposeExport
 
-Overrides applied when exporting to `docker-compose`.
+Global overrides for the `docker-compose` export target.
+
+Nested under [`ExportConfig::compose`]. All resource keys in `resources`
+must reference a name declared in [`crate::Manifest::resources`], enforced by
+[`crate::Manifest::validate`].
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `resources` | map of [ComposeResourceExport](common-types.md#composeresourceexport) | no |  | Per-resource overrides, keyed by manifest resource name. |
+| `resources` | map of [ComposeResourceExport](common-types.md#composeresourceexport) | no |  | Per-resource overrides, keyed by manifest resource name. Resources not listed here receive the default behaviour (included, standard image naming). |
 
 ## ComposeResourceExport
 
-Per-resource overrides for the `docker-compose` target.
+Per-resource overrides for the `docker-compose` export target.
+
+Used as the value type in [`ComposeExport::resources`].
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `enabled` | boolean | no |  | When `Some(false)`, the resource is omitted from the export. Absent or `Some(true)` keeps it. |
+| `enabled` | boolean | no |  | Whether this resource is included in the export. `None` or `Some(true)` includes the resource. `Some(false)` omits it. |
 
 ## Healthcheck
 
 Per-resource healthcheck configuration.
 
-The field semantics mirror those used by Docker Compose so that
-developers already familiar with `docker-compose.yml` translate their
-knowledge directly to LightShuttle manifests.
+Field semantics mirror Docker Compose so that existing knowledge
+transfers directly. Duration fields (`interval`, `timeout`,
+`start_period`) accept strings like `"5s"`, `"200ms"`, or `"2m"` and
+are validated by [`crate::Manifest::validate`].
+
+A `Healthcheck` is embedded in [`crate::PostgresConfig`], [`crate::RedisConfig`],
+[`crate::ContainerConfig`], and [`crate::DockerfileConfig`] via their `healthcheck`
+field, and is also accessible through [`crate::ResourceKind::healthcheck`].
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `interval` | string | no | `"5s"` | Interval between consecutive checks. Default `"5s"`. |
-| `retries` | integer | no | `5` | Number of consecutive failed checks required to mark the resource as unhealthy. Default `5`. |
-| `start_period` | string | no | `"5s"` | Grace period after the resource starts during which check failures are not counted. Default `"5s"`. |
-| `test` | array of string | yes |  | Command to run. The first element should be `"CMD"` or `"CMD-SHELL"`. |
-| `timeout` | string | no | `"3s"` | Maximum time a single check is allowed to run before being considered failed. Default `"3s"`. |
+| `interval` | string | no | `"5s"` | Time between consecutive check executions. Default `"5s"`. Accepted suffixes: `ns`, `us`, `ms`, `s`, `m`, `h`. |
+| `retries` | integer | no | `5` | Number of consecutive failures needed to declare the resource unhealthy. Default `5`. |
+| `start_period` | string | no | `"5s"` | Grace period at startup during which check failures are not counted toward `retries`. Default `"5s"`. |
+| `test` | array of string | yes |  | Command to run. The first element must be `"CMD"` or `"CMD-SHELL"`. Cannot be empty (enforced by [`crate::Manifest::validate`]). |
+| `timeout` | string | no | `"3s"` | Maximum duration a single check execution may take before the runtime treats it as failed. Default `"3s"`. |
 
 ## HelmExport
 
-Overrides applied when exporting to a Helm chart.
+Global overrides for the Helm chart export target.
+
+Nested under [`ExportConfig::helm`]. The chart name and version default
+to the project name and version respectively, resolved by
+`lightshuttle-export` during lowering.
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `chart_name` | string | no |  | Chart name. Defaults to the project name during lowering. |
-| `chart_version` | string | no |  | Chart version. Defaults to the project version, else `0.1.0`. |
-| `replicas` | integer | no |  | Default replica count exposed through chart values. |
+| `chart_version` | string | no |  | Chart version (`SemVer` string). Defaults to the project version when set, otherwise `"0.1.0"`. |
+| `replicas` | integer | no |  | Default replica count exposed via the generated chart's `values.yaml`. |
 | `resources` | map of [HelmResourceExport](common-types.md#helmresourceexport) | no |  | Per-resource overrides, keyed by manifest resource name. |
 
 ## HelmResourceExport
 
-Per-resource overrides for the Helm target.
+Per-resource overrides for the Helm chart export target.
+
+Used as the value type in [`HelmExport::resources`].
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `enabled` | boolean | no |  | When `Some(false)`, the resource is omitted from the chart. |
-| `replicas` | integer | no |  | Replica count override for this resource. |
+| `enabled` | boolean | no |  | Whether this resource is included in the chart. `None` or `Some(true)` includes the resource. `Some(false)` omits it. |
+| `replicas` | integer | no |  | Replica count override for this resource, taking precedence over [`HelmExport::replicas`]. |
 
 ## ImagePullPolicy
 
-Kubernetes image pull policy.
+Kubernetes image pull policy, used in [`KubernetesExport`] and
+[`KubernetesResourceExport`].
+
+Maps directly to the `imagePullPolicy` field in a Kubernetes
+`Container` spec.
 
 ## KubernetesExport
 
-Overrides applied when exporting to Kubernetes manifests.
+Global overrides for the raw Kubernetes manifests export target.
+
+Nested under [`ExportConfig::kubernetes`]. Defaults (namespace, replica
+count, pull policy) are resolved by `lightshuttle-export` during
+lowering.
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `image_pull_policy` | [ImagePullPolicy](common-types.md#imagepullpolicy) | no |  | Default image pull policy for every resource. |
-| `namespace` | string | no |  | Target namespace. Defaults to the project name during lowering. |
-| `replicas` | integer | no |  | Default replica count for every resource. |
+| `image_pull_policy` | [ImagePullPolicy](common-types.md#imagepullpolicy) | no |  | Default image pull policy applied to every resource. See [`ImagePullPolicy`] for accepted values. Defaults to [`ImagePullPolicy::IfNotPresent`]. |
+| `namespace` | string | no |  | Target Kubernetes namespace. Defaults to the project name when absent. |
+| `replicas` | integer | no |  | Default replica count for every resource that supports it. |
 | `resources` | map of [KubernetesResourceExport](common-types.md#kubernetesresourceexport) | no |  | Per-resource overrides, keyed by manifest resource name. |
 
 ## KubernetesResourceExport
 
-Per-resource overrides for the Kubernetes target.
+Per-resource overrides for the Kubernetes manifests export target.
+
+Used as the value type in [`KubernetesExport::resources`].
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `enabled` | boolean | no |  | When `Some(false)`, the resource is omitted from the export. |
-| `image_pull_policy` | [ImagePullPolicy](common-types.md#imagepullpolicy) | no |  | Image pull policy override for this resource. |
-| `replicas` | integer | no |  | Replica count override for this resource. |
+| `enabled` | boolean | no |  | Whether this resource is included in the export. `None` or `Some(true)` includes the resource. `Some(false)` omits it. |
+| `image_pull_policy` | [ImagePullPolicy](common-types.md#imagepullpolicy) | no |  | Image pull policy override for this specific resource, taking precedence over [`KubernetesExport::image_pull_policy`]. |
+| `replicas` | integer | no |  | Replica count override for this specific resource, taking precedence over [`KubernetesExport::replicas`]. |
 
 ## OtelConfig
 
-Per-feature `OTel` collector toggle.
+Toggle for the bundled OpenTelemetry collector.
+
+Nested under [`ObservabilityConfig::otel`] in the manifest.
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `enabled` | boolean | no |  | When `Some(false)`, `lightshuttle up` skips both the bundled collector and the env injection. Absent or `Some(true)` keeps the default-on behaviour. |
+| `enabled` | boolean | no |  | Whether the bundled OpenTelemetry collector is active. - `None` or `Some(true)`: the collector starts and OTLP environment variables are injected into every container. - `Some(false)`: `lightshuttle up` skips the collector and does not inject any OTLP variables. |
 
 ## PortMapping
 
-Port mapping for a container.
+Port mapping for a container resource.
 
-The short integer form exposes a single container port that the
-runtime mirrors on the host. The string form supports the full
-Compose syntax (`"host:container"`, `"bind:host:container"`).
+Two forms are accepted in the manifest:
+
+- Integer short form: the runtime mirrors the container port on an
+  identical host port. Example: `8080` maps `0.0.0.0:8080 -> 8080`.
+- String full form: supports the `"host:container"` and
+  `"bind_addr:host:container"` syntaxes understood by the container
+  runtime. Example: `"127.0.0.1:9090:9090"`.
+
+Used in the `ports` field of [`crate::ContainerConfig`] and
+[`crate::DockerfileConfig`].
 
 ## Volume
 
-Volume specification.
+Volume persistence specification for a managed resource.
 
-`true` requests an auto-named persistent volume, `false` opts out (the
-data is lost on `down`), and a string supplies an explicit named
-volume.
+Three forms are accepted in the manifest:
+
+- `true` (default): the runtime provisions an auto-named volume.
+- `false`: no volume; the container data directory is ephemeral and lost
+  when `lightshuttle down` removes the container.
+- A string such as `"my-db-data"`: an explicitly named volume,
+  shared across projects or preserved with a predictable name.
+
+Used in the `volume` field of [`crate::PostgresConfig`] and [`crate::RedisConfig`].
 

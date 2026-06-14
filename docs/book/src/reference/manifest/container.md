@@ -2,16 +2,22 @@
 
 # container
 
-Configuration of a container resource pulled from a registry.
+Configuration of a `container` resource backed by a registry image.
+
+Corresponds to the `container:` key in a resource entry. The runtime
+pulls `image`, applies the declared port mappings, mounts volumes,
+and injects environment variables before starting the container.
+
+See [`crate::DockerfileConfig`] for the locally-built equivalent.
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `command` | [Command](common-types.md#command) | no |  | Override of the image entrypoint. |
-| `depends_on` | array of string | no |  | Names of resources this container explicitly depends on. |
-| `env` | map of string | no |  | Environment variables injected into the container. Values support interpolation. |
-| `healthcheck` | [Healthcheck](common-types.md#healthcheck) | no |  | Optional healthcheck. |
-| `image` | string | yes |  | Full image reference, including the tag. |
-| `ports` | array of [PortMapping](common-types.md#portmapping) | no |  | Port mappings. |
-| `volumes` | array of string | no |  | Volume mappings, in `"host:container"` or `"named:container"` form. |
-| `working_dir` | string | no |  | Override of the image working directory. |
+| `command` | [Command](common-types.md#command) | no |  | Optional entrypoint override. See [`Command`] for the two accepted forms (string or argument list). |
+| `depends_on` | array of string | no |  | Names of other resources this container must wait for before starting. Validated by [`crate::Manifest::validate`]. |
+| `env` | map of string | no |  | Environment variables injected into the container at startup. Values are interpolated: `${env.NAME}` and `${resources.name.property}` expressions are resolved at runtime. |
+| `healthcheck` | [Healthcheck](common-types.md#healthcheck) | no |  | Optional healthcheck. Overrides whatever is baked into the image. See [`Healthcheck`] for field semantics and defaults. |
+| `image` | string | yes |  | Full image reference including the tag, e.g. `"nginx:1.25-alpine"`. |
+| `ports` | array of [PortMapping](common-types.md#portmapping) | no |  | Port mappings between the host and the container. Each element is a [`PortMapping`]: either a bare container port (mirrored on the host) or a full `"host:container"` string. |
+| `volumes` | array of string | no |  | Volume mappings in `"host:container"` or `"named:container"` form. Relative host paths (starting with `.`) are resolved against the manifest directory by [`crate::Manifest::resolve_host_volume_paths`] before they reach the runtime. |
+| `working_dir` | string | no |  | Optional working directory override inside the container. |
 

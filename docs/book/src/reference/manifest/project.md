@@ -2,11 +2,16 @@
 
 # project
 
-Project section of the manifest.
+Project metadata, corresponding to the `project:` section of the manifest.
+
+The `name` field must match the pattern `^[a-z][a-z0-9_-]{0,31}$` and is
+validated by [`Manifest::validate`]. It is used by the runtime as a prefix
+for container and network names, and by `lightshuttle-export` as the
+default Helm chart name and Kubernetes namespace.
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `description` | string | no |  | Free-form description shown in the dashboard. |
-| `name` | string | yes |  | Project name, used as a prefix in runtime resource names. |
-| `version` | string | no |  | Free-form version label. Informational only. |
+| `description` | string | no |  | Free-form description displayed in the local dashboard. |
+| `name` | string | yes |  | Project name. Must match `^[a-z][a-z0-9_-]{0,31}$`. Used as a prefix for all runtime resource names (containers, networks, volumes) so it must be stable across machines. |
+| `version` | string | no |  | Free-form version label. Informational only; not validated. |
 

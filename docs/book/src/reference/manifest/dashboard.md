@@ -2,9 +2,13 @@
 
 # dashboard
 
-Settings for the local control plane HTTP server.
+Settings for the local control-plane HTTP server (the dashboard).
+
+Stored in [`crate::Manifest::dashboard`]. When the whole `dashboard:` section
+is absent from the manifest, the runtime uses its built-in defaults
+(random free port, all-loopback binding).
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `port` | integer | no |  | Fixed TCP port for the dashboard. Absent or `null` lets `lightshuttle up` pick a random free port. Zero is rejected as it would be indistinguishable from "no preference" at the runtime layer. |
+| `port` | integer | no |  | Fixed TCP port for the dashboard HTTP server. - Absent or `null`: the runtime picks a random free port at startup. - `0`: rejected by [`crate::Manifest::validate`] with [`crate::ManifestError::InvalidDashboardPort`] (indistinguishable from "no preference" at the OS level). - `1..=65535`: the dashboard binds to this port. |
 
