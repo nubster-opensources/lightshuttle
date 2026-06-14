@@ -1,5 +1,10 @@
 //! Self-contained container specification, derived from a manifest
 //! resource declaration.
+//!
+//! This module contains the resolved types consumed by
+//! `lightshuttle-runtime` and `lightshuttle-export`, together with the
+//! private resolution helpers that apply v0 defaults. The public entry
+//! point is [`from_resource`].
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -12,27 +17,67 @@ use lightshuttle_manifest::{
 
 use crate::error::{Result, SpecError};
 
-/// Properties a managed resource exposes to its dependents.
+/// Key/value properties that a managed resource exposes to its
+/// dependents.
 ///
-/// Keys follow the conventions documented in
-/// `docs/spec/manifest-v0.md`:
+/// The map is ordered by insertion order (backed by [`indexmap::IndexMap`])
+/// so that export serializers produce deterministic output.
 ///
-/// - `host`, `port`, `database`, `user`, `password`, `url` for
-///   `postgres`.
-/// - `host`, `port`, `password`, `url` for `redis`.
-/// - `host`, `ports` (comma-separated) for `container` and
-///   `dockerfile`.
+/// # Key conventions (manifest-v0)
+///
+/// | Resource kind | Available keys |
+/// |---|---|
+/// | `postgres` | `host`, `port`, `database`, `user`, `password`, `url` |
+/// | `redis` | `host`, `port`, `password`, `url` |
+/// | `container` / `dockerfile` | `host`, `ports` (comma-separated list) |
+///
+/// These keys are surfaced at runtime as `LSH_<RESOURCE>_<KEY>` env
+/// vars and substituted into `${resources.<name>.<key>}` expressions
+/// in sibling resource declarations.
+///
+/// # Example
+///
+/// ```rust
+/// use lightshuttle_spec::ResourceOutputs;
+///
+/// let mut outputs = ResourceOutputs::new();
+/// outputs.insert("host".into(), "myproject_db".into());
+/// outputs.insert("port".into(), "5432".into());
+///
+/// assert_eq!(outputs["host"], "myproject_db");
+/// ```
 pub type ResourceOutputs = IndexMap<String, String>;
 
-/// A [`ContainerSpec`] together with the outputs the resource exposes
-/// to its dependents at runtime.
+/// A [`ContainerSpec`] bundled with the [`ResourceOutputs`] the
+/// resource exposes to its dependents at runtime.
+///
+/// Produced by [`from_resource`] and consumed by both
+/// `lightshuttle-runtime` (to launch the container) and
+/// `lightshuttle-export` (to emit a Compose/Helm artifact).
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use lightshuttle_manifest::{PostgresConfig, ResourceKind};
+/// use lightshuttle_spec::from_resource;
+///
+/// // Resolve a postgres resource declared in a manifest.
+/// let kind = ResourceKind::Postgres(PostgresConfig::default());
+/// let resolved = from_resource("myproject", "db", &kind).unwrap();
+///
+/// // The spec carries the container description.
+/// assert_eq!(resolved.spec.resource, "db");
+/// // The outputs expose the connection URL to dependents.
+/// assert!(resolved.outputs.contains_key("url"));
+/// ```
 #[derive(Debug, Clone)]
 pub struct ResolvedResource {
-    /// Container specification consumed by the runtime.
+    /// Container specification consumed by the runtime and the export
+    /// pipeline to describe the container to launch.
     pub spec: ContainerSpec,
-    /// Properties exposed to dependents (resolved into LSH_* env vars
-    /// and substituted into `${resources.<name>.<property>}`
-    /// expressions).
+    /// Key/value properties exposed to dependents, resolved into
+    /// `LSH_*` env vars and substituted into
+    /// `${resources.<name>.<property>}` expressions.
     pub outputs: ResourceOutputs,
 }
 
@@ -47,105 +92,277 @@ const HEALTHCHECK_DEFAULT_RETRIES: u32 = 5;
 const HEALTHCHECK_DEFAULT_START_PERIOD: Duration = Duration::from_secs(5);
 
 /// Self-contained description of a container to start, derived from a
-/// manifest resource.
+/// manifest resource declaration.
+///
+/// All fields are fully resolved: defaults have been applied, optional
+/// values materialised, and duration strings parsed. Consumers (the
+/// runtime and the export pipeline) can use this struct directly
+/// without any further resolution.
+///
+/// Created exclusively by [`from_resource`].
 #[derive(Debug, Clone)]
 pub struct ContainerSpec {
     /// Container name, of the form `<project>_<resource>`.
+    ///
+    /// Used as the actual container name when starting the container
+    /// and as the DNS hostname reachable by other containers in the
+    /// same network.
     pub name: String,
-    /// Project name as declared in the manifest. Used as a Docker
-    /// label for discovery by `ps` and `down`.
+    /// Project name as declared in the manifest.
+    ///
+    /// Attached as a container label so that `lightshuttle ps` and
+    /// `lightshuttle down` can filter by project.
     pub project: String,
-    /// Resource name as declared in the manifest. Used as a Docker
-    /// label so the CLI can find a single resource by name.
+    /// Resource name as declared in the manifest.
+    ///
+    /// Attached as a container label so that the CLI can address a
+    /// single resource by name within a project.
     pub resource: String,
-    /// How the container image is obtained.
+    /// How the container image is obtained: pulled from a registry or
+    /// built locally from a Dockerfile.
     pub image: ImageSource,
-    /// Environment variables to inject into the container.
+    /// Environment variables to inject into the container at startup.
     pub env: HashMap<String, String>,
-    /// Ports to publish.
+    /// Host-to-container port bindings to publish.
     pub ports: Vec<PortBinding>,
-    /// Volumes to mount.
+    /// Volume and bind-mount mappings to attach.
     pub volumes: Vec<VolumeBinding>,
-    /// Optional command override.
+    /// Optional command that overrides the image default `CMD`.
+    ///
+    /// A `Command::Single` string is wrapped as `["sh", "-c", ...]`;
+    /// a `Command::Args` list is passed through as-is.
     pub command: Option<Vec<String>>,
-    /// Optional healthcheck.
+    /// Optional healthcheck. For `postgres` and `redis`, a sensible
+    /// default is injected when the manifest omits one.
     pub healthcheck: Option<HealthcheckSpec>,
     /// Optional working directory override inside the container.
     pub working_dir: Option<String>,
 }
 
 /// How the container image is obtained.
+///
+/// Produced during resolution and consumed by the runtime (to decide
+/// whether to call `docker pull` or `docker build`) and by the export
+/// pipeline (to emit the correct Compose `image` or `build` stanza).
+///
+/// # Example
+///
+/// ```rust
+/// use lightshuttle_spec::ImageSource;
+/// use std::collections::HashMap;
+///
+/// // A pre-built image pulled from a registry.
+/// let pulled = ImageSource::Pull("postgres:16-alpine".into());
+///
+/// // An image built locally from a Dockerfile.
+/// let built = ImageSource::Build {
+///     context: ".".into(),
+///     dockerfile: "Dockerfile".into(),
+///     build_args: HashMap::new(),
+///     target: None,
+///     tag: "lightshuttle/myproject_app:dev".into(),
+/// };
+/// ```
 #[derive(Debug, Clone)]
 pub enum ImageSource {
-    /// Pull the image from a registry.
+    /// Pull the named image reference from a registry.
+    ///
+    /// The inner `String` is a fully qualified image reference such as
+    /// `postgres:16-alpine` or `ghcr.io/org/image:tag`.
     Pull(String),
     /// Build the image locally from a Dockerfile.
+    ///
+    /// The runtime calls `docker build` (or equivalent) with these
+    /// parameters before starting the container.
     Build {
-        /// Build context path, relative to the manifest file.
+        /// Build context directory, relative to the manifest file.
         context: String,
-        /// Dockerfile path within the context.
+        /// Dockerfile path within `context`.
         dockerfile: String,
-        /// Build-time arguments.
+        /// Build-time `--build-arg` key/value pairs.
         build_args: HashMap<String, String>,
-        /// Optional multi-stage target.
+        /// Optional multi-stage `--target` stage name.
         target: Option<String>,
-        /// Tag applied to the resulting image.
+        /// Tag applied to the resulting image (e.g.
+        /// `lightshuttle/<project>_<resource>:dev`).
         tag: String,
     },
 }
 
-/// Port mapping resolved from the manifest.
+/// Host-to-container port binding resolved from the manifest.
+///
+/// Corresponds to the `-p` / `--publish` Docker flag. The manifest
+/// supports three forms:
+///
+/// | Manifest form | Result |
+/// |---|---|
+/// | `8080` (short) | `container_port = 8080`, `host_port = 8080`, no address |
+/// | `"8080:80"` | `host_port = 8080`, `container_port = 80` |
+/// | `"127.0.0.1:8080:80"` | as above plus `host_address = Some("127.0.0.1")` |
+///
+/// # Example
+///
+/// ```rust
+/// use lightshuttle_spec::PortBinding;
+///
+/// let binding = PortBinding {
+///     container_port: 80,
+///     host_address: Some("127.0.0.1".into()),
+///     host_port: 8080,
+/// };
+/// assert_eq!(binding.host_port, 8080);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PortBinding {
-    /// Container-side port.
+    /// Port exposed by the container.
     pub container_port: u16,
-    /// Optional host bind address.
+    /// Optional host interface to bind to. When `None` the runtime
+    /// binds to all interfaces (`0.0.0.0`).
     pub host_address: Option<String>,
-    /// Host-side port. Mirrors the container port when the short form is used.
+    /// Port published on the host. Mirrors `container_port` when the
+    /// short integer form is used in the manifest.
     pub host_port: u16,
 }
 
-/// Volume mapping resolved from the manifest.
+/// Volume or bind-mount mapping resolved from the manifest.
+///
+/// Covers the three forms supported by the manifest `volumes` list:
+/// named volumes (`data:/var/lib/data`), host bind-mounts
+/// (`./src:/app` or `/abs/path:/app`), and the implicit anonymous
+/// volume injected for `postgres` and `redis` when no explicit volume
+/// is declared.
+///
+/// # Example
+///
+/// ```rust
+/// use lightshuttle_spec::{VolumeBinding, VolumeSource};
+///
+/// let named = VolumeBinding {
+///     source: VolumeSource::Named("pgdata".into()),
+///     target: "/var/lib/postgresql/data".into(),
+/// };
+/// let bind = VolumeBinding {
+///     source: VolumeSource::HostPath("./src".into()),
+///     target: "/app".into(),
+/// };
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VolumeBinding {
-    /// Source on the host or the named volume registry.
+    /// Origin of the volume content.
     pub source: VolumeSource,
-    /// Mount point inside the container.
+    /// Absolute path of the mount point inside the container.
     pub target: String,
 }
 
-/// Where the volume content lives.
+/// Origin of the content mounted into the container.
+///
+/// Determines how the runtime creates the volume and whether it
+/// survives container removal.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VolumeSource {
-    /// Bind mount from a host path.
+    /// Bind-mount from a host path (starts with `.` or `/` in the
+    /// manifest).
+    ///
+    /// The inner `String` is the path as written in the manifest,
+    /// relative or absolute.
     HostPath(String),
-    /// Named volume managed by the runtime.
+    /// Named volume managed by the container runtime.
+    ///
+    /// The inner `String` is the volume name (no `.` or `/` prefix).
+    /// Template-unsafe characters (`{`, `}`) are rejected during
+    /// resolution.
     Named(String),
-    /// Anonymous volume (lifetime tied to the container).
+    /// Anonymous volume whose lifetime is tied to the container.
+    ///
+    /// Injected automatically for `postgres` and `redis` when the
+    /// manifest sets `volume: true` or omits the field entirely.
     Anonymous,
 }
 
-/// Healthcheck resolved from the manifest, with manifest-side durations
-/// already parsed.
+/// Healthcheck resolved from the manifest, with duration strings
+/// already parsed into [`std::time::Duration`] values.
+///
+/// For `postgres` resources the default test is
+/// `["CMD", "pg_isready", "-U", <user>]`. For `redis` it is
+/// `["CMD", "redis-cli", "ping"]`. Generic `container` and
+/// `dockerfile` resources have no default: the manifest must provide
+/// one explicitly if a healthcheck is needed.
+///
+/// Default timing values when the manifest omits them:
+/// `interval = 5s`, `timeout = 3s`, `retries = 5`,
+/// `start_period = 5s`.
+///
+/// # Example
+///
+/// ```rust
+/// use lightshuttle_spec::HealthcheckSpec;
+/// use std::time::Duration;
+///
+/// let hc = HealthcheckSpec {
+///     test: vec!["CMD".into(), "pg_isready".into(), "-U".into(), "postgres".into()],
+///     interval: Duration::from_secs(5),
+///     timeout: Duration::from_secs(3),
+///     retries: 5,
+///     start_period: Duration::from_secs(5),
+/// };
+/// assert_eq!(hc.retries, 5);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HealthcheckSpec {
-    /// Command to run for the check.
+    /// Command the runtime runs to probe container health.
+    ///
+    /// The first element is typically `"CMD"` or `"CMD-SHELL"` as per
+    /// the Docker healthcheck specification.
     pub test: Vec<String>,
-    /// Interval between consecutive checks.
+    /// Time between consecutive health checks.
     pub interval: Duration,
-    /// Maximum time a single check is allowed.
+    /// Maximum wall-clock time a single check invocation may take.
     pub timeout: Duration,
-    /// Number of consecutive failures before marking unhealthy.
+    /// Number of consecutive failures before the container is
+    /// considered unhealthy.
     pub retries: u32,
-    /// Grace period after start.
+    /// Grace period after container start before health checks begin.
     pub start_period: Duration,
 }
 
-/// Build a [`ContainerSpec`] from a manifest resource declaration.
+/// Resolve a manifest resource declaration into a [`ResolvedResource`].
 ///
-/// Applies the v0 defaults documented in `docs/spec/manifest-v0.md`:
-/// version expansion to official images, database name derived from
-/// the resource name, default ports, healthcheck materialisation.
+/// This is the single entry point into `lightshuttle-spec`. It
+/// dispatches on `kind` and applies all v0 defaults:
+///
+/// - **Image**: falls back to the official Alpine image for the
+///   declared version (e.g. `postgres:16-alpine`, `redis:7-alpine`).
+/// - **Database name** (`postgres`): defaults to `resource_name`.
+/// - **User** (`postgres`): defaults to `"postgres"`.
+/// - **Password**: generated with a 24-character CSPRNG-backed
+///   alphabet when absent from the manifest.
+/// - **Ports**: uses the canonical default port for `postgres`
+///   (5432) and `redis` (6379).
+/// - **Healthcheck**: injects `pg_isready` / `redis-cli ping` when
+///   the manifest omits a healthcheck for managed services.
+///
+/// The container name is always `<project>_<resource_name>` and also
+/// serves as the DNS hostname inside the project network.
+///
+/// # Errors
+///
+/// Returns [`crate::SpecError::InvalidSpec`] when a port mapping,
+/// volume string, or duration in the manifest is syntactically invalid.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use lightshuttle_manifest::{PostgresConfig, ResourceKind};
+/// use lightshuttle_spec::from_resource;
+///
+/// let kind = ResourceKind::Postgres(PostgresConfig::default());
+/// let resolved = from_resource("acme", "db", &kind).unwrap();
+///
+/// // Container name follows the `<project>_<resource>` convention.
+/// assert_eq!(resolved.spec.name, "acme_db");
+/// // A connection URL is always present for postgres.
+/// assert!(resolved.outputs["url"].starts_with("postgres://"));
+/// ```
 pub fn from_resource(
     project: &str,
     resource_name: &str,

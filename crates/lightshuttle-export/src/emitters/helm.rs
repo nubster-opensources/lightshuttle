@@ -24,6 +24,36 @@ use crate::resolve::{
 };
 
 /// Emits a Helm chart from the export model.
+///
+/// The produced artifact set contains:
+///
+/// - `Chart.yaml`: chart name and version derived from the project metadata or
+///   `export.helm` overrides via [`crate::resolve::chart_name_for`] and
+///   [`crate::resolve::chart_version_for`].
+/// - `values.yaml`: namespace, per-service replica count, image coordinates,
+///   and environment variables split into `env` (plain) and `secrets`
+///   (placeholders only, never real values).
+/// - `templates/<name>.yaml`: one multi-document Go-template file per enabled
+///   resource, containing a `Deployment`, optionally a `Service`,
+///   a `ConfigMap`, a `Secret`, and `PersistentVolumeClaim` entries.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use lightshuttle_export::{lower, HelmEmitter, Emitter};
+/// use lightshuttle_manifest::Manifest;
+///
+/// # fn main() -> lightshuttle_export::Result<()> {
+/// let manifest: Manifest = todo!("parse from YAML");
+/// let model = lower(&manifest)?;
+/// let artifacts = HelmEmitter.emit(&model)?;
+/// for file in &artifacts.files {
+///     println!("{}", file.path.display());
+/// }
+/// // Prints: Chart.yaml, values.yaml, templates/<name>.yaml ...
+/// # Ok(())
+/// # }
+/// ```
 pub struct HelmEmitter;
 
 impl Emitter for HelmEmitter {

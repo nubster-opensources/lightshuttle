@@ -1,8 +1,14 @@
-//! Error type returned by container runtime operations.
+//! Error types returned by container runtime operations.
+//!
+//! All fallible runtime methods return [`Result<T>`], which is a type alias
+//! for `std::result::Result<T, RuntimeError>`.
 
 use std::time::Duration;
 
-/// Shorthand alias for `std::result::Result<T, RuntimeError>`.
+/// Shorthand alias for `std::result::Result<T, `[`RuntimeError`]`>`.
+///
+/// Used throughout this crate so callers never have to spell out the full
+/// error type on every return position.
 pub type Result<T> = std::result::Result<T, RuntimeError>;
 
 /// Errors raised by a [`crate::ContainerRuntime`] implementation.

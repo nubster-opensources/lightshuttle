@@ -1,28 +1,49 @@
-//! Inject the standard OpenTelemetry environment keys into a
-//! resource's environment.
+//! Inject the standard OpenTelemetry environment keys into a resource's environment.
 
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 
-/// Environment variable read by every `OTel` SDK to locate the OTLP
-/// gRPC endpoint of the collector.
+/// Environment variable read by every OpenTelemetry SDK to locate the OTLP gRPC endpoint.
 const OTEL_ENDPOINT: &str = "OTEL_EXPORTER_OTLP_ENDPOINT";
 
-/// Logical service name reported to the collector.
+/// Logical service name reported to the collector as the `service.name` resource attribute.
 const OTEL_SERVICE_NAME: &str = "OTEL_SERVICE_NAME";
 
-/// Comma-separated `key=value` pairs attached as resource attributes.
+/// Comma-separated resource attributes (key=value pairs) attached to all spans and metrics.
 const OTEL_RESOURCE_ATTRIBUTES: &str = "OTEL_RESOURCE_ATTRIBUTES";
 
-/// Inject the three standard `OTel` environment keys into `env`.
+/// Inject the three standard OpenTelemetry environment keys into a resource's environment.
 ///
-/// `collector_host` must be the in-network hostname of the bundled
-/// collector (typically `<project>_lightshuttle_otel`).
-/// `collector_grpc_port` is the OTLP gRPC port.
-/// `service_name` is the logical name reported as `service.name`.
+/// Injects `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`, and `OTEL_RESOURCE_ATTRIBUTES`
+/// into the environment map. The function is idempotent: calling it multiple times with the
+/// same arguments produces the same result. Crucially, it never overrides any key already
+/// present in `env`, so user-defined values always win.
 ///
-/// The function is idempotent and never overrides any value already
-/// present in `env`: user-defined keys win.
+/// # Arguments
+///
+/// - `env`: mutable reference to any HashMap-like container with a custom hasher.
+/// - `collector_host`: the in-network hostname of the collector (e.g. `demo_lightshuttle_otel`).
+/// - `collector_grpc_port`: the OTLP gRPC port (typically 4317).
+/// - `service_name`: the logical name for the service (used as the span service.name attribute).
+///
+/// # Example
+///
+/// ```
+/// use std::collections::HashMap;
+/// use lightshuttle_otel::inject_otel_env;
+///
+/// let mut env = HashMap::new();
+/// inject_otel_env(&mut env, "myapp_lightshuttle_otel", 4317, "api");
+///
+/// assert_eq!(
+///     env.get("OTEL_EXPORTER_OTLP_ENDPOINT"),
+///     Some(&"http://myapp_lightshuttle_otel:4317".to_string())
+/// );
+/// assert_eq!(
+///     env.get("OTEL_SERVICE_NAME"),
+///     Some(&"api".to_string())
+/// );
+/// ```
 pub fn inject_otel_env<S: BuildHasher>(
     env: &mut HashMap<String, String, S>,
     collector_host: &str,

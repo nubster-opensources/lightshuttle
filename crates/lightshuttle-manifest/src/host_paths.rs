@@ -1,22 +1,36 @@
-//! Resolution of relative host volume paths against the manifest
-//! directory.
+//! Resolution of relative host volume paths against the manifest directory.
+//!
+//! This module provides [`Manifest::resolve_host_volume_paths`], which
+//! rewrites relative `src` paths in `container` and `dockerfile` volume
+//! mappings to absolute paths so the container runtime receives unambiguous
+//! paths regardless of the process working directory.
+//!
+//! Security: paths containing `..` components are silently dropped to
+//! prevent directory traversal outside `base_dir`.
 
 use std::path::{Component, Path};
 
 use crate::model::{Manifest, ResourceKind};
 
 impl Manifest {
-    /// Resolve relative host volume paths against `base_dir`.
+    /// Resolve relative host paths in volume mappings against `base_dir`.
     ///
-    /// `container` and `dockerfile` resources may mount a host path with
-    /// a `src:target` volume mapping. A `src` that starts with `.` (such
-    /// as `./config` or `../shared`) is a path relative to the manifest
-    /// file; it is rewritten to an absolute path joined onto `base_dir`,
-    /// so the runtime and the exporters receive a path Docker accepts.
-    /// Absolute host paths and named volumes are left unchanged.
+    /// Volume mappings are strings of the form `"src:container_path"`. When
+    /// `src` starts with `.` it is treated as a path relative to the manifest
+    /// file and is expanded to an absolute path by joining it onto `base_dir`.
+    /// Absolute host paths and named volumes (e.g. `"dbdata:/var/lib/data"`)
+    /// are left unchanged.
     ///
-    /// This mirrors the rule documented in `docs/spec/manifest-v0.md`:
-    /// relative host paths are resolved against the manifest directory.
+    /// Paths that contain `..` components are silently dropped because they
+    /// could escape `base_dir` and create unexpected host mounts.
+    ///
+    /// Only `container` and `dockerfile` resources carry volume mappings.
+    /// `postgres` and `redis` use the typed [`crate::Volume`] enum instead and are
+    /// not touched by this method.
+    ///
+    /// Call this method after [`Manifest::parse`] and before handing the
+    /// manifest to the runtime or export layers. Typically `base_dir` is the
+    /// directory containing the `lightshuttle.yml` file.
     pub fn resolve_host_volume_paths(&mut self, base_dir: &Path) {
         for kind in self.resources.values_mut() {
             let volumes = match kind {

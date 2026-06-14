@@ -49,12 +49,16 @@ pub struct EnvVarReport {
     pub status: EnvVarStatus,
 }
 
-/// Report over every `${env.*}` reference found in a plan's environment
-/// values and command arguments, with one entry per distinct variable,
-/// sorted by name.
+/// Report over every `${env.*}` reference found in a plan's environment values
+/// and command arguments.
+///
+/// Built by [`LifecyclePlan::env_report`] and consumed by
+/// [`crate::LifecycleManager::check_required_env`] (fail-fast preflight) and
+/// the `lightshuttle secrets check` subcommand (interactive diagnostic). There
+/// is one entry per distinct variable name, sorted alphabetically.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EnvReport {
-    /// One entry per distinct referenced variable, sorted by name.
+    /// One entry per distinct referenced variable, sorted alphabetically by name.
     pub vars: Vec<EnvVarReport>,
 }
 
@@ -98,10 +102,18 @@ impl LifecyclePlan {
     /// Classify every `${env.*}` reference in this plan against the ambient
     /// process environment plus `extra_env` (which takes precedence).
     ///
-    /// Only environment values and command arguments are scanned, matching
-    /// the sites resolved at start time. The resolved-or-missing decision
-    /// delegates to the same [`Interpolator`] the runtime uses, so an empty
-    /// value counts as unset and this report mirrors a real preflight.
+    /// Only environment values and command arguments are scanned because those
+    /// are the only sites the runtime interpolates at start time. References in
+    /// image tags or working directories are intentionally excluded.
+    ///
+    /// The resolution logic delegates to the same [`Interpolator`] the runtime
+    /// uses, so an empty value counts as unset and the report mirrors what a
+    /// real `start_all` call would do. This makes the report suitable as both a
+    /// preflight check (called by [`crate::LifecycleManager::check_required_env`])
+    /// and a diagnostic tool (called by `lightshuttle secrets check`).
+    ///
+    /// The `extra_env` argument carries the contents of the loaded `.env` file.
+    /// Entries in `extra_env` with an empty string value are treated as unset.
     #[must_use]
     pub fn env_report(&self, extra_env: &HashMap<String, String>) -> EnvReport {
         let ctx = InterpolationContext::from_env()

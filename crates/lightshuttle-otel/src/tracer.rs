@@ -1,5 +1,8 @@
-//! Orchestrator self-tracing: wire `tracing` spans to an OTLP gRPC
-//! exporter pointed at the bundled collector.
+//! Orchestrator self-tracing: wire `tracing` spans to an OTLP gRPC exporter.
+//!
+//! This module provides a single-shot initializer that connects the orchestrator's
+//! own observability to the bundled OpenTelemetry collector, returning a guard
+//! that must be held for the entire lifetime of the orchestrator process.
 
 use anyhow::{Context, Result};
 use opentelemetry::trace::TracerProvider as _;
@@ -13,10 +16,23 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
-/// RAII guard returned by [`init_orchestrator_tracer`].
+/// RAII guard for the orchestrator's tracing infrastructure.
 ///
-/// Dropping it flushes any pending spans by shutting the tracer
-/// provider down. Hold it for the whole lifetime of `lightshuttle up`.
+/// Returned by [`init_orchestrator_tracer`]. Dropping this guard flushes any
+/// pending spans by shutting down the OpenTelemetry tracer provider. Hold the
+/// guard for the entire lifetime of the `lightshuttle up` command.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use lightshuttle_otel::init_orchestrator_tracer;
+///
+/// # fn main() -> anyhow::Result<()> {
+/// let _guard = init_orchestrator_tracer("http://127.0.0.1:4317", "lightshuttle")?;
+/// // Tracing is now active. The guard keeps the tracer provider alive.
+/// # Ok(())
+/// # }
+/// ```
 pub struct TracerGuard {
     provider: TracerProvider,
 }
@@ -31,20 +47,51 @@ impl Drop for TracerGuard {
     }
 }
 
-/// Initialise orchestrator self-tracing.
+/// Initialize the orchestrator's self-tracing pipeline.
 ///
-/// Builds an OTLP gRPC span exporter pointed at `endpoint` (typically
-/// `http://127.0.0.1:4317`, the loopback port the bundled collector
-/// publishes), installs a `tracing` subscriber composed of an
-/// `EnvFilter`, a compact `fmt` layer and the OpenTelemetry bridge
-/// layer, and returns a [`TracerGuard`] whose drop flushes pending
-/// spans.
+/// Sets up a complete tracing stack:
+/// 1. An OTLP gRPC exporter pointed at `endpoint` (typically the bundled collector's loopback
+///    port, e.g. `http://127.0.0.1:4317`).
+/// 2. A `tracing` subscriber with an `EnvFilter`, a compact `fmt` layer for stderr, and
+///    an OpenTelemetry bridge layer that routes spans to the exporter.
+/// 3. Sets the global OpenTelemetry tracer provider so downstream crates can access it.
 ///
-/// `service` is reported as the `service.name` resource attribute.
+/// The function installs the subscriber globally and returns a [`TracerGuard`] that must
+/// be held for the orchestrator's entire lifetime. Dropping the guard flushes pending
+/// spans and shuts down the tracer provider.
+///
+/// # Arguments
+///
+/// - `endpoint`: OTLP gRPC endpoint of the collector (e.g. `http://127.0.0.1:4317`).
+/// - `service`: logical service name (reported as the `service.name` resource attribute).
+///
+/// # Logging
+///
+/// The subscriber respects the `LIGHTSHUTTLE_LOG` environment variable for filtering
+/// (defaults to `info` level if unset). Logs are written to stderr.
 ///
 /// # Errors
 ///
-/// Returns an error if the OTLP exporter cannot be constructed.
+/// Returns an error if:
+/// - The OTLP exporter cannot be constructed (e.g. invalid endpoint).
+/// - A global tracing subscriber is already installed.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use lightshuttle_otel::init_orchestrator_tracer;
+///
+/// # fn main() -> anyhow::Result<()> {
+/// let _guard = init_orchestrator_tracer(
+///     "http://127.0.0.1:4317",
+///     "lightshuttle"
+/// )?;
+///
+/// tracing::info!("Orchestrator started");
+/// // The span is now exported to the collector.
+/// # Ok(())
+/// # }
+/// ```
 pub fn init_orchestrator_tracer(endpoint: &str, service: &str) -> Result<TracerGuard> {
     let exporter = SpanExporter::builder()
         .with_tonic()

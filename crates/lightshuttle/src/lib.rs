@@ -1,9 +1,79 @@
-//! LightShuttle library surface.
+//! LightShuttle - lightweight developer-time orchestrator for polyglot teams.
 //!
-//! Holds the CLI parser, the per-command implementations and the glue that the
-//! `lightshuttle` binary drives. The binary itself is a thin shim over [`run`];
-//! the workspace tooling that generates the CLI reference depends on this
-//! library to read the `clap` command tree.
+//! This crate is the **umbrella facade** of the LightShuttle ecosystem. It
+//! wires together all member crates and exposes the [`run`] entry point that
+//! the `lightshuttle` binary calls.
+//!
+//! # What is LightShuttle?
+//!
+//! LightShuttle reads a single YAML manifest (think `lightshuttle.yaml`) and
+//! launches, supervises, and connects every service your project needs: API
+//! servers, databases, workers, sidecars. It is the developer-time equivalent
+//! of a production orchestrator, designed for teams that work across multiple
+//! languages and runtimes.
+//!
+//! Key properties:
+//!
+//! - **Polyglot**: any process or Docker container is a first-class resource.
+//! - **Single binary**: `lightshuttle up` is the only command developers need
+//!   to memorize.
+//! - **Export**: the same manifest drives `docker-compose`, Kubernetes, and
+//!   Helm output via `lightshuttle export`.
+//! - **Observable**: an optional bundled OpenTelemetry collector wires
+//!   `OTEL_*` environment variables into every resource automatically.
+//!
+//! # Member crates
+//!
+//! | Crate | Purpose |
+//! |-------|---------|
+//! | [`lightshuttle_manifest`] | Manifest parser and domain model |
+//! | [`lightshuttle_runtime`] | Process supervisor and Docker adapter |
+//! | [`lightshuttle_control`] | Local HTTP control plane (`restart`, `ps`, `logs`) |
+//! | [`lightshuttle_export`] | Emit Compose, Kubernetes, or Helm artifacts |
+//! | [`lightshuttle_secrets`] | `.env` file loader and `${env.*}` resolver |
+//! | [`lightshuttle_otel`] | Bundled OpenTelemetry collector integration |
+//!
+//! # CLI binary
+//!
+//! The `lightshuttle` binary is a thin shim over [`run`]. Install it with:
+//!
+//! ```text
+//! cargo install lightshuttle
+//! ```
+//!
+//! Then start your stack:
+//!
+//! ```text
+//! lightshuttle up
+//! ```
+//!
+//! **Exit codes**
+//!
+//! | Code | Meaning |
+//! |------|---------|
+//! | 0 | Success |
+//! | 1 | User error (invalid manifest, validation failure, lifecycle failure) |
+//! | 2 | Runtime error (Docker unreachable, container failed to start) |
+//! | 130 | Interrupted (SIGINT / Ctrl+C) |
+//!
+//! # Source repository
+//!
+//! <https://github.com/nubster-opensources/lightshuttle>
+//!
+//! # Using this crate as a library
+//!
+//! This crate is primarily a binary distribution. The only stable public
+//! surface is [`run`], intended for embedders and workspace tooling that needs
+//! access to the `clap` command tree:
+//!
+//! ```rust,no_run
+//! #[tokio::main]
+//! async fn main() -> std::process::ExitCode {
+//!     lightshuttle::run().await
+//! }
+//! ```
+
+#![deny(missing_docs)]
 
 use std::process::ExitCode;
 
@@ -21,7 +91,21 @@ mod control_url;
 mod discovery;
 mod output;
 
-/// Parse the command line and run the selected command to a POSIX exit code.
+/// Parse the command line and dispatch to the matching subcommand implementation.
+///
+/// This is the single entry point shared by the `lightshuttle` binary and any
+/// embedder. It reads `argv` via [`clap`], initialises logging (unless the
+/// `up` subcommand handles its own tracing subscriber), runs the selected
+/// command, and maps the result to a POSIX exit code.
+///
+/// # Exit codes
+///
+/// | Code | Meaning |
+/// |------|---------|
+/// | 0 | Success |
+/// | 1 | User or lifecycle error (invalid manifest, validation failure, lifecycle failure) |
+/// | 2 | Runtime error (Docker unreachable, container failed to start) |
+/// | 130 | Interrupted (SIGINT / Ctrl+C, set by the tokio signal handler) |
 pub async fn run() -> ExitCode {
     let cli = Cli::parse();
 

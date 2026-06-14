@@ -1,5 +1,30 @@
-//! Coordinated startup and shutdown of every resource declared in a
+//! Coordinated startup, supervision, and shutdown of every resource in a
 //! [`crate::LifecyclePlan`].
+//!
+//! The main type, [`LifecycleManager`], is generic over any
+//! [`crate::ContainerRuntime`] implementation. It spawns one `tokio` task per
+//! resource; each task waits for its dependencies to reach a ready state before
+//! calling `start` on the runtime. Status transitions are published on a
+//! `tokio::sync::watch` channel (consumed by peer tasks for ordering) and on a
+//! `tokio::sync::broadcast` channel (consumed by the CLI, dashboard, and tests
+//! via [`LifecycleManager::subscribe_events`]).
+//!
+//! ## Startup sequence (per resource)
+//!
+//! 1. Wait for every dependency to reach [`crate::NodeStatus::Running`] or
+//!    [`crate::NodeStatus::Healthy`].
+//! 2. Collect dependency outputs and resolve `${resources.*}` interpolations.
+//! 3. Inject `LSH_<DEP>_<PROPERTY>` environment variables automatically.
+//! 4. Remove any stale container with the same name.
+//! 5. Call [`crate::ContainerRuntime::start`].
+//! 6. Poll [`crate::ContainerRuntime::wait_healthy`] until healthy or timeout.
+//!
+//! ## Teardown
+//!
+//! Resources are stopped in reverse topological order. Each stop sends
+//! `SIGTERM` and waits up to the configured grace window before issuing
+//! `SIGKILL`. After all containers are removed, the per-project bridge network
+//! is torn down.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -47,8 +72,39 @@ pub(super) struct NodeSnapshot {
     pub(super) container_id: Option<ContainerId>,
 }
 
-/// Coordinates the startup, supervision and shutdown of every resource
+/// Coordinates the startup, supervision, and shutdown of every resource
 /// declared in a [`LifecyclePlan`].
+///
+/// Construct with [`LifecycleManager::new`], optionally inject extra
+/// environment variables with [`LifecycleManager::with_env`], then call one of:
+///
+/// - [`LifecycleManager::start_all`]: start all resources and return.
+/// - [`LifecycleManager::run_until_signal`]: start all resources, block until
+///   `SIGINT` or `SIGTERM`, then stop cleanly (the typical `lightshuttle up`
+///   entry point).
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use std::time::Duration;
+///
+/// use lightshuttle_manifest::Manifest;
+/// use lightshuttle_runtime::{LifecyclePlan, LifecycleManager};
+/// use lightshuttle_runtime::testkit::MockRuntime;
+///
+/// # #[tokio::main]
+/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let manifest = Manifest::parse(
+///     "project:\n  name: app\nresources:\n  db:\n    postgres:\n      version: \"16\"\n"
+/// )?;
+/// let plan = LifecyclePlan::from_manifest(&manifest)?;
+/// let (manager, mut events) = LifecycleManager::new(plan, MockRuntime::new());
+///
+/// manager.start_all().await?;
+/// manager.stop_all(Duration::from_secs(5)).await?;
+/// # Ok(())
+/// # }
+/// ```
 pub struct LifecycleManager<R: ContainerRuntime + 'static> {
     plan: Arc<LifecyclePlan>,
     runtime: Arc<R>,
@@ -90,28 +146,34 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
         (manager, event_rx)
     }
 
-    /// Merge additional environment variables into the interpolation
-    /// context used for every resource.
+    /// Merge additional environment variables into the interpolation context
+    /// used for every resource.
     ///
-    /// Variables provided here take precedence over system environment
-    /// variables of the same name. Call before [`start_all`].
+    /// Variables provided here take precedence over same-named variables from
+    /// the ambient process environment. The typical use-case is forwarding the
+    /// contents of a `.env` file so that `${env.NAME}` references in the
+    /// manifest resolve to the file values. Call before [`Self::start_all`].
     ///
-    /// [`start_all`]: Self::start_all
+    /// Returns `self` for method chaining.
     #[must_use]
     pub fn with_env(mut self, env: HashMap<String, String>) -> Self {
         self.extra_env = Arc::new(env);
         self
     }
 
-    /// Scan every resource spec for `${env.VAR}` references that cannot
-    /// be resolved and return a single error listing all missing names.
+    /// Scan every resource spec for `${env.VAR}` references that cannot be
+    /// resolved and return a single error listing all missing names.
     ///
-    /// Delegates to [`LifecyclePlan::env_report`] so the fail-fast check and
-    /// the `secrets check` diagnostic share one source of truth. Call before
-    /// [`start_all`] to surface missing variables before any container is
-    /// started.
+    /// Delegates to [`LifecyclePlan::env_report`] so the fail-fast preflight
+    /// and the `lightshuttle secrets check` diagnostic command share one source
+    /// of truth. Call before [`Self::start_all`] to surface missing variables
+    /// before any container is started, which avoids a partial stack start
+    /// followed by an immediate rollback.
     ///
-    /// [`start_all`]: Self::start_all
+    /// # Errors
+    ///
+    /// Returns [`crate::LifecycleError::MissingEnvVars`] with a sorted,
+    /// deduplicated list of every missing variable name.
     pub fn check_required_env(&self) -> Result<(), LifecycleError> {
         let report = self.plan.env_report(&self.extra_env);
         if report.has_missing() {
@@ -123,10 +185,23 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
         }
     }
 
-    /// Start every resource in topological order. Independent branches
-    /// start in parallel. On the first failure, the resources that
-    /// already started are stopped automatically before the error is
+    /// Start every resource in topological order, with independent branches
+    /// starting in parallel.
+    ///
+    /// Each resource waits for its dependencies to become ready (i.e. reach
+    /// [`crate::NodeStatus::Running`] or [`crate::NodeStatus::Healthy`]) before
+    /// calling [`crate::ContainerRuntime::start`]. Readiness is gate-kept by the
+    /// healthcheck: a container with a declared healthcheck must report
+    /// [`crate::ContainerStatus::Healthy`] before its dependents may proceed.
+    ///
+    /// On the first failure, every resource that has already started is stopped
+    /// automatically (best-effort, 10-second grace) before the error is
     /// returned.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`crate::LifecycleError`] encountered. Secondary
+    /// failures from the automatic rollback are logged but not returned.
     pub async fn start_all(&self) -> Result<(), LifecycleError> {
         let mut handles: Vec<tokio::task::JoinHandle<Result<(), LifecycleError>>> =
             Vec::with_capacity(self.plan.nodes().len());
@@ -203,8 +278,18 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
         Ok(())
     }
 
-    /// Stop every resource in reverse topological order with the given
-    /// SIGTERM-to-SIGKILL grace window.
+    /// Stop every resource in reverse topological order.
+    ///
+    /// Each resource receives `SIGTERM`. After `grace` elapses, the runtime
+    /// sends `SIGKILL` to any container that has not exited yet. Resources are
+    /// stopped in the reverse of startup order (dependents before their
+    /// dependencies). After all containers are removed, the per-project bridge
+    /// network is torn down (failure is logged but does not abort the call).
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`crate::LifecycleError::Stop`] encountered. Other
+    /// stop failures are logged but not propagated.
     #[instrument(skip_all, fields(resources = self.plan.nodes().len()))]
     pub async fn stop_all(&self, grace: Duration) -> Result<(), LifecycleError> {
         let _ = self.event_tx.send(LifecycleEvent::StackStopping);
@@ -252,9 +337,41 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
         Ok(())
     }
 
-    /// Opinionated entry point used by `lightshuttle up`: starts the
-    /// stack, waits for `SIGINT` or `SIGTERM`, then stops the stack
-    /// cleanly with the configured grace window.
+    /// Start the stack, wait for `SIGINT` or `SIGTERM`, then stop cleanly.
+    ///
+    /// This is the opinionated entry point for the `lightshuttle up` command.
+    /// It calls [`Self::start_all`], blocks until a shutdown signal is received,
+    /// then calls [`Self::stop_all`] with the provided `grace` window.
+    ///
+    /// On Unix, both `SIGINT` (Ctrl+C) and `SIGTERM` trigger the teardown.
+    /// On Windows, only `Ctrl+C` is intercepted.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use std::time::Duration;
+    ///
+    /// use lightshuttle_manifest::Manifest;
+    /// use lightshuttle_runtime::{DockerRuntime, LifecyclePlan, LifecycleManager};
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let manifest = Manifest::parse(
+    ///     "project:\n  name: app\nresources:\n  db:\n    postgres:\n      version: \"16\"\n"
+    /// )?;
+    /// let plan = LifecyclePlan::from_manifest(&manifest)?;
+    /// let runtime = DockerRuntime::connect()?;
+    /// let (manager, _events) = LifecycleManager::new(plan, runtime);
+    ///
+    /// // Blocks until Ctrl+C or SIGTERM.
+    /// manager.run_until_signal(Duration::from_secs(30)).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Propagates errors from [`Self::start_all`] or [`Self::stop_all`].
     pub async fn run_until_signal(&self, grace: Duration) -> Result<(), LifecycleError> {
         self.start_all().await?;
         wait_for_shutdown_signal().await;
@@ -263,16 +380,23 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
 
     /// Restart a single resource without touching its dependents.
     ///
-    /// The target is stopped via `SIGTERM` (10-second grace window),
-    /// its container id and started-at timestamp are cleared, then
-    /// `start_one` is re-run from the same cached spec. Three events
-    /// are emitted on the lifecycle channel in order: `ResourceStopped`,
-    /// `ResourceStarted`, `ResourceHealthy`.
+    /// The target is stopped via `SIGTERM` (10-second grace window), its
+    /// container id and started-at timestamp are cleared, then the full
+    /// `start_one` cycle is re-run from the same cached spec. Three events are
+    /// emitted on the lifecycle channel in order: [`crate::LifecycleEvent::ResourceStopped`],
+    /// [`crate::LifecycleEvent::ResourceStarted`], [`crate::LifecycleEvent::ResourceHealthy`].
     ///
-    /// Dependents keep running. Their `watch` channels observe the
-    /// target's status going `Stopped` → `Pending` → `Starting` →
-    /// `Running` → `Healthy`, so callers that depend on the target can
-    /// pause their work locally until it is healthy again.
+    /// Dependents keep running. Their internal `watch` channels observe the
+    /// target's status transition through `Stopped` -> `Pending` -> `Starting`
+    /// -> `Running` -> `Healthy`, so upstream processes that hold a watch
+    /// receiver can pause themselves locally until the dependency is healthy
+    /// again.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::LifecycleError::ResourceNotFound`] when `resource` is
+    /// not part of the plan, or a [`crate::LifecycleError::Start`] /
+    /// [`crate::LifecycleError::Stop`] variant on runtime failure.
     #[instrument(skip(self), fields(resource = %resource))]
     pub async fn restart_one(&self, resource: &str) -> Result<(), LifecycleError> {
         let node = self
@@ -347,7 +471,7 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
     /// Open a new subscription on the lifecycle event broadcast.
     ///
     /// Multiple subscribers can read concurrently. Subscribers that
-    /// fall more than [`EVENT_CHANNEL_CAPACITY`] events behind will
+    /// fall more than 256 events behind (the broadcast channel capacity)
     /// observe a `RecvError::Lagged` and have to resynchronise.
     #[must_use]
     pub fn subscribe_events(&self) -> broadcast::Receiver<LifecycleEvent> {

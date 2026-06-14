@@ -1,4 +1,19 @@
 //! Semantic validation: naming rules, dependency graph, references.
+//!
+//! This module provides the [`Manifest::validate`] method. All validation
+//! passes are private functions called from that single entry point. The
+//! passes run in dependency order:
+//!
+//! 1. Name pattern check for the project name and every resource name.
+//! 2. Kind-specific checks (required fields, database name pattern,
+//!    healthcheck duration syntax).
+//! 3. Dependency graph check (unknown references, cycle detection via
+//!    depth-first search with three-colour marking).
+//! 4. Interpolation reference check (unknown `${resources.name.property}`
+//!    targets).
+//! 5. Dashboard port check (rejects port `0`).
+//! 6. Export target check (resource keys in export sub-tables must exist
+//!    in the manifest).
 
 use std::collections::{HashMap, HashSet};
 
@@ -16,10 +31,24 @@ const NAME_MAX_LEN: usize = 32;
 const DATABASE_MAX_LEN: usize = 63;
 
 impl Manifest {
-    /// Run structural and semantic validation on the parsed manifest.
+    /// Run semantic validation on the manifest.
     ///
-    /// This is invoked automatically by [`Manifest::parse`] but can be
-    /// called manually after the model has been built programmatically.
+    /// Called automatically by [`Manifest::parse`] after structural
+    /// decoding. Can also be called manually when a [`Manifest`] is built
+    /// programmatically rather than parsed from YAML.
+    ///
+    /// The following checks are performed in order:
+    ///
+    /// - Project name and every resource name match `^[a-z][a-z0-9_-]{0,31}$`.
+    /// - Kind-specific constraints: non-empty `image` for `container`,
+    ///   non-empty `context` for `dockerfile`, valid `database` pattern for
+    ///   `postgres`, syntactically valid healthcheck durations for all kinds.
+    /// - No cycles in the `depends_on` graph.
+    /// - All `${resources.name.*}` interpolations reference existing resources.
+    /// - `dashboard.port` is not `0`.
+    /// - All resource keys inside `export.*.resources` exist in the manifest.
+    ///
+    /// Returns the first [`ManifestError`] encountered, or `Ok(())`.
     pub fn validate(&self) -> Result<()> {
         validate_name(&self.project.name)?;
 

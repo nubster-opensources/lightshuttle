@@ -1,5 +1,12 @@
-//! Resolved execution plan: topologically sorted nodes plus the
-//! dependency graph.
+//! Resolved execution plan: topologically sorted nodes plus the dependency graph.
+//!
+//! The entry point is [`LifecyclePlan::from_manifest`], which converts a
+//! parsed [`lightshuttle_manifest::Manifest`] into a [`LifecyclePlan`]. The
+//! conversion resolves every resource to a [`lightshuttle_spec::ContainerSpec`]
+//! and sorts the nodes using Kahn's topological sort algorithm. The resulting
+//! order guarantees that a resource is always listed after all of its
+//! dependencies, which allows the [`crate::LifecycleManager`] to start
+//! independent branches in parallel.
 
 use std::collections::{HashMap, HashSet};
 
@@ -27,6 +34,41 @@ pub struct PlanNode {
 }
 
 /// Topologically sorted execution plan.
+///
+/// Built by [`LifecyclePlan::from_manifest`] and consumed by
+/// [`crate::LifecycleManager`]. The node order guarantees that every resource
+/// appears after all of its direct and transitive dependencies.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use lightshuttle_manifest::Manifest;
+/// use lightshuttle_runtime::LifecyclePlan;
+///
+/// # fn example() -> Result<(), lightshuttle_runtime::LifecycleError> {
+/// let yaml = r#"
+/// project:
+///   name: myapp
+/// resources:
+///   db:
+///     postgres:
+///       version: "16"
+///   api:
+///     container:
+///       image: myapp:latest
+///       depends_on: [db]
+/// "#;
+///
+/// let manifest = Manifest::parse(yaml).expect("valid manifest");
+/// let plan = LifecyclePlan::from_manifest(&manifest)?;
+///
+/// // Nodes are sorted: "db" appears before "api".
+/// for node in plan.nodes() {
+///     println!("{} ({}) -> {:?}", node.name, node.kind, node.depends_on);
+/// }
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug, Clone)]
 pub struct LifecyclePlan {
     nodes: Vec<PlanNode>,
@@ -36,8 +78,16 @@ pub struct LifecyclePlan {
 impl LifecyclePlan {
     /// Build a plan from a parsed manifest.
     ///
-    /// Resolves the dependency graph, performs a topological sort and
-    /// converts every resource to a [`ContainerSpec`].
+    /// Resolves the dependency graph, performs a topological sort (Kahn's
+    /// algorithm) and converts every resource to a [`ContainerSpec`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::LifecycleError::Cycle`] when the dependency graph
+    /// contains a cycle, [`crate::LifecycleError::ResourceNotFound`] when a
+    /// resource references an unknown dependency, and
+    /// [`crate::LifecycleError::SpecBuild`] when a resource cannot be
+    /// converted to a [`ContainerSpec`].
     pub fn from_manifest(manifest: &Manifest) -> Result<Self, LifecycleError> {
         let project = manifest.project.name.as_str();
 
@@ -166,13 +216,21 @@ impl LifecyclePlan {
         Ok(Self { nodes, edges })
     }
 
-    /// The list of nodes in topological order.
+    /// Returns the nodes in topological order.
+    ///
+    /// A node is guaranteed to appear after every node it depends on.
+    /// The [`crate::LifecycleManager`] iterates this slice to start resources
+    /// in order, spawning independent branches concurrently.
     #[must_use]
     pub fn nodes(&self) -> &[PlanNode] {
         &self.nodes
     }
 
-    /// Names of resources that depend on `name`.
+    /// Returns the names of resources that directly depend on `name`,
+    /// sorted alphabetically.
+    ///
+    /// Used during teardown to determine which downstream resources must be
+    /// stopped before their dependency can be removed.
     #[must_use]
     pub fn dependents_of(&self, name: &str) -> Vec<&str> {
         let mut out: Vec<&str> = Vec::new();

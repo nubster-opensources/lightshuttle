@@ -8,15 +8,29 @@ use crate::source::SecretSource;
 
 /// Loads secrets from a `.env` file.
 ///
-/// The file is parsed once at construction time. Supported syntax:
+/// This struct parses a `.env` file at construction time and caches the key-value pairs.
+/// Once constructed, the source can be cloned and reused; each call to [`load`] returns
+/// a copy of the cached map.
+///
+/// # Supported syntax
 ///
 /// - `KEY=VALUE`: plain value
-/// - `KEY="quoted value"`: double-quoted (quotes stripped)
-/// - `KEY='quoted value'`: single-quoted (quotes stripped)
-/// - `export KEY=VALUE`: optional `export` prefix, followed by spaces or tabs (ignored)
-/// - `# comment`: ignored
+/// - `KEY="quoted value"`: double-quoted values with quotes stripped
+/// - `KEY='quoted value'`: single-quoted values with quotes stripped
+/// - `export KEY=VALUE`: optional `export` prefix followed by whitespace (ignored)
+/// - `# comment`: lines starting with `#` are skipped
 /// - Blank lines: ignored
-/// - Inline comments: `KEY=VALUE # comment` (unquoted values only)
+/// - Inline comments: `KEY=VALUE # comment` (trailing comments on unquoted values only;
+///   quoted values preserve all characters including `#`)
+/// - UTF-8 BOM: stripped from the start of the file if present
+///
+/// # Errors
+///
+/// Construction fails if the file does not exist, is unreadable, or contains invalid syntax.
+/// Use [`load_optional`] for paths that may not exist.
+///
+/// [`load`]: SecretSource::load
+/// [`load_optional`]: EnvFileSource::load_optional
 #[derive(Debug)]
 pub struct EnvFileSource {
     path: PathBuf,
@@ -24,11 +38,29 @@ pub struct EnvFileSource {
 }
 
 impl EnvFileSource {
-    /// Load from `path`.
+    /// Load from `path`, requiring the file to exist.
     ///
-    /// Returns [`SecretError::FileNotFound`] if the file does not exist.
-    /// Use this when the path was explicitly provided by the user (e.g. via
-    /// `--env-file`).
+    /// Returns [`SecretError::FileNotFound`] if the file does not exist, or
+    /// [`SecretError::Io`] if the file is unreadable. Use this when the path
+    /// was explicitly provided by the user (e.g. via `--env-file` CLI flag).
+    ///
+    /// For optional files (like the default `.env`), use [`load_optional`] instead.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file does not exist, cannot be read, or contains invalid syntax.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use lightshuttle_secrets::EnvFileSource;
+    ///
+    /// let source = EnvFileSource::load(".env")?;
+    /// println!("Loaded {} secrets", source.len());
+    /// # Ok::<(), lightshuttle_secrets::SecretError>(())
+    /// ```
+    ///
+    /// [`load_optional`]: EnvFileSource::load_optional
     pub fn load(path: impl Into<PathBuf>) -> Result<Self, SecretError> {
         let path = path.into();
         if !path.exists() {
@@ -38,10 +70,28 @@ impl EnvFileSource {
         Ok(Self { path, entries })
     }
 
-    /// Load from `path` if it exists, or return `None` if the file is absent.
+    /// Load from `path` if it exists, returning `None` if the file is absent.
     ///
-    /// Use this for the default `.env` path so that projects without a `.env`
-    /// file are not forced to create one.
+    /// This is useful for optional configuration files like the default `.env` path.
+    /// If the file is absent, no error is raised. If the file exists but is malformed,
+    /// an error is returned.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if the file exists but cannot be read or contains invalid syntax.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use lightshuttle_secrets::EnvFileSource;
+    ///
+    /// if let Some(source) = EnvFileSource::load_optional(".env")? {
+    ///     println!("Using {} secrets", source.len());
+    /// } else {
+    ///     println!("No .env file; using defaults");
+    /// }
+    /// # Ok::<(), lightshuttle_secrets::SecretError>(())
+    /// ```
     pub fn load_optional(path: impl Into<PathBuf>) -> Result<Option<Self>, SecretError> {
         let path = path.into();
         if !path.exists() {
@@ -52,12 +102,17 @@ impl EnvFileSource {
     }
 
     /// Number of entries loaded from the file.
+    ///
+    /// Returns the count of successfully parsed `KEY=VALUE` pairs.
     #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Returns `true` if the file contained no entries.
+    ///
+    /// This is `true` if the file was empty, contained only comments and blank lines,
+    /// or was otherwise parsed to zero key-value pairs.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()

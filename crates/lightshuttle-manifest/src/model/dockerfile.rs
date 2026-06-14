@@ -1,4 +1,8 @@
 //! Dockerfile resource configuration (image built locally).
+//!
+//! A `dockerfile` resource builds an image from a local `Dockerfile` and
+//! runs the resulting container. For pre-built registry images use
+//! [`crate::ContainerConfig`] instead.
 
 use indexmap::IndexMap;
 use schemars::JsonSchema;
@@ -6,51 +10,64 @@ use serde::{Deserialize, Serialize};
 
 use super::{command::Command, healthcheck::Healthcheck, port::PortMapping};
 
-/// Configuration of a resource built locally from a Dockerfile.
+/// Configuration of a `dockerfile` resource built locally before being run.
+///
+/// The runtime performs a `docker build` in `context`, then starts the
+/// resulting image as it would for a [`crate::ContainerConfig`].
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DockerfileConfig {
-    /// Build context, relative to the manifest file.
+    /// Build context path, relative to the manifest file.
+    ///
+    /// Resolved to an absolute path by
+    /// [`crate::Manifest::resolve_host_volume_paths`] before it is handed to the
+    /// runtime.
     pub context: String,
 
-    /// Dockerfile path within the context. Defaults to `"Dockerfile"`.
+    /// Path to the Dockerfile within `context`. Defaults to `"Dockerfile"`.
     #[serde(default = "default_dockerfile")]
     pub dockerfile: String,
 
-    /// Build-time arguments.
+    /// Build-time `ARG` values passed to `docker build --build-arg`.
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub build_args: IndexMap<String, String>,
 
-    /// Multi-stage build target.
+    /// Multi-stage build target passed to `docker build --target`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
 
-    /// Port mappings.
+    /// Port mappings between the host and the container. See [`PortMapping`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ports: Vec<PortMapping>,
 
-    /// Environment variables injected at runtime. Values support
+    /// Environment variables injected into the container at runtime.
+    ///
+    /// Values support `${env.NAME}` and `${resources.name.property}`
     /// interpolation.
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub env: IndexMap<String, String>,
 
-    /// Volume mappings.
+    /// Volume mappings in `"host:container"` or `"named:container"` form.
+    ///
+    /// Relative host paths are resolved by
+    /// [`crate::Manifest::resolve_host_volume_paths`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub volumes: Vec<String>,
 
-    /// Override of the image entrypoint.
+    /// Optional entrypoint override. See [`Command`] for accepted forms.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<Command>,
 
-    /// Override of the image working directory.
+    /// Optional working directory override inside the container.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub working_dir: Option<String>,
 
-    /// Optional healthcheck.
+    /// Optional healthcheck override. See [`Healthcheck`] for field semantics.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub healthcheck: Option<Healthcheck>,
 
-    /// Names of resources this build explicitly depends on.
+    /// Names of other resources this build must wait for before starting.
+    /// Validated by [`crate::Manifest::validate`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<String>,
 }

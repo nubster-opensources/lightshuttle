@@ -1,4 +1,9 @@
-//! Container runtime abstraction plus its supporting domain types.
+//! Container runtime abstraction and its supporting domain types.
+//!
+//! Defines the [`ContainerRuntime`] trait and the value types it operates on:
+//! [`ContainerId`], [`ContainerStatus`], [`LogChunk`], [`LogStream`], and the
+//! [`LogChunkStream`] type alias. Concrete implementations (e.g.
+//! [`crate::DockerRuntime`]) live in sibling modules.
 
 use std::pin::Pin;
 use std::time::{Duration, SystemTime};
@@ -80,7 +85,11 @@ pub struct LogChunk {
     pub bytes: Vec<u8>,
 }
 
-/// Boxed stream of log chunks for a single container.
+/// Boxed, pinned stream of [`LogChunk`] items for a single container.
+///
+/// Returned by [`ContainerRuntime::logs`]. The stream is `Send` so it can be
+/// forwarded across async task boundaries (e.g. from a worker task to an HTTP
+/// response body or a WebSocket session).
 pub type LogChunkStream = Pin<Box<dyn Stream<Item = Result<LogChunk>> + Send>>;
 
 /// Container runtime abstraction.

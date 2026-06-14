@@ -18,6 +18,36 @@ use crate::resolve::{
 };
 
 /// Emits plain Kubernetes manifests from the export model.
+///
+/// The produced artifact set contains:
+///
+/// - `namespace.yaml`: a `Namespace` object using the name resolved by
+///   [`crate::resolve::namespace_for`].
+/// - `<name>.yaml` per enabled resource: a multi-document YAML file containing
+///   a `Deployment`, optionally a `Service` (when ports are declared), a
+///   `ConfigMap` (non-secret environment variables), a `Secret` (secret
+///   environment variables, values replaced with `***`), and
+///   `PersistentVolumeClaim` entries for named volumes.
+///
+/// Resource names are sanitised to DNS-1123 labels before being written.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use lightshuttle_export::{lower, KubernetesEmitter, Emitter};
+/// use lightshuttle_manifest::Manifest;
+///
+/// # fn main() -> lightshuttle_export::Result<()> {
+/// let manifest: Manifest = todo!("parse from YAML");
+/// let model = lower(&manifest)?;
+/// let artifacts = KubernetesEmitter.emit(&model)?;
+/// for file in &artifacts.files {
+///     println!("{}", file.path.display());
+/// }
+/// // Prints: namespace.yaml, <resource>.yaml ...
+/// # Ok(())
+/// # }
+/// ```
 pub struct KubernetesEmitter;
 
 impl Emitter for KubernetesEmitter {

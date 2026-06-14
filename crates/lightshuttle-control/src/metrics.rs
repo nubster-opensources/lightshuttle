@@ -24,7 +24,29 @@ const RESOURCES: &str = "lightshuttle_resources";
 /// Gauge of orchestrator uptime in seconds.
 const UPTIME: &str = "lightshuttle_uptime_seconds";
 
-/// Holds the Prometheus render handle and the process start instant.
+/// Prometheus metrics handle for the control plane.
+///
+/// Wraps a [`PrometheusHandle`] and the process start time used to
+/// compute `lightshuttle_uptime_seconds` at scrape time.
+///
+/// # Lifecycle
+///
+/// Call [`Metrics::install`] **once** per process to register the global
+/// Prometheus recorder. Pass the resulting value (wrapped in an
+/// [`std::sync::Arc`]) to [`crate::ControlState::with_metrics`] so
+/// `GET /metrics` can render a live snapshot.
+///
+/// For tests and embedders that do not need metrics, build with
+/// [`Metrics::for_test`], which does not touch the global recorder.
+///
+/// # Tracked metrics
+///
+/// | Metric name | Kind | Description |
+/// |---|---|---|
+/// | `lightshuttle_restart_total` | counter | Accepted restart requests |
+/// | `lightshuttle_lifecycle_event_duration_seconds` | histogram | Seconds from start to healthy |
+/// | `lightshuttle_resources` | gauge (per status label) | Managed resource count |
+/// | `lightshuttle_uptime_seconds` | gauge | Process uptime |
 pub struct Metrics {
     handle: PrometheusHandle,
     started: Instant,
@@ -67,9 +89,15 @@ impl Metrics {
         }
     }
 
-    /// Render the current metrics, refreshing the scrape-time gauges
-    /// (`lightshuttle_resources` per status and
-    /// `lightshuttle_uptime_seconds`) just before serialising.
+    /// Render the current metrics snapshot in Prometheus text format.
+    ///
+    /// Before serialising, this method refreshes the two scrape-time gauges:
+    /// - `lightshuttle_resources{status="<s>"}` for each `(status, count)` pair
+    ///   in `status_counts`.
+    /// - `lightshuttle_uptime_seconds` derived from the process start time.
+    ///
+    /// The returned string is suitable for serving directly as the body of
+    /// `GET /metrics` with content type `text/plain; version=0.0.4`.
     #[must_use]
     pub fn render(&self, status_counts: &[(&str, u64)]) -> String {
         for (status, count) in status_counts {
@@ -88,9 +116,14 @@ pub(crate) fn record_restart() {
     counter!(RESTART_TOTAL).increment(1);
 }
 
-/// Observe the seconds a resource took to become healthy. Safe to
-/// call from anywhere once the recorder is installed; a no-op when no
-/// recorder is present.
+/// Record a sample in the `lightshuttle_lifecycle_event_duration_seconds`
+/// histogram.
+///
+/// `seconds` is the elapsed wall time from when the resource was started
+/// until it reached a healthy state. Safe to call from any thread once
+/// the global recorder is installed via [`Metrics::install`]. A no-op
+/// when no recorder is present (e.g. in tests built with
+/// [`Metrics::for_test`]).
 pub fn observe_event_duration(seconds: f64) {
     histogram!(EVENT_DURATION).record(seconds);
 }

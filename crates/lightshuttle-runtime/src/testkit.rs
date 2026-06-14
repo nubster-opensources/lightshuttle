@@ -1,13 +1,42 @@
 //! Test helpers for downstream crates and integration tests.
 //!
-//! Provides an in-memory [`MockRuntime`] that satisfies
-//! [`crate::ContainerRuntime`] without any Docker daemon. Containers
-//! become healthy a short, deterministic delay after start, unless the
-//! caller flags a specific resource as a failure target.
+//! Provides [`MockRuntime`](crate::testkit::MockRuntime), an in-memory [`crate::ContainerRuntime`] that
+//! requires no Docker daemon. Use it to test lifecycle logic, control-plane
+//! handlers, and any code that depends on [`crate::LifecycleManager`] without
+//! involving real containers.
 //!
-//! `MockRuntime` is intentionally cheap to clone: every internal field
-//! is an [`Arc<Mutex<_>>`], so a test can hold an observer clone for
-//! introspection after the manager has consumed the original instance.
+//! ## Behaviour
+//!
+//! - Every container transitions from [`crate::ContainerStatus::Starting`] to
+//!   [`crate::ContainerStatus::Healthy`] 30 ms after `start` returns.
+//! - Calling [`MockRuntime::fail_on`](crate::testkit::MockRuntime::fail_on) configures one resource name as a failure
+//!   target: `start` returns [`crate::RuntimeError::InvalidSpec`] for that
+//!   name and leaves the mock state unmodified.
+//! - `MockRuntime` is cheap to clone: every internal field is an
+//!   `Arc<Mutex<_>>`, so a test can hold an observer clone for introspection
+//!   after the manager has consumed the original instance.
+//!
+//! ## Example
+//!
+//! ```rust,no_run
+//! use lightshuttle_runtime::{LifecyclePlan, LifecycleManager};
+//! use lightshuttle_runtime::testkit::MockRuntime;
+//! use lightshuttle_manifest::Manifest;
+//!
+//! # #[tokio::main]
+//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let manifest = Manifest::parse(
+//!     "project:\n  name: t\nresources:\n  db:\n    postgres:\n      version: \"16\"\n"
+//! )?;
+//! let plan = LifecyclePlan::from_manifest(&manifest)?;
+//! let mock = MockRuntime::new();
+//! let (manager, _events) = LifecycleManager::new(plan, mock.clone());
+//!
+//! manager.start_all().await?;
+//! assert_eq!(mock.started_resources(), vec!["t_db"]);
+//! # Ok(())
+//! # }
+//! ```
 
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -24,7 +53,7 @@ use lightshuttle_spec::ContainerSpec;
 ///
 /// Every container becomes [`ContainerStatus::Healthy`] 30 ms after
 /// `start`, unless its name is configured as a failure target via
-/// [`MockRuntime::fail_on`].
+/// [`MockRuntime::fail_on`](crate::testkit::MockRuntime::fail_on).
 #[derive(Clone)]
 pub struct MockRuntime {
     state: Arc<Mutex<HashMap<String, MockContainer>>>,
@@ -55,7 +84,10 @@ impl MockRuntime {
     }
 
     /// Configure the runtime to reject `start` for the resource whose
-    /// `ContainerSpec.name` equals `name`.
+    /// [`lightshuttle_spec::ContainerSpec`]`::name` field equals `name`.
+    ///
+    /// Only one failure target can be active at a time; calling this method
+    /// again overwrites the previous value.
     pub fn fail_on(&self, name: &str) {
         *self.fail_on.lock().expect("fail_on mutex poisoned") = Some(name.to_owned());
     }

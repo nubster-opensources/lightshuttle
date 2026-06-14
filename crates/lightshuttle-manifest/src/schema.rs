@@ -1,4 +1,8 @@
 //! JSON Schema generation for the manifest model.
+//!
+//! Exposes a single public function [`schema`] that derives a JSON Schema
+//! from the [`Manifest`] type tree via `schemars`. All model types carry
+//! `#[derive(JsonSchema)]` for this purpose.
 
 use schemars::{Schema, schema_for};
 

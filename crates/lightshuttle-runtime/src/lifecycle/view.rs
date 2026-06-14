@@ -1,9 +1,13 @@
 //! Lightweight value types exposed by the control plane.
 //!
 //! Built on demand by [`crate::ManagerHandle`] and surfaced through the
-//! [`crate::LifecycleHandle`] trait. The shape is intentionally stable
-//! across runtime backends so callers (REST API, dashboard, CLI) never
-//! see backend-specific types.
+//! [`crate::LifecycleHandle`] trait. The shape is intentionally stable across
+//! runtime backends so callers (REST API, dashboard, CLI) never see
+//! backend-specific types.
+//!
+//! [`ResourceView`] is the main carrier: it flattens [`crate::NodeStatus`]
+//! into the coarser [`ResourceStatus`] and adds display-friendly fields such
+//! as the resolved image reference and a last-error string.
 
 use std::time::SystemTime;
 
