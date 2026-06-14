@@ -2,9 +2,14 @@
 
 # observability
 
-Top-level observability settings.
+Top-level observability settings, corresponding to the `observability:`
+section in `lightshuttle.yml`.
+
+Currently only controls the bundled OpenTelemetry collector via
+[`OtelConfig`]. More toggles (tracing, profiling) may be added in
+future specification revisions.
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `otel` | [OtelConfig](common-types.md#otelconfig) | no |  | OpenTelemetry collector toggle. |
+| `otel` | [OtelConfig](common-types.md#otelconfig) | no |  | OpenTelemetry collector configuration. `None` preserves the default-on behaviour (the bundled collector starts alongside the project resources). |
 

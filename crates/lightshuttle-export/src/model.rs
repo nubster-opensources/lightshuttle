@@ -1,5 +1,12 @@
-//! Neutral intermediate representation produced by the lowering step
+//! Neutral intermediate representation (IR) produced by the lowering step
 //! and consumed by every emitter.
+//!
+//! The IR sits between the parsed manifest and the target-specific emission.
+//! [`ExportModel`] is the root: it holds [`ExportProject`] metadata and a
+//! flat list of [`ExportService`] entries already resolved through
+//! `lightshuttle-spec`. Each emitter reads the model read-only and writes its
+//! output into [`ExportArtifacts`], a list of [`ExportFile`] values that the
+//! CLI layer writes to disk.
 
 use std::path::PathBuf;
 
@@ -38,19 +45,33 @@ pub struct ExportService {
 }
 
 /// Supported export targets.
+///
+/// Each variant maps to one [`crate::Emitter`] implementation and one
+/// CLI argument value (see [`Target::label`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Target {
-    /// A `docker-compose.yml` file.
+    /// A `docker-compose.yml` file, emitted by [`crate::ComposeEmitter`].
     Compose,
-    /// Plain Kubernetes manifests.
+    /// Plain Kubernetes manifests, emitted by [`crate::KubernetesEmitter`].
     Kubernetes,
-    /// A Helm chart.
+    /// A Helm chart (`Chart.yaml`, `values.yaml`, templates), emitted by
+    /// [`crate::HelmEmitter`].
     Helm,
 }
 
 impl Target {
-    /// Stable lower-case label, also used as the CLI argument value and
-    /// the default output sub-directory.
+    /// Returns the stable lower-case label for this target.
+    ///
+    /// The label doubles as the CLI argument value and as the default output
+    /// sub-directory name.
+    ///
+    /// ```rust
+    /// use lightshuttle_export::Target;
+    ///
+    /// assert_eq!(Target::Compose.label(), "compose");
+    /// assert_eq!(Target::Kubernetes.label(), "kubernetes");
+    /// assert_eq!(Target::Helm.label(), "helm");
+    /// ```
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
@@ -67,8 +88,21 @@ impl std::fmt::Display for Target {
     }
 }
 
-/// A set of named files produced by an emitter, written to disk by the
-/// CLI.
+/// A set of named files produced by an emitter, ready to be written to disk
+/// by the CLI layer.
+///
+/// Files are stored in deterministic emission order. The CLI writes them under
+/// a per-target output directory; the relative paths inside [`ExportFile`]
+/// determine the final names.
+///
+/// ```rust
+/// use lightshuttle_export::ExportArtifacts;
+///
+/// let mut artifacts = ExportArtifacts::new();
+/// artifacts.push("docker-compose.yml", "services: {}\n");
+/// assert_eq!(artifacts.files.len(), 1);
+/// assert_eq!(artifacts.files[0].path.to_str().unwrap(), "docker-compose.yml");
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct ExportArtifacts {
     /// Files in deterministic emission order.
@@ -76,13 +110,16 @@ pub struct ExportArtifacts {
 }
 
 impl ExportArtifacts {
-    /// Build an empty artifact set.
+    /// Creates an empty artifact set.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Append a file at `path` with `contents`.
+    /// Appends a file at `path` with the given `contents`.
+    ///
+    /// `path` is relative to the export output directory. `contents` is the
+    /// complete textual content of the file.
     pub fn push(&mut self, path: impl Into<PathBuf>, contents: impl Into<String>) {
         self.files.push(ExportFile {
             path: path.into(),

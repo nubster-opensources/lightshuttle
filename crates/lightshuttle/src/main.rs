@@ -1,8 +1,18 @@
-//! LightShuttle CLI entry point.
+//! `lightshuttle` binary entry point.
 //!
-//! A thin shim over [`lightshuttle::run`]: all logic lives in the library so
-//! the workspace tooling can share the same `clap` command tree when it
-//! generates the CLI reference.
+//! A thin shim over [`lightshuttle::run`]. All parsing and command logic live
+//! in the `lightshuttle` library crate so that workspace tooling (doc
+//! generation, integration tests) can share the same `clap` command tree
+//! without spawning a subprocess.
+//!
+//! # Exit codes
+//!
+//! | Code | Meaning |
+//! |------|---------|
+//! | 0 | Success |
+//! | 1 | User or lifecycle error (invalid manifest, validation failure) |
+//! | 2 | Runtime error (Docker unreachable, container failed to start) |
+//! | 130 | Interrupted (SIGINT / Ctrl+C) |
 
 use std::process::ExitCode;
 

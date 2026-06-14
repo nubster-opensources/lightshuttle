@@ -1,4 +1,13 @@
-//! Per-node status and lifecycle event stream types.
+//! Per-node status and lifecycle event types.
+//!
+//! [`NodeStatus`] is the fine-grained internal status carried by each
+//! `tokio::sync::watch` channel inside the manager. [`LifecycleEvent`] is the
+//! externally broadcast event emitted on the `tokio::sync::broadcast` channel
+//! returned by [`crate::LifecycleManager::subscribe_events`].
+//!
+//! The two types serve different consumers: `NodeStatus` is used internally by
+//! `start_one` to gate dependency ordering; `LifecycleEvent` is consumed by
+//! CLI progress bars, dashboard WebSocket connections, and test assertions.
 
 use serde::Serialize;
 

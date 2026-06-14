@@ -2,19 +2,22 @@
 
 # dockerfile
 
-Configuration of a resource built locally from a Dockerfile.
+Configuration of a `dockerfile` resource built locally before being run.
+
+The runtime performs a `docker build` in `context`, then starts the
+resulting image as it would for a [`crate::ContainerConfig`].
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `build_args` | map of string | no |  | Build-time arguments. |
-| `command` | [Command](common-types.md#command) | no |  | Override of the image entrypoint. |
-| `context` | string | yes |  | Build context, relative to the manifest file. |
-| `depends_on` | array of string | no |  | Names of resources this build explicitly depends on. |
-| `dockerfile` | string | no | `"Dockerfile"` | Dockerfile path within the context. Defaults to `"Dockerfile"`. |
-| `env` | map of string | no |  | Environment variables injected at runtime. Values support interpolation. |
-| `healthcheck` | [Healthcheck](common-types.md#healthcheck) | no |  | Optional healthcheck. |
-| `ports` | array of [PortMapping](common-types.md#portmapping) | no |  | Port mappings. |
-| `target` | string | no |  | Multi-stage build target. |
-| `volumes` | array of string | no |  | Volume mappings. |
-| `working_dir` | string | no |  | Override of the image working directory. |
+| `build_args` | map of string | no |  | Build-time `ARG` values passed to `docker build --build-arg`. |
+| `command` | [Command](common-types.md#command) | no |  | Optional entrypoint override. See [`Command`] for accepted forms. |
+| `context` | string | yes |  | Build context path, relative to the manifest file. Resolved to an absolute path by [`crate::Manifest::resolve_host_volume_paths`] before it is handed to the runtime. |
+| `depends_on` | array of string | no |  | Names of other resources this build must wait for before starting. Validated by [`crate::Manifest::validate`]. |
+| `dockerfile` | string | no | `"Dockerfile"` | Path to the Dockerfile within `context`. Defaults to `"Dockerfile"`. |
+| `env` | map of string | no |  | Environment variables injected into the container at runtime. Values support `${env.NAME}` and `${resources.name.property}` interpolation. |
+| `healthcheck` | [Healthcheck](common-types.md#healthcheck) | no |  | Optional healthcheck override. See [`Healthcheck`] for field semantics. |
+| `ports` | array of [PortMapping](common-types.md#portmapping) | no |  | Port mappings between the host and the container. See [`PortMapping`]. |
+| `target` | string | no |  | Multi-stage build target passed to `docker build --target`. |
+| `volumes` | array of string | no |  | Volume mappings in `"host:container"` or `"named:container"` form. Relative host paths are resolved by [`crate::Manifest::resolve_host_volume_paths`]. |
+| `working_dir` | string | no |  | Optional working directory override inside the container. |
 

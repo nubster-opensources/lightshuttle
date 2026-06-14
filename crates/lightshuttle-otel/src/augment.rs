@@ -1,8 +1,8 @@
-//! Manifest-level wiring of the bundled `OTel` collector.
+//! Manifest-level wiring of the bundled OpenTelemetry collector.
 //!
-//! Adds the collector as a `container` resource at the top of the
-//! plan and injects the standard `OTel` env keys into every existing
-//! `container` and `dockerfile` resource.
+//! This module adds the collector as a `container` resource to the manifest
+//! and injects standard `OTel` environment keys into every existing `container`
+//! and `dockerfile` resource without overriding user-defined values.
 
 use indexmap::IndexMap;
 use lightshuttle_manifest::model::{ContainerConfig, ResourceKind};
@@ -14,10 +14,32 @@ const OTEL_ENDPOINT: &str = "OTEL_EXPORTER_OTLP_ENDPOINT";
 const OTEL_SERVICE_NAME: &str = "OTEL_SERVICE_NAME";
 const OTEL_RESOURCE_ATTRIBUTES: &str = "OTEL_RESOURCE_ATTRIBUTES";
 
-/// Returns whether `OTel` is enabled for `manifest`.
+/// Check whether OpenTelemetry is enabled for the manifest.
 ///
-/// The default is `true`; it is only `false` when
-/// `observability.otel.enabled` is explicitly set to `false`.
+/// Returns `true` by default; returns `false` only if the manifest
+/// explicitly sets `observability.otel.enabled: false`.
+///
+/// Use this to decide whether to call [`augment_manifest`].
+///
+/// # Example
+///
+/// ```
+/// use lightshuttle_otel::is_enabled;
+/// use lightshuttle_manifest::Manifest;
+///
+/// # fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let manifest = Manifest::parse(r#"
+/// project:
+///   name: app
+/// resources:
+///   server:
+///     container:
+///       image: myapp
+/// "#)?;
+/// assert!(is_enabled(&manifest));  // OTel enabled by default
+/// # Ok(())
+/// # }
+/// ```
 #[must_use]
 pub fn is_enabled(manifest: &Manifest) -> bool {
     let observability = manifest
@@ -28,19 +50,47 @@ pub fn is_enabled(manifest: &Manifest) -> bool {
     otel.and_then(|o| o.enabled).unwrap_or(true)
 }
 
-/// Augment `manifest` in place with the bundled `OTel` collector.
+/// Augment a manifest with the bundled OpenTelemetry collector in place.
 ///
-/// - Adds an `OTel` collector container at the top of the resources
-///   `IndexMap` (so it appears first in topological order).
-/// - For every existing `container` and `dockerfile` resource,
-///   injects the `OTel` env keys without overriding user-defined
-///   values, and adds an implicit `depends_on` on the collector so
-///   the runtime starts it before the dependents.
+/// Modifies the manifest to:
+/// - Prepend an OpenTelemetry collector `container` resource at the head of the
+///   resources map (so it starts first in topological order).
+/// - Inject standard OpenTelemetry environment keys (`OTEL_EXPORTER_OTLP_ENDPOINT`,
+///   `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`) into every `container`
+///   and `dockerfile` resource, without overriding any user-defined values.
+/// - Add an implicit `depends_on: lightshuttle_otel` to each instrumented
+///   resource, ensuring the collector starts before its dependents.
 ///
-/// If the manifest already declares a resource under the reserved
-/// [`SYNTHETIC_RESOURCE_NAME`], augmentation is skipped entirely so the
-/// user resource is never silently overwritten and no self-referential
-/// `depends_on` is produced.
+/// # Protection
+///
+/// If the manifest already declares a resource named [`SYNTHETIC_RESOURCE_NAME`]
+/// (reserved), augmentation is skipped entirely. This prevents accidentally
+/// overwriting a user-defined resource and avoids self-referential dependencies.
+/// A warning is logged in this case.
+///
+/// # Example
+///
+/// ```
+/// use lightshuttle_otel::{CollectorConfig, augment_manifest};
+/// use lightshuttle_manifest::Manifest;
+///
+/// # fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let mut manifest = Manifest::parse(r#"
+/// project:
+///   name: myapp
+/// resources:
+///   api:
+///     container:
+///       image: myapp/api
+/// "#)?;
+///
+/// let config = CollectorConfig::defaults();
+/// augment_manifest(&mut manifest, &config);
+///
+/// assert_eq!(manifest.resources.len(), 2);  // api + collector
+/// # Ok(())
+/// # }
+/// ```
 pub fn augment_manifest(manifest: &mut Manifest, config: &CollectorConfig) {
     if manifest.resources.contains_key(SYNTHETIC_RESOURCE_NAME) {
         tracing::warn!(

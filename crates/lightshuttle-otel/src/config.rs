@@ -1,12 +1,15 @@
-//! OpenTelemetry collector configuration.
+//! OpenTelemetry collector configuration and container spec generation.
 
 use std::collections::HashMap;
 
 use lightshuttle_runtime::{ContainerSpec, ImageSource, PortBinding};
 
-/// Resource name used for the bundled collector inside the lifecycle
-/// plan. Stable so dependents can refer to it via the standard
-/// `${resources.lightshuttle_otel.host}` interpolation if needed.
+/// Reserved resource name for the bundled collector inside the lifecycle plan.
+///
+/// This name is stable and follows the LightShuttle naming convention
+/// (`project_lightshuttle_otel`), so dependents can refer to the collector
+/// via standard manifest interpolation: `${resources.lightshuttle_otel.host}`.
+/// Manifest augmentation skips silently if a user resource already owns this name.
 pub const SYNTHETIC_RESOURCE_NAME: &str = "lightshuttle_otel";
 
 /// Default OTLP gRPC port (collector receiver).
@@ -20,11 +23,24 @@ const DEFAULT_IMAGE: &str = "otel/opentelemetry-collector:0.108.0";
 
 /// Strongly-typed configuration of the bundled OpenTelemetry collector.
 ///
-/// All fields are public so callers can override individual knobs
-/// (image tag, port mapping) without recreating the whole value.
+/// Encapsulates the container image, OTLP gRPC port, and OTLP HTTP port
+/// published by the collector. All fields are public so callers can override
+/// individual knobs (e.g. custom image tag, different port mapping) without
+/// recreating the whole value.
+///
+/// # Example
+///
+/// Use defaults, then customize:
+///
+/// ```
+/// use lightshuttle_otel::CollectorConfig;
+///
+/// let mut config = CollectorConfig::defaults();
+/// config.otlp_grpc_port = 5317;  // Custom gRPC port
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollectorConfig {
-    /// Container image of the collector.
+    /// Container image of the collector (e.g. `otel/opentelemetry-collector:0.108.0`).
     pub image: String,
     /// Host-side OTLP gRPC port published by the collector.
     pub otlp_grpc_port: u16,
@@ -33,8 +49,17 @@ pub struct CollectorConfig {
 }
 
 impl CollectorConfig {
-    /// Sane defaults: official upstream image, OTLP gRPC on `:4317`,
-    /// OTLP HTTP on `:4318`.
+    /// Sensible defaults: official upstream image, OTLP gRPC on port 4317, OTLP HTTP on port 4318.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use lightshuttle_otel::CollectorConfig;
+    ///
+    /// let config = CollectorConfig::defaults();
+    /// assert_eq!(config.otlp_grpc_port, 4317);
+    /// assert_eq!(config.otlp_http_port, 4318);
+    /// ```
     #[must_use]
     pub fn defaults() -> Self {
         Self {
@@ -44,20 +69,44 @@ impl CollectorConfig {
         }
     }
 
-    /// Hostname that dependents must use to reach the collector from
-    /// inside the project network. Mirrors the
-    /// `<project>_<resource>` container name convention used by
-    /// `lightshuttle-runtime`.
+    /// Compute the in-network hostname the collector will advertise.
+    ///
+    /// Follows the LightShuttle `<project>_<resource>` container naming convention.
+    /// This hostname is used when injecting `OTEL_EXPORTER_OTLP_ENDPOINT` into dependents.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use lightshuttle_otel::CollectorConfig;
+    ///
+    /// let config = CollectorConfig::defaults();
+    /// assert_eq!(config.hostname("demo"), "demo_lightshuttle_otel");
+    /// ```
     #[must_use]
     pub fn hostname(&self, project: &str) -> String {
         format!("{project}_{SYNTHETIC_RESOURCE_NAME}")
     }
 
-    /// Build a [`ContainerSpec`] runnable by `lightshuttle-runtime`.
+    /// Materialize into a [`ContainerSpec`] runnable by [`lightshuttle_runtime`].
     ///
-    /// The collector is started in `--config=builtin:default-config`
-    /// mode and listens on the OTLP gRPC and HTTP ports defined by
-    /// this configuration.
+    /// Builds a container spec with:
+    /// - OTLP gRPC receiver listening on the configured `otlp_grpc_port`.
+    /// - OTLP HTTP receiver listening on the configured `otlp_http_port`.
+    /// - Both ports bound to localhost (127.0.0.1) only.
+    /// - Built-in default configuration mode (`--config=builtin:default-config`).
+    /// - No healthcheck probe (the built-in config does not enable the `health_check` extension,
+    ///   and masking a crash would be worse than surfacing it via container exit status).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use lightshuttle_otel::CollectorConfig;
+    ///
+    /// let config = CollectorConfig::defaults();
+    /// let spec = config.to_container_spec("myapp");
+    /// assert_eq!(spec.name, "myapp_lightshuttle_otel");
+    /// assert_eq!(spec.ports.len(), 2);
+    /// ```
     #[must_use]
     pub fn to_container_spec(&self, project: &str) -> ContainerSpec {
         ContainerSpec {

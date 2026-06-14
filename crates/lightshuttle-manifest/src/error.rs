@@ -1,8 +1,16 @@
 //! Error type returned by every fallible operation of this crate.
+//!
+//! All public functions that can fail return `Result<T>`, which is an alias
+//! for `std::result::Result<T, ManifestError>`. The variants of
+//! [`ManifestError`] are designed to carry enough context for a CLI to
+//! produce a human-readable diagnostic without further inspection.
 
 use thiserror::Error;
 
-/// Shorthand alias for `std::result::Result<T, ManifestError>`.
+/// Shorthand for `std::result::Result<T, ManifestError>`.
+///
+/// Every fallible function in this crate returns this type. Import it as
+/// `use lightshuttle_manifest::Result` to avoid the qualification.
 pub type Result<T> = std::result::Result<T, ManifestError>;
 
 /// Errors raised while parsing, validating or interpolating a manifest.

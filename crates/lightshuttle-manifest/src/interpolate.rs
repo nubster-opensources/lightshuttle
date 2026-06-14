@@ -1,5 +1,31 @@
-//! Substitution engine for `${...}` interpolations in manifest string
-//! values.
+//! Substitution engine for `${...}` interpolations in manifest string values.
+//!
+//! Two reference schemes are supported:
+//!
+//! - `${env.NAME}`: substituted with the value of the environment variable
+//!   `NAME`. The form `${env.NAME:-default}` uses `default` when `NAME` is
+//!   unset or empty.
+//! - `${resources.name.property}`: substituted with a runtime property of
+//!   the named resource (e.g. `host`, `port`, `password`). Properties are
+//!   injected by the runtime layer, not by this crate.
+//!
+//! The escape form `${{ ... }}` emits a literal `${ ... }` without
+//! triggering substitution.
+//!
+//! # Usage
+//!
+//! Build an [`InterpolationContext`] with the available values, then create
+//! an [`Interpolator`] to resolve or scan individual strings.
+//!
+//! ```rust
+//! use lightshuttle_manifest::interpolate::{InterpolationContext, Interpolator};
+//!
+//! let ctx = InterpolationContext::new()
+//!     .with_env([("PORT".to_string(), "8080".to_string())]);
+//! let interpolator = Interpolator::new(&ctx);
+//! let result = interpolator.resolve("http://localhost:${env.PORT}").unwrap();
+//! assert_eq!(result, "http://localhost:8080");
+//! ```
 
 use std::collections::HashMap;
 use std::iter::Peekable;
@@ -9,8 +35,26 @@ use indexmap::IndexMap;
 
 use crate::error::{ManifestError, Result};
 
-/// Runtime context for interpolation: environment variables and resolved
-/// resource properties.
+/// Runtime context that backs an [`Interpolator`].
+///
+/// Holds the set of environment variables and the runtime-resolved properties
+/// of each resource (host, port, password, etc.). The context is immutable
+/// once built; the builder methods consume `self` and return a new value.
+///
+/// # Building a context
+///
+/// ```rust
+/// use lightshuttle_manifest::interpolate::InterpolationContext;
+/// use indexmap::IndexMap;
+///
+/// let mut props = IndexMap::new();
+/// props.insert("host".to_string(), "127.0.0.1".to_string());
+/// props.insert("port".to_string(), "5432".to_string());
+///
+/// let ctx = InterpolationContext::new()
+///     .with_env([("DB_NAME".to_string(), "mydb".to_string())])
+///     .with_resource("db", props);
+/// ```
 #[derive(Debug, Default, Clone)]
 pub struct InterpolationContext {
     env: HashMap<String, String>,
@@ -18,13 +62,16 @@ pub struct InterpolationContext {
 }
 
 impl InterpolationContext {
-    /// Create an empty context.
+    /// Create an empty context with no environment variables and no resources.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Create a context preloaded with the host process environment.
+    /// Create a context pre-populated with the current process environment.
+    ///
+    /// Equivalent to calling `new()` followed by
+    /// `with_env(std::env::vars())`.
     #[must_use]
     pub fn from_env() -> Self {
         Self {
@@ -33,7 +80,10 @@ impl InterpolationContext {
         }
     }
 
-    /// Add or override environment variables.
+    /// Add or override a batch of environment variables.
+    ///
+    /// Later calls to `with_env` for the same key win; the last value set
+    /// is the one used during resolution.
     #[must_use]
     pub fn with_env<I>(mut self, vars: I) -> Self
     where
@@ -43,7 +93,12 @@ impl InterpolationContext {
         self
     }
 
-    /// Add or replace the properties exposed by a resource.
+    /// Register (or replace) the runtime-resolved properties for a named
+    /// resource.
+    ///
+    /// `name` must match the resource key as declared in the manifest.
+    /// The `properties` map is keyed by property name (e.g. `"host"`,
+    /// `"port"`, `"password"`).
     #[must_use]
     pub fn with_resource(
         mut self,
@@ -55,39 +110,71 @@ impl InterpolationContext {
     }
 }
 
-/// Parsed form of a `${...}` reference.
+/// Parsed form of a `${...}` interpolation reference.
+///
+/// Produced by the internal parser and used by [`Interpolator::resolve`] and
+/// [`Interpolator::scan`]. Consumers of the crate can inspect the scanned
+/// references to build static dependency maps without performing actual
+/// value resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reference {
-    /// `${resources.<name>.<property>}`.
+    /// A `${resources.<name>.<property>}` reference.
+    ///
+    /// Resolved against the properties registered for the named resource in
+    /// the [`InterpolationContext`].
     Resource {
-        /// Target resource name.
+        /// Name of the target resource as declared in the manifest.
         name: String,
-        /// Property of the target resource.
+        /// Property key on that resource (e.g. `"host"`, `"port"`).
         property: String,
     },
 
-    /// `${env.<NAME>}` or `${env.<NAME>:-<default>}`.
+    /// A `${env.<NAME>}` or `${env.<NAME>:-<default>}` reference.
+    ///
+    /// Resolved against the environment variables in the
+    /// [`InterpolationContext`]. When `default` is `Some`, it is used as
+    /// a fallback when the variable is unset or empty.
     Env {
         /// Environment variable name.
         name: String,
-        /// Optional fallback when the variable is unset or empty.
+        /// Optional fallback value used when `name` is unset or empty.
         default: Option<String>,
     },
 }
 
-/// Interpolation engine over a [`InterpolationContext`].
+/// Interpolation engine bound to an [`InterpolationContext`].
+///
+/// Create one with [`Interpolator::new`], then call [`Interpolator::resolve`]
+/// to substitute references in a string, or [`Interpolator::scan`] to
+/// enumerate references without substituting them.
 pub struct Interpolator<'ctx> {
     ctx: &'ctx InterpolationContext,
 }
 
 impl<'ctx> Interpolator<'ctx> {
-    /// Build a new interpolator bound to `ctx`.
+    /// Create an interpolator that resolves references against `ctx`.
     #[must_use]
     pub fn new(ctx: &'ctx InterpolationContext) -> Self {
         Self { ctx }
     }
 
-    /// Resolve every `${...}` occurrence in `input`.
+    /// Resolve all `${...}` references in `input` and return the resulting
+    /// string.
+    ///
+    /// Literal braces can be escaped with `${{ ... }}`, which emits
+    /// `${ ... }` verbatim. Any unknown scheme or unresolvable reference
+    /// returns a [`ManifestError`].
+    ///
+    /// ```rust
+    /// use lightshuttle_manifest::interpolate::{InterpolationContext, Interpolator};
+    ///
+    /// let ctx = InterpolationContext::new()
+    ///     .with_env([("HOST".to_string(), "localhost".to_string())]);
+    /// let interpolator = Interpolator::new(&ctx);
+    ///
+    /// let out = interpolator.resolve("connect to ${env.HOST}").unwrap();
+    /// assert_eq!(out, "connect to localhost");
+    /// ```
     pub fn resolve(&self, input: &str) -> Result<String> {
         let mut output = String::with_capacity(input.len());
         let mut chars = input.chars().peekable();
@@ -124,8 +211,16 @@ impl<'ctx> Interpolator<'ctx> {
         Ok(output)
     }
 
-    /// Scan `input` and return the references it contains, without
-    /// resolving them.
+    /// Scan `input` and return every [`Reference`] it contains without
+    /// resolving values.
+    ///
+    /// Useful for static analysis: the validation pass calls `scan` to
+    /// verify that every `${resources.name.property}` expression refers
+    /// to a resource that exists in the manifest, before any container
+    /// is started.
+    ///
+    /// Returns a [`ManifestError`] if the interpolation syntax is invalid
+    /// (e.g. unterminated `${`).
     pub fn scan(&self, input: &str) -> Result<Vec<Reference>> {
         let mut refs = Vec::new();
         let mut chars = input.chars().peekable();

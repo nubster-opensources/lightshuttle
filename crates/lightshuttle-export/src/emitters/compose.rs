@@ -1,5 +1,10 @@
-//! `docker-compose` emitter: renders an [`ExportModel`] into a single
+//! Docker Compose emitter: renders an [`ExportModel`] into a single
 //! `docker-compose.yml`.
+//!
+//! The emitted file uses the Compose v3 schema. Port bindings default to the
+//! loopback address so the stack keeps the same not-exposed-by-default posture
+//! as `lightshuttle up`. Named volumes are collected into the top-level
+//! `volumes:` block so Compose can manage their lifecycle.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -18,7 +23,28 @@ use crate::resolve::enabled_for;
 /// `lightshuttle up`.
 const DEFAULT_HOST_BIND_ADDRESS: &str = "127.0.0.1";
 
-/// Emits a `docker-compose.yml` from the export model.
+/// Emits a single `docker-compose.yml` from the export model.
+///
+/// Each enabled service in the [`crate::ExportModel`] becomes one entry in the
+/// Compose `services:` block. Ports default to `127.0.0.1` as the host bind
+/// address. Named volumes are collected into the top-level `volumes:` block.
+/// Dependencies with a healthcheck use the `service_healthy` condition;
+/// dependencies without one use `service_started`.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use lightshuttle_export::{lower, ComposeEmitter, Emitter};
+/// use lightshuttle_manifest::Manifest;
+///
+/// # fn main() -> lightshuttle_export::Result<()> {
+/// let manifest: Manifest = todo!("parse from YAML");
+/// let model = lower(&manifest)?;
+/// let artifacts = ComposeEmitter.emit(&model)?;
+/// // artifacts.files[0].path == "docker-compose.yml"
+/// # Ok(())
+/// # }
+/// ```
 pub struct ComposeEmitter;
 
 impl Emitter for ComposeEmitter {

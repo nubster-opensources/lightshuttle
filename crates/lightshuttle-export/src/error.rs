@@ -2,7 +2,9 @@
 
 use lightshuttle_spec::SpecError;
 
-/// Shorthand alias for `std::result::Result<T, ExportError>`.
+/// Shorthand `Result` type that pins the error to [`ExportError`].
+///
+/// Used as the return type of [`crate::lower`] and [`crate::Emitter::emit`].
 pub type Result<T> = std::result::Result<T, ExportError>;
 
 /// Errors raised while lowering a manifest or emitting artifacts.

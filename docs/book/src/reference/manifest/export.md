@@ -2,11 +2,19 @@
 
 # export
 
-Top-level `export` settings, one optional sub-table per target.
+Top-level `export` settings, one optional sub-table per export target.
+
+Stored in [`crate::Manifest::export`]. The section is purely structural: it
+carries raw optional values only. Defaults such as the chart name, the
+Kubernetes namespace, and replica counts are resolved during the lowering
+step in `lightshuttle-export`, so this crate never owns export semantics.
+
+All resource keys in sub-tables are validated against the manifest's
+declared resources by [`crate::Manifest::validate`].
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `compose` | [ComposeExport](common-types.md#composeexport) | no |  | Overrides for the `docker-compose` target. |
-| `helm` | [HelmExport](common-types.md#helmexport) | no |  | Overrides for the Helm chart target. |
-| `kubernetes` | [KubernetesExport](common-types.md#kubernetesexport) | no |  | Overrides for the Kubernetes manifests target. |
+| `compose` | [ComposeExport](common-types.md#composeexport) | no |  | Per-resource overrides for the `docker-compose` export target. |
+| `helm` | [HelmExport](common-types.md#helmexport) | no |  | Per-resource overrides for the Helm chart target. |
+| `kubernetes` | [KubernetesExport](common-types.md#kubernetesexport) | no |  | Per-resource overrides for the raw Kubernetes manifests target. |
 

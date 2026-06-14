@@ -1,5 +1,10 @@
-//! Error type returned by [`crate::LifecycleManager`] and
-//! [`crate::LifecyclePlan`].
+//! Error types returned by [`crate::LifecycleManager`] and [`crate::LifecyclePlan`].
+//!
+//! [`LifecycleError`] is the top-level error type for the lifecycle layer. It
+//! wraps lower-level [`crate::RuntimeError`] values (from the container
+//! runtime) and [`lightshuttle_spec::SpecError`] values (from manifest
+//! conversion), and adds lifecycle-specific variants such as dependency cycles,
+//! healthcheck timeouts, and missing environment variables.
 
 use std::time::Duration;
 

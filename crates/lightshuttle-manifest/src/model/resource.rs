@@ -1,4 +1,8 @@
 //! Resource kind enumeration tagged externally by the YAML key.
+//!
+//! Each entry in the `resources:` map of a manifest is a [`ResourceKind`]
+//! value. The variant is determined by the single YAML key nested under
+//! the resource name (`postgres`, `redis`, `container`, or `dockerfile`).
 
 use std::collections::BTreeMap;
 
@@ -12,39 +16,49 @@ use super::{
     postgres::PostgresConfig, redis::RedisConfig,
 };
 
-/// Kind-specific configuration of a resource.
+/// Kind-specific configuration of a resource declared in `resources:`.
 ///
-/// The variant is selected by the YAML key under the resource entry
-/// (externally tagged shape):
+/// The variant is selected by the single YAML key nested under a resource
+/// name:
 ///
 /// ```yaml
 /// api_db:
-///   postgres:    # ← variant is ResourceKind::Postgres
+///   postgres:    # selects ResourceKind::Postgres
 ///     version: "16"
+/// cache:
+///   redis: {}   # selects ResourceKind::Redis
 /// ```
 ///
-/// Serde's default external tagging produces a YAML tag (`!postgres
-/// ...`) rather than a map entry, so this enum implements `Serialize`
-/// and `Deserialize` manually to keep the manifest format identical to
-/// the specification.
+/// `serde`'s default external tagging would emit a YAML tag (`!postgres`)
+/// rather than a plain map key, so `Serialize` and `Deserialize` are
+/// implemented manually to preserve the format defined by the specification.
+///
+/// Use [`ResourceKind::depends_on`], [`ResourceKind::healthcheck`], and
+/// [`ResourceKind::kind_name`] to query cross-cutting properties without
+/// pattern-matching on the variant.
 #[derive(Debug, Clone, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ResourceKind {
-    /// PostgreSQL resource.
+    /// Managed PostgreSQL instance. Configuration carried by [`PostgresConfig`].
     Postgres(PostgresConfig),
 
-    /// Redis resource.
+    /// Managed Redis instance. Configuration carried by [`RedisConfig`].
     Redis(RedisConfig),
 
-    /// Container pulled from a registry.
+    /// Container pulled from a registry. Configuration carried by [`ContainerConfig`].
     Container(ContainerConfig),
 
-    /// Container built locally from a Dockerfile.
+    /// Container built locally from a Dockerfile. Configuration carried by [`DockerfileConfig`].
     Dockerfile(DockerfileConfig),
 }
 
 impl ResourceKind {
-    /// The list of resources this one explicitly depends on.
+    /// Returns the `depends_on` list declared for this resource, regardless of
+    /// variant.
+    ///
+    /// The returned slice is empty when no explicit dependencies are declared.
+    /// The validation pass verifies that every name in this list refers to a
+    /// resource that exists in the manifest.
     #[must_use]
     pub fn depends_on(&self) -> &[String] {
         match self {
@@ -55,7 +69,10 @@ impl ResourceKind {
         }
     }
 
-    /// The optional healthcheck override for this resource.
+    /// Returns the healthcheck override for this resource, if any.
+    ///
+    /// A `None` result means the runtime falls back to its built-in default
+    /// for the resource kind. See [`Healthcheck`] for field semantics.
     #[must_use]
     pub fn healthcheck(&self) -> Option<&Healthcheck> {
         match self {
@@ -66,7 +83,10 @@ impl ResourceKind {
         }
     }
 
-    /// The kind name as it appears in YAML, for diagnostic messages.
+    /// Returns the YAML key that identifies this variant (`"postgres"`,
+    /// `"redis"`, `"container"`, or `"dockerfile"`).
+    ///
+    /// Used in diagnostic messages and export target logic.
     #[must_use]
     pub fn kind_name(&self) -> &'static str {
         match self {

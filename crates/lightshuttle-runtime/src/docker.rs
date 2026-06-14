@@ -1,4 +1,37 @@
 //! Docker container runtime backed by the `bollard` crate.
+//!
+//! Exposes [`DockerRuntime`], the first concrete implementation of
+//! [`crate::ContainerRuntime`]. All Docker I/O is async and goes through a
+//! single `bollard::Docker` client stored in the struct.
+//!
+//! ## Network model
+//!
+//! Each project gets a dedicated user-defined bridge network named
+//! `lightshuttle-<project>` (non-alphanumeric characters replaced by `-`,
+//! lower-cased). Containers are attached to that network with their resource
+//! name as a DNS alias, so `${resources.db.host}` resolves to `db` inside
+//! the network. [`DockerRuntime::connect`] uses the platform default transport
+//! (Unix socket on Linux and macOS, named pipe on Windows).
+//!
+//! ## Container naming
+//!
+//! Each container is named `<project>_<resource>` as defined by
+//! [`lightshuttle_spec::ContainerSpec`]. The lifecycle manager removes any
+//! previous container with the same name before every `start` so that a re-up
+//! never collides with a stale entry.
+//!
+//! ## Port binding
+//!
+//! Published ports bind to `127.0.0.1` by default (see the private
+//! `DEFAULT_HOST_BIND_ADDRESS` constant), so managed services are never
+//! exposed to the wider network on a developer workstation. A manifest can
+//! request a broader bind via the `address:host:container` port notation.
+//!
+//! ## Labels
+//!
+//! Every container receives two labels: [`LABEL_PROJECT`] and
+//! [`LABEL_RESOURCE`]. These let the CLI implement `ps` and `down` without
+//! relying on in-memory state.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -32,21 +65,38 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Docker container runtime backed by the `bollard` crate.
 ///
-/// Connects to the local Docker daemon using the platform default
-/// transport (Unix socket on Linux and macOS, named pipe on Windows).
+/// Connects to the local Docker daemon using the platform default transport
+/// (Unix socket on Linux and macOS, named pipe on Windows). Implements
+/// [`crate::ContainerRuntime`] so it can be passed to [`crate::LifecycleManager`].
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use lightshuttle_runtime::DockerRuntime;
+///
+/// # fn example() -> lightshuttle_runtime::Result<()> {
+/// let runtime = DockerRuntime::connect()?;
+/// # Ok(())
+/// # }
+/// ```
 pub struct DockerRuntime {
     client: Docker,
 }
 
 impl DockerRuntime {
-    /// Connect to the local Docker daemon.
+    /// Connect to the local Docker daemon using the platform default transport.
+    ///
+    /// Returns [`crate::RuntimeError::Connect`] when the daemon socket or named
+    /// pipe cannot be reached.
     pub fn connect() -> Result<Self> {
         let client = Docker::connect_with_local_defaults().map_err(RuntimeError::Connect)?;
         Ok(Self { client })
     }
 
-    /// Wrap an existing `bollard::Docker` client. Useful for tests that
-    /// supply a pre-configured client (custom transport, mock, etc.).
+    /// Wrap an existing `bollard::Docker` client.
+    ///
+    /// Useful when the caller manages the client lifetime directly or needs a
+    /// custom transport (e.g. a TLS-secured remote daemon or a test double).
     #[must_use]
     pub fn from_client(client: Docker) -> Self {
         Self { client }
@@ -68,9 +118,26 @@ impl DockerRuntime {
         Ok(())
     }
 
-    /// List every container labelled with `lightshuttle.project=<project>`,
-    /// including stopped ones. Used by the CLI to implement `ps` and
-    /// `down` without relying on in-memory state.
+    /// List every container labelled with `lightshuttle.project=<project>`.
+    ///
+    /// Includes stopped and dead containers, so the CLI can implement `ps`
+    /// and `down` without relying on in-memory state. The result is sorted
+    /// alphabetically by resource name.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use lightshuttle_runtime::DockerRuntime;
+    ///
+    /// # async fn example() -> lightshuttle_runtime::Result<()> {
+    /// let runtime = DockerRuntime::connect()?;
+    /// let containers = runtime.list_managed("myapp").await?;
+    /// for c in &containers {
+    ///     println!("{}: {:?}", c.resource, c.status);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn list_managed(&self, project: &str) -> Result<Vec<ManagedContainer>> {
         let label_filter = format!("{LABEL_PROJECT}={project}");
         let mut filters: HashMap<String, Vec<String>> = HashMap::new();
