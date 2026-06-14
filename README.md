@@ -108,7 +108,7 @@ Everything lives in a single `lightshuttle.yml`, a typed declarative manifest re
 
 ## Documentation
 
-The full documentation is published at <https://nubster-opensources.github.io/lightshuttle/>.
+The full documentation is published at <https://nubster-opensources.github.io/lightshuttle/>. The [`docs/` index](docs/README.md) maps every guide, specification and policy to its source.
 
 - Tutorials: [getting started](https://nubster-opensources.github.io/lightshuttle/tutorials/getting-started.html), [the dashboard](https://nubster-opensources.github.io/lightshuttle/tutorials/dashboard.html), [export](https://nubster-opensources.github.io/lightshuttle/tutorials/export.html).
 - Specifications: [manifest](docs/spec/manifest-v0.md), [control plane API](docs/spec/control-api.md), [observability](docs/spec/observability.md), [export](docs/spec/export.md).
