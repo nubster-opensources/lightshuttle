@@ -2,12 +2,11 @@
 //! exporter pointed at the bundled collector.
 
 use anyhow::{Context, Result};
+use opentelemetry::global;
 use opentelemetry::trace::TracerProvider as _;
-use opentelemetry::{KeyValue, global};
 use opentelemetry_otlp::{SpanExporter, WithExportConfig};
 use opentelemetry_sdk::Resource;
-use opentelemetry_sdk::runtime;
-use opentelemetry_sdk::trace::TracerProvider;
+use opentelemetry_sdk::trace::SdkTracerProvider;
 use opentelemetry_semantic_conventions::resource::SERVICE_NAME;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
@@ -18,7 +17,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 /// Dropping it flushes any pending spans by shutting the tracer
 /// provider down. Hold it for the whole lifetime of `lightshuttle up`.
 pub struct TracerGuard {
-    provider: TracerProvider,
+    provider: SdkTracerProvider,
 }
 
 impl Drop for TracerGuard {
@@ -52,10 +51,15 @@ pub fn init_orchestrator_tracer(endpoint: &str, service: &str) -> Result<TracerG
         .build()
         .context("failed to build the OTLP span exporter")?;
 
-    let resource = Resource::new(vec![KeyValue::new(SERVICE_NAME, service.to_owned())]);
+    let resource = Resource::builder_empty()
+        .with_attribute(opentelemetry::KeyValue::new(
+            SERVICE_NAME,
+            service.to_owned(),
+        ))
+        .build();
 
-    let provider = TracerProvider::builder()
-        .with_batch_exporter(exporter, runtime::Tokio)
+    let provider = SdkTracerProvider::builder()
+        .with_batch_exporter(exporter)
         .with_resource(resource)
         .build();
 
