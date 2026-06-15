@@ -140,3 +140,18 @@ jobs:
           sudo install kubeconform /usr/local/bin/
       # Run locally with: cargo test -p lightshuttle-export -- --ignored
       - run: cargo test -p lightshuttle-export --test compose_emitter --test kubernetes_emitter --test helm_emitter -- --ignored --nocapture
+
+  integration:
+    name: Integration (Docker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: integration
+      # ubuntu-latest ships a running Docker daemon. The suite drives it
+      # directly; every test runs under a unique project name and tears its
+      # own containers and network down through an RAII guard.
+      # Run locally with: cargo test -p lightshuttle-runtime -- --ignored
+      - run: cargo test -p lightshuttle-runtime --test harness --test integration_docker --test lifecycle_integration -- --ignored --nocapture
