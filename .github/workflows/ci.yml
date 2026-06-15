@@ -154,4 +154,5 @@ jobs:
       # directly; every test runs under a unique project name and tears its
       # own containers and network down through an RAII guard.
       # Run locally with: cargo test -p lightshuttle-runtime -- --ignored
-      - run: cargo test -p lightshuttle-runtime --test harness --test integration_docker --test lifecycle_integration --test lifecycle_scenarios --test networking -- --ignored --nocapture
+      - run: cargo test -p lightshuttle-runtime --test harness --test integration_docker --test lifecycle_integration --test lifecycle_scenarios --test networking --test secrets_scenarios -- --ignored --nocapture
+      - run: cargo test -p lightshuttle --test cli_smoke -- --ignored --nocapture
