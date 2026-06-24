@@ -120,6 +120,22 @@ The workspace is split into published crates: `lightshuttle` (the CLI), `lightsh
 
 LightShuttle is open source and pre-1.0; the public API may still change between minor versions. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the contribution model and the Contributor License Agreement, and [`SECURITY.md`](SECURITY.md) to report a vulnerability. Feedback and discussion on the direction are welcome.
 
+## Support tiers
+
+LightShuttle is exercised by a cross-OS smoke job on every change. The
+support level differs because container support differs per CI runner.
+
+| Tier | OS | Smoke coverage | CI gate |
+|------|----|----|---------|
+| Tier 1 | Linux | Real container boot (`up`/`down`) plus offline CLI | Blocking |
+| Tier 2 | macOS, Windows | Offline CLI (`validate`, `export`) | Advisory |
+
+macOS runners ship no Docker daemon and Windows runners default to Windows
+containers, so booting the Linux containers a manifest describes is not
+testable there in CI. On those targets the smoke verifies the binary ports
+natively: manifest parsing, path handling and artifact emission. macOS and
+Windows graduate to blocking once they prove stable.
+
 ## License
 
 Licensed under either of:
