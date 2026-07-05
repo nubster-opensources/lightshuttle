@@ -8,12 +8,24 @@
 //! cargo xtask doc-validate
 //! cargo xtask doc-gen manifest [--check]
 //! cargo xtask doc-gen cli [--check]
+//! cargo xtask bench cold-start [--iterations N] [--out PATH]
 //! ```
+//!
+//! ## `bench cold-start`
+//!
+//! Measures wall-clock time from `LifecycleManager::start_all()` to every
+//! resource healthy, for a Postgres instance plus one dependent container.
+//! Requires a reachable Docker daemon. Runs 5 iterations by default and
+//! writes a JSON report (methodology, environment, per-iteration samples,
+//! min/median/mean/max, and the 5-second target from issue #167) to
+//! `target/bench/cold-start.json`, or to `--out` when given. See
+//! `xtask/src/bench/cold_start.rs` for the full methodology.
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
+mod bench;
 mod doc_gen;
 
 /// Path to the canonical JSON Schema, relative to the workspace root.
@@ -25,6 +37,7 @@ fn main() -> Result<()> {
         Some("schema") => schema_cmd(&args[1..]),
         Some("doc-validate") => doc_validate_cmd(),
         Some("doc-gen") => doc_gen::cmd(&args[1..]),
+        Some("bench") => bench::cmd(&args[1..]),
         Some("help") | None => {
             print_help();
             Ok(())
@@ -40,6 +53,7 @@ fn print_help() {
     eprintln!("  schema [--check]   Regenerate or verify the JSON Schema");
     eprintln!("  doc-validate       Validate every manifest example in the book");
     eprintln!("  doc-gen <target>   Generate reference pages (targets: manifest, cli)");
+    eprintln!("  bench cold-start   Measure cold-start time (requires Docker)");
     eprintln!("  help               Show this message");
 }
 

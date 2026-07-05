@@ -3697,13 +3697,17 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
+ "jiff",
  "lightshuttle",
  "lightshuttle-manifest",
+ "lightshuttle-runtime",
+ "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
