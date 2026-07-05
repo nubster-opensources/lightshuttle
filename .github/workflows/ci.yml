@@ -156,6 +156,26 @@ jobs:
       # Run locally with: cargo test -p lightshuttle-runtime -- --ignored
       - run: cargo test -p lightshuttle-runtime --test harness --test integration_docker --test lifecycle_integration --test lifecycle_scenarios --test networking --test secrets_scenarios -- --ignored --nocapture
 
+  bench:
+    name: Cold-start benchmark
+    runs-on: ubuntu-latest
+    # Docker-backed timings vary with the runner and are not a merge gate;
+    # the job still runs on every push so the artifact trend is unbroken
+    # across releases (see issue #167).
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bench-cold-start
+      - run: cargo xtask bench cold-start --out target/bench/cold-start.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cold-start-benchmark
+          path: target/bench/cold-start.json
+          retention-days: 90
+
   smoke:
     name: Smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
