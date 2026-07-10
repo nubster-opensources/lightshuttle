@@ -142,6 +142,21 @@ pub enum Reference {
     },
 }
 
+impl Reference {
+    /// Returns the target resource name when this is a
+    /// [`Reference::Resource`], or `None` for an environment reference.
+    ///
+    /// Used to derive implicit dependencies: a `${resources.<name>.*}`
+    /// interpolation makes the enclosing resource depend on `<name>`.
+    #[must_use]
+    pub fn resource_name(self) -> Option<String> {
+        match self {
+            Self::Resource { name, .. } => Some(name),
+            Self::Env { .. } => None,
+        }
+    }
+}
+
 /// Interpolation engine bound to an [`InterpolationContext`].
 ///
 /// Create one with [`Interpolator::new`], then call [`Interpolator::resolve`]

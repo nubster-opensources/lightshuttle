@@ -10,7 +10,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use lightshuttle_manifest::Manifest;
+use lightshuttle_manifest::{Manifest, ResourceKind};
 
 use crate::lifecycle::error::LifecycleError;
 use lightshuttle_spec::{ContainerSpec, ResolvedResource, ResourceOutputs, from_resource};
@@ -102,7 +102,7 @@ impl LifecyclePlan {
                     source,
                 })?;
             resolved.insert(name.clone(), r);
-            deps.insert(name.clone(), kind.depends_on().to_vec());
+            deps.insert(name.clone(), merged_dependencies(name, kind));
             kinds.insert(name.clone(), kind.kind_name());
         }
 
@@ -242,4 +242,21 @@ impl LifecyclePlan {
         out.sort_unstable();
         out
     }
+}
+
+/// Merge a resource's explicit `depends_on` with the implicit dependencies
+/// derived from its `${resources.<name>.*}` interpolations.
+///
+/// Explicit entries keep their declared position, implicit ones are appended
+/// in first-occurrence order, and the whole list is de-duplicated. The
+/// resource's own name is skipped so that a self-referencing interpolation
+/// does not turn into a spurious cycle.
+fn merged_dependencies(name: &str, kind: &ResourceKind) -> Vec<String> {
+    let mut dependencies = kind.depends_on().to_vec();
+    for implicit in kind.implicit_dependencies() {
+        if implicit != name && !dependencies.contains(&implicit) {
+            dependencies.push(implicit);
+        }
+    }
+    dependencies
 }

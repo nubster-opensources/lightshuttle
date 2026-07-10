@@ -21,7 +21,7 @@ use indexmap::IndexMap;
 
 use crate::error::{ManifestError, Result};
 use crate::interpolate::{InterpolationContext, Interpolator, Reference};
-use crate::model::{Command, Healthcheck, Manifest, ResourceKind};
+use crate::model::{Healthcheck, Manifest, ResourceKind};
 
 const NAME_PATTERN: &str = "^[a-z][a-z0-9_-]{0,31}$";
 const DATABASE_PATTERN: &str = "^[a-z][a-z0-9_]{0,62}$";
@@ -284,7 +284,7 @@ fn validate_references(manifest: &Manifest) -> Result<()> {
     let known_resources: HashSet<&str> = manifest.resources.keys().map(String::as_str).collect();
 
     for (name, kind) in &manifest.resources {
-        for value in collect_strings(kind) {
+        for value in kind.interpolatable_strings() {
             for reference in interpolator.scan(&value)? {
                 if let Reference::Resource { name: target, .. } = reference
                     && !known_resources.contains(target.as_str())
@@ -298,66 +298,4 @@ fn validate_references(manifest: &Manifest) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn collect_strings(kind: &ResourceKind) -> Vec<String> {
-    let mut out = Vec::new();
-    match kind {
-        ResourceKind::Container(c) => {
-            out.push(c.image.clone());
-            out.extend(c.env.values().cloned());
-            out.extend(c.volumes.iter().cloned());
-            if let Some(w) = &c.working_dir {
-                out.push(w.clone());
-            }
-            if let Some(cmd) = &c.command {
-                out.extend(command_strings(cmd));
-            }
-        }
-        ResourceKind::Dockerfile(c) => {
-            out.push(c.context.clone());
-            out.push(c.dockerfile.clone());
-            out.extend(c.env.values().cloned());
-            out.extend(c.volumes.iter().cloned());
-            out.extend(c.build_args.values().cloned());
-            if let Some(t) = &c.target {
-                out.push(t.clone());
-            }
-            if let Some(w) = &c.working_dir {
-                out.push(w.clone());
-            }
-            if let Some(cmd) = &c.command {
-                out.extend(command_strings(cmd));
-            }
-        }
-        ResourceKind::Postgres(c) => {
-            if let Some(s) = &c.password {
-                out.push(s.clone());
-            }
-            if let Some(s) = &c.database {
-                out.push(s.clone());
-            }
-            if let Some(s) = &c.user {
-                out.push(s.clone());
-            }
-        }
-        ResourceKind::Redis(c) => {
-            if let Some(s) = &c.password {
-                out.push(s.clone());
-            }
-        }
-    }
-    // Healthcheck test commands carry interpolations too, on every kind
-    // that declares one.
-    if let Some(hc) = kind.healthcheck() {
-        out.extend(hc.test.iter().cloned());
-    }
-    out
-}
-
-fn command_strings(command: &Command) -> Vec<String> {
-    match command {
-        Command::Single(s) => vec![s.clone()],
-        Command::Args(args) => args.clone(),
-    }
 }
