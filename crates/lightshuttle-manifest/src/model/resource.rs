@@ -12,9 +12,10 @@ use serde::de::{Deserializer, Error as DeError};
 use serde::ser::{Serialize, SerializeMap, Serializer};
 
 use super::{
-    container::ContainerConfig, dockerfile::DockerfileConfig, healthcheck::Healthcheck,
+    Command, container::ContainerConfig, dockerfile::DockerfileConfig, healthcheck::Healthcheck,
     postgres::PostgresConfig, redis::RedisConfig,
 };
+use crate::interpolate::{InterpolationContext, Interpolator};
 
 /// Kind-specific configuration of a resource declared in `resources:`.
 ///
@@ -95,6 +96,106 @@ impl ResourceKind {
             Self::Container(_) => "container",
             Self::Dockerfile(_) => "dockerfile",
         }
+    }
+
+    /// Returns every string field of this resource that may carry a `${...}`
+    /// interpolation.
+    ///
+    /// The list covers image and build inputs, environment values, volume
+    /// mounts, working directory, command arguments and healthcheck test
+    /// commands. It is the shared input to reference validation and to
+    /// implicit dependency derivation.
+    #[must_use]
+    pub fn interpolatable_strings(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        match self {
+            Self::Container(c) => {
+                out.push(c.image.clone());
+                out.extend(c.env.values().cloned());
+                out.extend(c.volumes.iter().cloned());
+                if let Some(w) = &c.working_dir {
+                    out.push(w.clone());
+                }
+                if let Some(cmd) = &c.command {
+                    out.extend(command_strings(cmd));
+                }
+            }
+            Self::Dockerfile(c) => {
+                out.push(c.context.clone());
+                out.push(c.dockerfile.clone());
+                out.extend(c.env.values().cloned());
+                out.extend(c.volumes.iter().cloned());
+                out.extend(c.build_args.values().cloned());
+                if let Some(t) = &c.target {
+                    out.push(t.clone());
+                }
+                if let Some(w) = &c.working_dir {
+                    out.push(w.clone());
+                }
+                if let Some(cmd) = &c.command {
+                    out.extend(command_strings(cmd));
+                }
+            }
+            Self::Postgres(c) => {
+                if let Some(s) = &c.password {
+                    out.push(s.clone());
+                }
+                if let Some(s) = &c.database {
+                    out.push(s.clone());
+                }
+                if let Some(s) = &c.user {
+                    out.push(s.clone());
+                }
+            }
+            Self::Redis(c) => {
+                if let Some(s) = &c.password {
+                    out.push(s.clone());
+                }
+            }
+        }
+        if let Some(hc) = self.healthcheck() {
+            out.extend(hc.test.iter().cloned());
+        }
+        out
+    }
+
+    /// Returns the names of resources this one implicitly depends on through
+    /// `${resources.<name>.*}` interpolations in its string fields.
+    ///
+    /// Interpolating a property of another resource requires that resource to
+    /// be started first, so it is documented as equivalent to an explicit
+    /// `depends_on` entry. The returned names are de-duplicated while
+    /// preserving first-occurrence order.
+    ///
+    /// The resource's own name is not filtered here because a [`ResourceKind`]
+    /// does not carry its manifest key; the plan builder excludes self-loops.
+    /// Interpolation syntax is assumed valid (the manifest is validated before
+    /// a plan is built), so any string that fails to scan is skipped.
+    #[must_use]
+    pub fn implicit_dependencies(&self) -> Vec<String> {
+        let ctx = InterpolationContext::new();
+        let interpolator = Interpolator::new(&ctx);
+        let mut out: Vec<String> = Vec::new();
+        for value in self.interpolatable_strings() {
+            let Ok(references) = interpolator.scan(&value) else {
+                continue;
+            };
+            for reference in references {
+                if let Some(name) = reference.resource_name()
+                    && !out.contains(&name)
+                {
+                    out.push(name);
+                }
+            }
+        }
+        out
+    }
+}
+
+fn command_strings(command: &Command) -> Vec<String> {
+    match command {
+        Command::Single(s) => vec![s.clone()],
+        Command::Args(args) => args.clone(),
     }
 }
 
