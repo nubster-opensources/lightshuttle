@@ -1,6 +1,6 @@
 [package]
 name = "lightshuttle"
-description = "Lightweight developer-time orchestrator for polyglot teams"
+description = "Lightweight dev orchestrator for polyglot teams: typed docker-compose successor with built-in dashboard, OpenTelemetry and production export."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
