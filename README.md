@@ -30,7 +30,7 @@ the [SemVer policy](docs/SEMVER_POLICY.md).
 - **v0.4.0** Secrets and env management: `.env` sources, `secrets check`,
   fail-fast injection at boot, and a per-project Docker network.
 
-See the [roadmap](ROADMAP.md) for what comes next.
+See the [roadmap](docs/explanation/roadmap.md) for what comes next.
 
 ## Quickstart
 
@@ -89,7 +89,7 @@ To stay focused, the following are explicitly out of scope:
 
 ## Configuration model
 
-Everything lives in a single `lightshuttle.yml`, a typed declarative manifest readable by every developer regardless of their primary language. It declares a `project`, a set of `resources` (`postgres`, `redis`, `container`, `dockerfile`), their dependencies and `${...}` interpolations, and optional `dashboard`, `observability` and `export` sections. Environment references resolve from `.env` files and the system environment, with fail-fast diagnostics at boot when a value is missing. The full schema is in the [manifest specification](docs/spec/manifest-v0.md); a JSON Schema for editor autocompletion ships at [`docs/spec/manifest-v0.schema.json`](docs/spec/manifest-v0.schema.json). Custom lifecycle hooks through a Cargo-style `xtask/` crate are on the [roadmap](ROADMAP.md), not yet implemented.
+Everything lives in a single `lightshuttle.yml`, a typed declarative manifest readable by every developer regardless of their primary language. It declares a `project`, a set of `resources` (`postgres`, `redis`, `container`, `dockerfile`), their dependencies and `${...}` interpolations, and optional `dashboard`, `observability` and `export` sections. Environment references resolve from `.env` files and the system environment, with fail-fast diagnostics at boot when a value is missing. The full schema is in the [manifest specification](docs/spec/manifest-v0.md); a JSON Schema for editor autocompletion ships at [`docs/spec/manifest-v0.schema.json`](docs/spec/manifest-v0.schema.json). Custom lifecycle hooks through a Cargo-style `xtask/` crate are on the [roadmap](docs/explanation/roadmap.md), not yet implemented.
 
 ## Commands
 
@@ -112,7 +112,7 @@ The full documentation is published at <https://nubster-opensources.github.io/li
 
 - Tutorials: [getting started](https://nubster-opensources.github.io/lightshuttle/tutorials/getting-started.html), [the dashboard](https://nubster-opensources.github.io/lightshuttle/tutorials/dashboard.html), [export](https://nubster-opensources.github.io/lightshuttle/tutorials/export.html).
 - Specifications: [manifest](docs/spec/manifest-v0.md), [control plane API](docs/spec/control-api.md), [observability](docs/spec/observability.md), [export](docs/spec/export.md).
-- Project policies: [roadmap](ROADMAP.md), [SemVer](docs/SEMVER_POLICY.md), [MSRV](docs/MSRV_POLICY.md), [release process](docs/RELEASE_PROCESS.md), [governance](docs/GOVERNANCE.md).
+- Project policies: [roadmap](docs/explanation/roadmap.md), [SemVer](docs/SEMVER_POLICY.md), [MSRV](docs/MSRV_POLICY.md), [release process](docs/RELEASE_PROCESS.md), [governance](docs/GOVERNANCE.md).
 
 The workspace is split into published crates: `lightshuttle` (the CLI), `lightshuttle-manifest`, `lightshuttle-spec`, `lightshuttle-runtime`, `lightshuttle-otel`, `lightshuttle-control`, `lightshuttle-secrets` and `lightshuttle-export`.
 

@@ -39,7 +39,7 @@ they version with the code.
 - [Semantic Versioning](SEMVER_POLICY.md)
 - [Release process](RELEASE_PROCESS.md)
 - [Governance](GOVERNANCE.md)
-- [Roadmap](../ROADMAP.md), [changelog](../CHANGELOG.md),
+- [Roadmap](explanation/roadmap.md), [changelog](../CHANGELOG.md),
   [contributing](../CONTRIBUTING.md), [code of conduct](../CODE_OF_CONDUCT.md).
 
 ## Standards mapping

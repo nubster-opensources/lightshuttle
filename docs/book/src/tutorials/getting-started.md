@@ -456,7 +456,7 @@ form `${env.API_TOKEN:-fallback}` makes it optional. Both `up` and
 - Generate deployment artifacts with the [export tutorial](export.md).
 - Browse the [`examples/`](https://github.com/nubster-opensources/lightshuttle/tree/main/examples) folder for ready-to-run
   manifests.
-- Track upcoming features in the [roadmap](https://github.com/nubster-opensources/lightshuttle/blob/main/ROADMAP.md).
+- Track upcoming features in the [roadmap](https://github.com/nubster-opensources/lightshuttle/blob/main/docs/explanation/roadmap.md).
 - To contribute, read [`CONTRIBUTING.md`](https://github.com/nubster-opensources/lightshuttle/blob/main/CONTRIBUTING.md) and
   [`SECURITY.md`](https://github.com/nubster-opensources/lightshuttle/blob/main/SECURITY.md) first.
 
