@@ -70,4 +70,4 @@ LightShuttle is published on crates.io and under active development. The public
 API is pre-1.0 and may change between minor versions; see the
 [SemVer policy](https://github.com/nubster-opensources/lightshuttle/blob/main/docs/SEMVER_POLICY.md)
 and the
-[roadmap](https://github.com/nubster-opensources/lightshuttle/blob/main/ROADMAP.md).
+[roadmap](https://github.com/nubster-opensources/lightshuttle/blob/main/docs/explanation/roadmap.md).

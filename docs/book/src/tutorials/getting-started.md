@@ -121,7 +121,7 @@ If the command returns nothing, you are clear to alias.
 
 ### Add the alias
 
-**bash or zsh** — append to `~/.bashrc` or `~/.zshrc`:
+**bash or zsh**: append to `~/.bashrc` or `~/.zshrc`:
 
 ```sh
 alias lsh='lightshuttle'
@@ -129,13 +129,13 @@ alias lsh='lightshuttle'
 
 Reload with `source ~/.bashrc` (or open a new terminal).
 
-**fish** — once per shell session, or persisted with `funcsave`:
+**fish**: once per shell session, or persisted with `funcsave`:
 
 ```fish
 alias --save lsh='lightshuttle'
 ```
 
-**PowerShell** — append to your profile (`$PROFILE`):
+**PowerShell**: append to your profile (`$PROFILE`):
 
 ```powershell
 Set-Alias -Name lsh -Value lightshuttle
@@ -456,7 +456,7 @@ form `${env.API_TOKEN:-fallback}` makes it optional. Both `up` and
 - Generate deployment artifacts with the [export tutorial](export.md).
 - Browse the [`examples/`](https://github.com/nubster-opensources/lightshuttle/tree/main/examples) folder for ready-to-run
   manifests.
-- Track upcoming features in the [roadmap](https://github.com/nubster-opensources/lightshuttle/blob/main/ROADMAP.md).
+- Track upcoming features in the [roadmap](https://github.com/nubster-opensources/lightshuttle/blob/main/docs/explanation/roadmap.md).
 - To contribute, read [`CONTRIBUTING.md`](https://github.com/nubster-opensources/lightshuttle/blob/main/CONTRIBUTING.md) and
   [`SECURITY.md`](https://github.com/nubster-opensources/lightshuttle/blob/main/SECURITY.md) first.
 
