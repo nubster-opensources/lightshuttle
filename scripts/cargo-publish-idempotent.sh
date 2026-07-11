@@ -20,7 +20,7 @@ exit_code=$?
 printf '%s\n' "$output"
 
 if grep -q "already exists" <<< "$output"; then
-  echo "[$CRATE] already published at this version — skipping."
+  echo "[$CRATE] already published at this version, skipping."
   exit 0
 fi
 

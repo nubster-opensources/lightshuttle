@@ -121,7 +121,7 @@ If the command returns nothing, you are clear to alias.
 
 ### Add the alias
 
-**bash or zsh** — append to `~/.bashrc` or `~/.zshrc`:
+**bash or zsh**: append to `~/.bashrc` or `~/.zshrc`:
 
 ```sh
 alias lsh='lightshuttle'
@@ -129,13 +129,13 @@ alias lsh='lightshuttle'
 
 Reload with `source ~/.bashrc` (or open a new terminal).
 
-**fish** — once per shell session, or persisted with `funcsave`:
+**fish**: once per shell session, or persisted with `funcsave`:
 
 ```fish
 alias --save lsh='lightshuttle'
 ```
 
-**PowerShell** — append to your profile (`$PROFILE`):
+**PowerShell**: append to your profile (`$PROFILE`):
 
 ```powershell
 Set-Alias -Name lsh -Value lightshuttle
