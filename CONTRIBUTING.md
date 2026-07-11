@@ -10,7 +10,7 @@ LightShuttle follows the Nubster general coding standards documented in [nubster
 - **Conventional Commits**, all commit messages follow the `type(scope): description` format, enforced by `cog verify` in the commit-msg hook.
 - **Rust style**, workspace lints `clippy::all` and `clippy::pedantic` set to `deny`, MSRV pinned in `rust-toolchain.toml` and `Cargo.toml`.
 - **No competitor mentions**, the source code, commit messages, pull requests and documentation never name competing tools.
-- **English on the public API, French on internal artifacts**, rustdoc comments and the `lightshuttle.yml` schema are written in English; commit messages, issues and project documentation are written in French.
+- **English everywhere**, rustdoc comments, the `lightshuttle.yml` schema, commit messages, issues and project documentation are all written in English.
 
 ## Local setup (when the project opens)
 
