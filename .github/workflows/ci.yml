@@ -198,3 +198,16 @@ jobs:
       # Real container boot: Linux is the only runner with a Docker daemon.
       - if: matrix.os == 'ubuntu-latest'
         run: cargo test -p lightshuttle --test cli_smoke -- --ignored --nocapture
+
+  doc:
+    name: Documentation
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: "-D warnings"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: doc
+      - run: cargo doc --workspace --all-features --no-deps
