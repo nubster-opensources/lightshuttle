@@ -591,7 +591,7 @@ section (see the [export spec](export.md)), and the
 The following are explicitly **not** part of `v0` but are reserved for
 later versions. Until they ship, using their keywords at the top level
 or inside a resource produces a warning at validate time. The releases
-named below follow the [roadmap](../../ROADMAP.md).
+named below follow the [roadmap](../explanation/roadmap.md).
 
 | Planned release | Keyword | Topic |
 |---|---|---|
