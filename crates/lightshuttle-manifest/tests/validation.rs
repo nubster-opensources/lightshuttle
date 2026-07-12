@@ -175,6 +175,27 @@ resources:
 }
 
 #[test]
+fn rejects_interpolation_cycle_between_resources() {
+    let yaml = r#"
+project:
+  name: app
+resources:
+  a:
+    container:
+      image: alpine
+      env:
+        X: "${resources.b.host}"
+  b:
+    container:
+      image: alpine
+      env:
+        Y: "${resources.a.host}"
+"#;
+    let err = Manifest::parse(yaml).expect_err("interpolation cycle should be rejected");
+    assert!(matches!(err, ManifestError::Cycle(_)), "got: {err:?}");
+}
+
+#[test]
 fn accepts_omitted_lightshuttle_discriminator() {
     let yaml = r"
 project:
