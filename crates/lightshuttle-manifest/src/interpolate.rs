@@ -35,6 +35,12 @@ use indexmap::IndexMap;
 
 use crate::error::{ManifestError, Result};
 
+/// Maximum nesting depth accepted for `${...}` interpolations. A top-level
+/// reference is depth 1; a reference inside an `env` default is depth 2; and
+/// so on. Opening a reference beyond this depth raises
+/// [`ManifestError::InterpolationTooDeep`].
+pub const MAX_INTERPOLATION_DEPTH: usize = 10;
+
 /// Runtime context that backs an [`Interpolator`].
 ///
 /// Holds the set of environment variables and the runtime-resolved properties
@@ -191,6 +197,10 @@ impl<'ctx> Interpolator<'ctx> {
     /// assert_eq!(out, "connect to localhost");
     /// ```
     pub fn resolve(&self, input: &str) -> Result<String> {
+        self.resolve_at(input, 1)
+    }
+
+    fn resolve_at(&self, input: &str, depth: usize) -> Result<String> {
         let mut output = String::with_capacity(input.len());
         let mut chars = input.chars().peekable();
 
@@ -217,9 +227,21 @@ impl<'ctx> Interpolator<'ctx> {
                 continue;
             }
 
-            let body = consume_until_close(&mut chars, input)?;
+            let body = consume_balanced_body(&mut chars, input, depth)?;
             let reference = parse_reference(&body)?;
-            let resolved = self.lookup(&reference)?;
+            let resolved = match &reference {
+                Reference::Env {
+                    name,
+                    default: Some(raw_default),
+                } => {
+                    if let Some(value) = self.ctx.env.get(name).filter(|v| !v.is_empty()) {
+                        value.clone()
+                    } else {
+                        self.resolve_at(raw_default, depth + 1)?
+                    }
+                }
+                _ => self.lookup(&reference)?,
+            };
             output.push_str(&resolved);
         }
 
@@ -238,24 +260,7 @@ impl<'ctx> Interpolator<'ctx> {
     /// (e.g. unterminated `${`).
     pub fn scan(&self, input: &str) -> Result<Vec<Reference>> {
         let mut refs = Vec::new();
-        let mut chars = input.chars().peekable();
-
-        while let Some(c) = chars.next() {
-            if c != '$' || chars.peek() != Some(&'{') {
-                continue;
-            }
-            chars.next();
-
-            if chars.peek() == Some(&'{') {
-                chars.next();
-                consume_until_double_close(&mut chars, input)?;
-                continue;
-            }
-
-            let body = consume_until_close(&mut chars, input)?;
-            refs.push(parse_reference(&body)?);
-        }
-
+        scan_at(input, 1, &mut refs)?;
         Ok(refs)
     }
 
@@ -290,14 +295,44 @@ impl<'ctx> Interpolator<'ctx> {
     }
 }
 
-fn consume_until_close(chars: &mut Peekable<Chars<'_>>, full: &str) -> Result<String> {
+/// Consume a brace-balanced `${...}` body, the opening `${` already consumed.
+///
+/// Nested `${` sequences are counted so the outer reference's body is returned
+/// intact (e.g. `env.X:-${env.Y}` for `${env.X:-${env.Y}}`). `depth` is the
+/// nesting level of the reference being consumed (1 at the top level); opening
+/// a nested reference beyond [`MAX_INTERPOLATION_DEPTH`] raises
+/// [`ManifestError::InterpolationTooDeep`].
+fn consume_balanced_body(
+    chars: &mut Peekable<Chars<'_>>,
+    full: &str,
+    depth: usize,
+) -> Result<String> {
     let mut body = String::new();
-    for c in chars.by_ref() {
-        if c == '}' {
-            return Ok(body);
+    let mut nesting = 1usize;
+
+    while let Some(c) = chars.next() {
+        if c == '$' && chars.peek() == Some(&'{') {
+            chars.next();
+            nesting += 1;
+            if depth + (nesting - 1) > MAX_INTERPOLATION_DEPTH {
+                return Err(ManifestError::InterpolationTooDeep {
+                    limit: MAX_INTERPOLATION_DEPTH,
+                    context: full.to_owned(),
+                });
+            }
+            body.push('$');
+            body.push('{');
+        } else if c == '}' {
+            nesting -= 1;
+            if nesting == 0 {
+                return Ok(body);
+            }
+            body.push('}');
+        } else {
+            body.push(c);
         }
-        body.push(c);
     }
+
     Err(ManifestError::InvalidInterpolation(format!(
         "unterminated `${{` in `{full}`"
     )))
@@ -317,6 +352,39 @@ fn consume_until_double_close(chars: &mut Peekable<Chars<'_>>, full: &str) -> Re
     )))
 }
 
+/// Scan `input` for `${...}` references at nesting `depth`, appending each
+/// found [`Reference`] to `out` in order and descending into `env` defaults
+/// so nested references surface too.
+fn scan_at(input: &str, depth: usize, out: &mut Vec<Reference>) -> Result<()> {
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c != '$' || chars.peek() != Some(&'{') {
+            continue;
+        }
+        chars.next();
+
+        if chars.peek() == Some(&'{') {
+            chars.next();
+            consume_until_double_close(&mut chars, input)?;
+            continue;
+        }
+
+        let body = consume_balanced_body(&mut chars, input, depth)?;
+        let reference = parse_reference(&body)?;
+        if let Reference::Env {
+            default: Some(raw_default),
+            ..
+        } = &reference
+        {
+            scan_at(raw_default, depth + 1, out)?;
+        }
+        out.push(reference);
+    }
+
+    Ok(())
+}
+
 fn parse_reference(body: &str) -> Result<Reference> {
     if let Some(rest) = body.strip_prefix("resources.") {
         let (name, property) = rest.split_once('.').ok_or_else(|| {
@@ -329,17 +397,32 @@ fn parse_reference(body: &str) -> Result<Reference> {
                 "empty resource reference in `${{{body}}}`"
             )));
         }
+        if name.contains("${") || property.contains("${") {
+            return Err(ManifestError::InvalidInterpolation(format!(
+                "nested interpolation is only allowed in an env default, not in `${{{body}}}`"
+            )));
+        }
         Ok(Reference::Resource {
             name: name.to_owned(),
             property: property.to_owned(),
         })
     } else if let Some(rest) = body.strip_prefix("env.") {
         if let Some((name, default)) = rest.split_once(":-") {
+            if name.contains("${") {
+                return Err(ManifestError::InvalidInterpolation(format!(
+                    "nested interpolation is only allowed in an env default, not in the variable name of `${{{body}}}`"
+                )));
+            }
             Ok(Reference::Env {
                 name: name.to_owned(),
                 default: Some(default.to_owned()),
             })
         } else {
+            if rest.contains("${") {
+                return Err(ManifestError::InvalidInterpolation(format!(
+                    "nested interpolation is only allowed in an env default, not in `${{{body}}}`"
+                )));
+            }
             Ok(Reference::Env {
                 name: rest.to_owned(),
                 default: None,
