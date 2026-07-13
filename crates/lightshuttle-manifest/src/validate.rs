@@ -214,23 +214,31 @@ fn parse_duration(input: &str) -> Result<()> {
 }
 
 fn validate_dependency_graph(resources: &IndexMap<String, ResourceKind>) -> Result<()> {
-    let graph: HashMap<&str, Vec<&str>> = resources
-        .iter()
-        .map(|(name, kind)| {
-            let deps: Vec<&str> = kind.depends_on().iter().map(String::as_str).collect();
-            (name.as_str(), deps)
-        })
-        .collect();
-
-    for (resource, deps) in &graph {
-        for dep in deps {
-            if !graph.contains_key(*dep) {
+    for (resource, kind) in resources {
+        for dep in kind.depends_on() {
+            if !resources.contains_key(dep) {
                 return Err(ManifestError::UnknownResource(format!(
                     "`{dep}` (depended on by `{resource}`)"
                 )));
             }
         }
     }
+
+    let graph: HashMap<&str, Vec<&str>> = resources
+        .iter()
+        .map(|(name, kind)| {
+            let deps: Vec<&str> = kind
+                .merged_dependencies(name)
+                .into_iter()
+                .filter_map(|dep| {
+                    resources
+                        .get_key_value(dep.as_str())
+                        .map(|(k, _)| k.as_str())
+                })
+                .collect();
+            (name.as_str(), deps)
+        })
+        .collect();
 
     let mut colors: HashMap<&str, Color> = graph.keys().map(|n| (*n, Color::White)).collect();
     let nodes: Vec<&str> = graph.keys().copied().collect();

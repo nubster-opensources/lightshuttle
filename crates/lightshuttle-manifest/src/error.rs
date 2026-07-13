@@ -61,6 +61,16 @@ pub enum ManifestError {
     #[error("invalid interpolation: {0}")]
     InvalidInterpolation(String),
 
+    /// A `${...}` interpolation nests deeper than the engine allows,
+    /// guarding against pathological or unbounded manifests.
+    #[error("interpolation nested deeper than the limit of {limit}: `{context}`")]
+    InterpolationTooDeep {
+        /// The maximum nesting depth the engine accepts.
+        limit: usize,
+        /// The offending interpolation string.
+        context: String,
+    },
+
     /// A duration string (healthcheck interval, timeout, start period) is
     /// malformed.
     #[error("invalid duration `{0}`: expected a value like `5s`, `200ms`, `2m`")]

@@ -190,6 +190,24 @@ impl ResourceKind {
         }
         out
     }
+
+    /// Explicit `depends_on` unioned with the implicit dependencies derived
+    /// from `${resources.<name>.*}` interpolations.
+    ///
+    /// Explicit entries keep their declared position, implicit ones are
+    /// appended in first-occurrence order, and the whole list is de-duplicated.
+    /// `own_name` is excluded so a self-referencing interpolation does not turn
+    /// into a spurious cycle.
+    #[must_use]
+    pub fn merged_dependencies(&self, own_name: &str) -> Vec<String> {
+        let mut dependencies = self.depends_on().to_vec();
+        for implicit in self.implicit_dependencies() {
+            if implicit != own_name && !dependencies.contains(&implicit) {
+                dependencies.push(implicit);
+            }
+        }
+        dependencies
+    }
 }
 
 fn command_strings(command: &Command) -> Vec<String> {
