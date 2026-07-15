@@ -6,7 +6,7 @@ Shared configuration types referenced from the manifest sections and resource ki
 
 ## Command
 
-Container entrypoint override.
+Override for the image default `CMD`.
 
 Two forms are accepted in the manifest YAML:
 
@@ -15,6 +15,15 @@ Two forms are accepted in the manifest YAML:
 - An array of strings is passed directly to the container runtime as
   an argument vector, giving precise control over quoting and
   whitespace.
+
+Either form becomes the container `Cmd`. The image `ENTRYPOINT` is
+preserved: it is never overridden, so an image declaring
+`ENTRYPOINT ["/usr/local/bin/app"]` runs that binary with this value
+appended as its arguments. Against such an image, a startup shim
+written as `sh -c "..."` is not executed as a command of its own; it
+reaches the entrypoint binary as positional arguments, which most
+argument parsers reject. Only images whose entrypoint is a shell, or
+which declare no entrypoint at all, run this value directly.
 
 Used in the `command` field of [`crate::ContainerConfig`] and
 [`crate::DockerfileConfig`].

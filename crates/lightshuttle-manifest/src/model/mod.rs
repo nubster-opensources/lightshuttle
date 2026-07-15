@@ -4,7 +4,7 @@
 //! All public types are re-exported here and again at the crate root for
 //! ergonomic access via `use lightshuttle_manifest::TypeName`.
 
-/// Container entrypoint override types.
+/// Container `CMD` override types.
 pub mod command;
 /// Registry-backed container resource configuration.
 pub mod container;

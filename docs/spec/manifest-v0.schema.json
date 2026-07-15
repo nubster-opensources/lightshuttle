@@ -67,7 +67,7 @@
   ],
   "$defs": {
     "Command": {
-      "description": "Container entrypoint override.\n\nTwo forms are accepted in the manifest YAML:\n\n- A single string is interpreted shell-style, equivalent to wrapping\n  the value in `sh -c \"...\"`. Convenient for one-liners.\n- An array of strings is passed directly to the container runtime as\n  an argument vector, giving precise control over quoting and\n  whitespace.\n\nUsed in the `command` field of [`crate::ContainerConfig`] and\n[`crate::DockerfileConfig`].",
+      "description": "Override for the image default `CMD`.\n\nTwo forms are accepted in the manifest YAML:\n\n- A single string is interpreted shell-style, equivalent to wrapping\n  the value in `sh -c \"...\"`. Convenient for one-liners.\n- An array of strings is passed directly to the container runtime as\n  an argument vector, giving precise control over quoting and\n  whitespace.\n\nEither form becomes the container `Cmd`. The image `ENTRYPOINT` is\npreserved: it is never overridden, so an image declaring\n`ENTRYPOINT [\"/usr/local/bin/app\"]` runs that binary with this value\nappended as its arguments. Against such an image, a startup shim\nwritten as `sh -c \"...\"` is not executed as a command of its own; it\nreaches the entrypoint binary as positional arguments, which most\nargument parsers reject. Only images whose entrypoint is a shell, or\nwhich declare no entrypoint at all, run this value directly.\n\nUsed in the `command` field of [`crate::ContainerConfig`] and\n[`crate::DockerfileConfig`].",
       "anyOf": [
         {
           "description": "Shell-style one-liner, e.g. `\"./start.sh --port 8080\"`.",
@@ -115,7 +115,7 @@
       "type": "object",
       "properties": {
         "command": {
-          "description": "Optional entrypoint override. See [`Command`] for the two accepted\nforms (string or argument list).",
+          "description": "Optional override for the image default `CMD`. The image\n`ENTRYPOINT` is preserved. See [`Command`] for the two accepted\nforms (string or argument list) and for what this means against an\nimage whose entrypoint is a binary rather than a shell.",
           "anyOf": [
             {
               "$ref": "#/$defs/Command"
@@ -210,7 +210,7 @@
           }
         },
         "command": {
-          "description": "Optional entrypoint override. See [`Command`] for accepted forms.",
+          "description": "Optional override for the image default `CMD`. The image\n`ENTRYPOINT` is preserved. See [`Command`] for the accepted forms\nand for what this means against an image whose entrypoint is a\nbinary rather than a shell.",
           "anyOf": [
             {
               "$ref": "#/$defs/Command"

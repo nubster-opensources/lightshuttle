@@ -12,7 +12,7 @@ See [`crate::DockerfileConfig`] for the locally-built equivalent.
 
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `command` | [Command](common-types.md#command) | no |  | Optional entrypoint override. See [`Command`] for the two accepted forms (string or argument list). |
+| `command` | [Command](common-types.md#command) | no |  | Optional override for the image default `CMD`. The image `ENTRYPOINT` is preserved. See [`Command`] for the two accepted forms (string or argument list) and for what this means against an image whose entrypoint is a binary rather than a shell. |
 | `depends_on` | array of string | no |  | Names of other resources this container must wait for before starting. Validated by [`crate::Manifest::validate`]. |
 | `env` | map of string | no |  | Environment variables injected into the container at startup. Values are interpolated: `${env.NAME}` and `${resources.name.property}` expressions are resolved at runtime. |
 | `healthcheck` | [Healthcheck](common-types.md#healthcheck) | no |  | Optional healthcheck. Overrides whatever is baked into the image. See [`Healthcheck`] for field semantics and defaults. |

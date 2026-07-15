@@ -54,7 +54,10 @@ pub struct DockerfileConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub volumes: Vec<String>,
 
-    /// Optional entrypoint override. See [`Command`] for accepted forms.
+    /// Optional override for the image default `CMD`. The image
+    /// `ENTRYPOINT` is preserved. See [`Command`] for the accepted forms
+    /// and for what this means against an image whose entrypoint is a
+    /// binary rather than a shell.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<Command>,
 

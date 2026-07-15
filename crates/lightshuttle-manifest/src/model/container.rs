@@ -45,8 +45,10 @@ pub struct ContainerConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub volumes: Vec<String>,
 
-    /// Optional entrypoint override. See [`Command`] for the two accepted
-    /// forms (string or argument list).
+    /// Optional override for the image default `CMD`. The image
+    /// `ENTRYPOINT` is preserved. See [`Command`] for the two accepted
+    /// forms (string or argument list) and for what this means against an
+    /// image whose entrypoint is a binary rather than a shell.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<Command>,
 
