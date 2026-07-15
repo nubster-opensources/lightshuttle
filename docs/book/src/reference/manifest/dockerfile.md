@@ -10,7 +10,7 @@ resulting image as it would for a [`crate::ContainerConfig`].
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `build_args` | map of string | no |  | Build-time `ARG` values passed to `docker build --build-arg`. |
-| `command` | [Command](common-types.md#command) | no |  | Optional entrypoint override. See [`Command`] for accepted forms. |
+| `command` | [Command](common-types.md#command) | no |  | Optional override for the image default `CMD`. The image `ENTRYPOINT` is preserved. See [`Command`] for the accepted forms and for what this means against an image whose entrypoint is a binary rather than a shell. |
 | `context` | string | yes |  | Build context path, relative to the manifest file. Resolved to an absolute path by [`crate::Manifest::resolve_host_volume_paths`] before it is handed to the runtime. |
 | `depends_on` | array of string | no |  | Names of other resources this build must wait for before starting. Validated by [`crate::Manifest::validate`]. |
 | `dockerfile` | string | no | `"Dockerfile"` | Path to the Dockerfile within `context`. Defaults to `"Dockerfile"`. |
