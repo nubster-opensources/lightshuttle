@@ -216,6 +216,12 @@ fn deployment_block(spec: &ContainerSpec, name: &str) -> String {
             let _ = writeln!(s, "        - name: {vol}\n          mountPath: {target}");
         }
     }
+    if let Some(args) = &spec.command {
+        s.push_str("        args:\n");
+        for arg in args {
+            let _ = writeln!(s, "        - {arg}");
+        }
+    }
     if let Some(dir) = &spec.working_dir {
         let _ = writeln!(s, "        workingDir: {dir}");
     }

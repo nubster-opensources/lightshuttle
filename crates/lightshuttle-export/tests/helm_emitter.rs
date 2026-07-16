@@ -18,6 +18,9 @@ resources:
       version: '16'
       password: devsecret
       volume: dbdata
+  cache:
+    redis:
+      version: '7'
   api:
     container:
       image: alpine:3.20
@@ -61,6 +64,11 @@ fn matches_golden_files() {
         file(&a, "templates/db.yaml"),
         include_str!("golden/helm/db.yaml"),
         "templates/db.yaml drifted"
+    );
+    assert_eq!(
+        file(&a, "templates/cache.yaml"),
+        include_str!("golden/helm/cache.yaml"),
+        "cache.yaml drifted from the golden file"
     );
 }
 
@@ -150,6 +158,23 @@ fn portless_worker_matches_golden() {
         file(&a, "templates/worker.yaml"),
         include_str!("golden/helm/worker.yaml"),
         "templates/worker.yaml drifted from the golden file"
+    );
+}
+
+/// The resolved `command` is Docker's `Cmd`, which Kubernetes calls
+/// `args`. The redis resource resolves to `["redis-server"]`; before this
+/// test existed, the Helm emitter dropped it entirely.
+#[test]
+fn emits_resolved_command_as_args() {
+    let a = artifacts(STACK);
+    let cache = file(&a, "templates/cache.yaml");
+    assert!(
+        cache.contains("        args:\n        - redis-server\n"),
+        "cache args missing, got:\n{cache}"
+    );
+    assert!(
+        !cache.contains("        command:\n        - redis-server\n"),
+        "redis-server must be args, not command: command is the entrypoint in Kubernetes, got:\n{cache}"
     );
 }
 
