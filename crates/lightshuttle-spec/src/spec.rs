@@ -127,6 +127,13 @@ pub struct ContainerSpec {
     pub ports: Vec<PortBinding>,
     /// Volume and bind-mount mappings to attach.
     pub volumes: Vec<VolumeBinding>,
+    /// Optional override for the image `ENTRYPOINT`, the executable the
+    /// container runs.
+    ///
+    /// A `Command::Single` string is wrapped as `["sh", "-c", ...]`;
+    /// a `Command::Args` list is passed through as-is. `None` leaves the
+    /// image entrypoint in place.
+    pub entrypoint: Option<Vec<String>>,
     /// Optional command that overrides the image default `CMD`.
     ///
     /// A `Command::Single` string is wrapped as `["sh", "-c", ...]`;
@@ -438,6 +445,7 @@ fn spec_postgres(
         env: env.clone(),
         ports,
         volumes,
+        entrypoint: None,
         command: None,
         healthcheck,
         working_dir: None,
@@ -514,6 +522,7 @@ fn spec_redis(
         env: HashMap::new(),
         ports,
         volumes,
+        entrypoint: None,
         command: Some(command),
         healthcheck,
         working_dir: None,
@@ -552,6 +561,7 @@ fn spec_container(
         .iter()
         .map(|s| parse_volume_string(s))
         .collect::<Result<Vec<_>>>()?;
+    let entrypoint = c.entrypoint.as_ref().map(parse_command);
     let command = c
         .command
         .as_ref()
@@ -572,6 +582,7 @@ fn spec_container(
         env,
         ports,
         volumes,
+        entrypoint,
         command,
         healthcheck,
         working_dir: c.working_dir.clone(),
@@ -611,6 +622,7 @@ fn spec_dockerfile(
         .iter()
         .map(|s| parse_volume_string(s))
         .collect::<Result<Vec<_>>>()?;
+    let entrypoint = c.entrypoint.as_ref().map(parse_command);
     let command = c
         .command
         .as_ref()
@@ -637,6 +649,7 @@ fn spec_dockerfile(
         env,
         ports,
         volumes,
+        entrypoint,
         command,
         healthcheck,
         working_dir: c.working_dir.clone(),
@@ -811,8 +824,8 @@ fn generate_random_password() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        VolumeSource, generate_random_password, parse_command, parse_duration, parse_port_string,
-        parse_volume_string,
+        VolumeSource, from_resource, generate_random_password, parse_command, parse_duration,
+        parse_port_string, parse_volume_string,
     };
     use lightshuttle_manifest::Command;
     use std::time::Duration;
@@ -934,5 +947,81 @@ mod tests {
         let first = generate_random_password();
         let second = generate_random_password();
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn entrypoint_resolves_to_argv_and_leaves_command_alone() {
+        let yaml = r#"
+project:
+  name: app
+resources:
+  svc:
+    dockerfile:
+      context: .
+      entrypoint: ["sh", "-c"]
+      command: ["echo hi"]
+"#;
+        let manifest = lightshuttle_manifest::Manifest::parse(yaml).expect("manifest parses");
+        let resolved =
+            from_resource("app", "svc", &manifest.resources["svc"]).expect("resolution succeeds");
+        assert_eq!(
+            resolved.spec.entrypoint,
+            Some(vec!["sh".to_owned(), "-c".to_owned()])
+        );
+        assert_eq!(
+            resolved.spec.command,
+            Some(vec!["echo hi".to_owned()]),
+            "resolving an entrypoint must not disturb the command"
+        );
+    }
+
+    #[test]
+    fn absent_entrypoint_resolves_to_none() {
+        let yaml = r"
+project:
+  name: app
+resources:
+  svc:
+    dockerfile:
+      context: .
+";
+        let manifest = lightshuttle_manifest::Manifest::parse(yaml).expect("manifest parses");
+        let resolved =
+            from_resource("app", "svc", &manifest.resources["svc"]).expect("resolution succeeds");
+        assert_eq!(
+            resolved.spec.entrypoint, None,
+            "existing manifests must be unaffected"
+        );
+    }
+
+    #[test]
+    fn generated_resources_declare_no_entrypoint() {
+        let yaml = r"
+project:
+  name: app
+resources:
+  cache:
+    redis:
+      version: '7'
+  db:
+    postgres:
+      version: '16'
+";
+        let manifest = lightshuttle_manifest::Manifest::parse(yaml).expect("manifest parses");
+        for name in ["cache", "db"] {
+            let resolved =
+                from_resource("app", name, &manifest.resources[name]).expect("resolution succeeds");
+            assert_eq!(
+                resolved.spec.entrypoint, None,
+                "{name} must keep the image entrypoint"
+            );
+        }
+        let cache = from_resource("app", "cache", &manifest.resources["cache"])
+            .expect("resolution succeeds");
+        assert_eq!(
+            cache.spec.command,
+            Some(vec!["redis-server".to_owned()]),
+            "the redis command must be untouched"
+        );
     }
 }

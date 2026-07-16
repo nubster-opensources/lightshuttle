@@ -148,6 +148,7 @@ fn prepend_collector_resource(manifest: &mut Manifest, config: &CollectorConfig)
         ports: Vec::new(),
         env: IndexMap::new(),
         volumes: Vec::new(),
+        entrypoint: None,
         command: None,
         working_dir: None,
         healthcheck: None,

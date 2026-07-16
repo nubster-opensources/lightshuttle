@@ -54,6 +54,16 @@ pub struct DockerfileConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub volumes: Vec<String>,
 
+    /// Optional override for the image `ENTRYPOINT`, the executable the
+    /// container runs. See [`Command`] for the accepted forms.
+    ///
+    /// Independent from `command`: setting this leaves the image `CMD` in
+    /// place, which means it is appended as arguments to the new entrypoint.
+    /// An empty list is rejected; omit the field to keep the image
+    /// entrypoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entrypoint: Option<Command>,
+
     /// Optional override for the image default `CMD`. The image
     /// `ENTRYPOINT` is preserved. See [`Command`] for the accepted forms
     /// and for what this means against an image whose entrypoint is a

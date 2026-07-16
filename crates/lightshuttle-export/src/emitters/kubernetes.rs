@@ -183,7 +183,7 @@ fn deployment(
                         ports: spec.ports.iter().map(container_port).collect(),
                         env_from,
                         volume_mounts: mounts,
-                        command: None,
+                        command: spec.entrypoint.clone(),
                         args: spec.command.clone(),
                         working_dir: spec.working_dir.clone(),
                         readiness_probe: probe.clone(),

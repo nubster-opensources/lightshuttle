@@ -212,3 +212,32 @@ fn output_passes_helm_lint() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+/// Same translation as the Kubernetes emitter: a chart is Kubernetes.
+#[test]
+fn entrypoint_becomes_helm_command_and_command_becomes_args() {
+    let yaml = r"
+project:
+  name: shop
+  version: 1.4.0
+export:
+  helm:
+    chart_name: shop-chart
+resources:
+  svc:
+    container:
+      image: alpine:3.20
+      entrypoint: ['sh', '-c']
+      command: ['echo hi']
+";
+    let a = artifacts(yaml);
+    let svc = file(&a, "templates/svc.yaml");
+    assert!(
+        svc.contains("        command:\n        - sh\n        - -c\n"),
+        "the manifest entrypoint must become the chart command, got:\n{svc}"
+    );
+    assert!(
+        svc.contains("        args:\n        - echo hi\n"),
+        "the manifest command must become args, got:\n{svc}"
+    );
+}

@@ -91,4 +91,15 @@ pub enum ManifestError {
         /// The offending port value.
         port: u16,
     },
+
+    /// An `entrypoint` was declared as an empty list. Clearing an image
+    /// entrypoint is not supported: the Engine API and Compose disagree on
+    /// how to express it, and no use case requires it yet.
+    #[error(
+        "`entrypoint` on resource `{resource}` is an empty list: remove the field to keep the image entrypoint, or give it an argument vector"
+    )]
+    EmptyEntrypoint {
+        /// The resource whose configuration is in error.
+        resource: String,
+    },
 }

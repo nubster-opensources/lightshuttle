@@ -90,6 +90,7 @@ fn probe_spec(project: &str) -> ContainerSpec {
         env: HashMap::new(),
         ports: Vec::new(),
         volumes: Vec::new(),
+        entrypoint: None,
         command: Some(vec![
             "sh".to_owned(),
             "-c".to_owned(),

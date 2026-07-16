@@ -374,6 +374,7 @@ impl ContainerRuntime for DockerRuntime {
         let config = ContainerCreateBody {
             image: Some(image_ref),
             env: Some(env),
+            entrypoint: spec.entrypoint.clone(),
             cmd: spec.command.clone(),
             working_dir: spec.working_dir.clone(),
             host_config: Some(host_config),

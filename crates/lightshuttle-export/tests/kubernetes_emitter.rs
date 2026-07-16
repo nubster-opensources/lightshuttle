@@ -237,3 +237,30 @@ fn emits_resolved_command_as_args_not_command() {
         "redis-server must be args, not command, got:\n{cache}"
     );
 }
+
+/// The translation table applied end to end: the manifest `entrypoint`
+/// becomes the Kubernetes `command`, and the manifest `command` becomes
+/// `args`. Kubernetes is the only target that crosses the two names.
+#[test]
+fn entrypoint_becomes_kubernetes_command_and_command_becomes_args() {
+    let yaml = r"
+project:
+  name: shop
+resources:
+  svc:
+    container:
+      image: alpine:3.20
+      entrypoint: ['sh', '-c']
+      command: ['echo hi']
+";
+    let a = artifacts(yaml);
+    let svc = file(&a, "svc.yaml");
+    assert!(
+        svc.contains("        command:\n        - sh\n        - -c\n"),
+        "the manifest entrypoint must become the Kubernetes command, got:\n{svc}"
+    );
+    assert!(
+        svc.contains("        args:\n        - echo hi\n"),
+        "the manifest command must become args, got:\n{svc}"
+    );
+}

@@ -132,6 +132,17 @@
             "type": "string"
           }
         },
+        "entrypoint": {
+          "description": "Optional override for the image `ENTRYPOINT`, the executable the\ncontainer runs. See [`Command`] for the accepted forms.\n\nIndependent from `command`: setting this leaves the image `CMD` in\nplace, which means it is appended as arguments to the new entrypoint.\nAn empty list is rejected; omit the field to keep the image\nentrypoint.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Command"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "env": {
           "description": "Environment variables injected into the container at startup.\n\nValues are interpolated: `${env.NAME}` and\n`${resources.name.property}` expressions are resolved at runtime.",
           "type": "object",
@@ -235,6 +246,17 @@
           "description": "Path to the Dockerfile within `context`. Defaults to `\"Dockerfile\"`.",
           "type": "string",
           "default": "Dockerfile"
+        },
+        "entrypoint": {
+          "description": "Optional override for the image `ENTRYPOINT`, the executable the\ncontainer runs. See [`Command`] for the accepted forms.\n\nIndependent from `command`: setting this leaves the image `CMD` in\nplace, which means it is appended as arguments to the new entrypoint.\nAn empty list is rejected; omit the field to keep the image\nentrypoint.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Command"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "env": {
           "description": "Environment variables injected into the container at runtime.\n\nValues support `${env.NAME}` and `${resources.name.property}`\ninterpolation.",

@@ -17,6 +17,7 @@ fn spec(name: &str) -> ContainerSpec {
         env: HashMap::new(),
         ports: Vec::new(),
         volumes: Vec::new(),
+        entrypoint: None,
         command: None,
         healthcheck: None,
         working_dir: None,

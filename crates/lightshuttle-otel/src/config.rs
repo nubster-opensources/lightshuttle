@@ -128,6 +128,7 @@ impl CollectorConfig {
                 },
             ],
             volumes: Vec::new(),
+            entrypoint: None,
             command: None,
             // No Docker healthcheck. The previous `... || exit 0` probe
             // always reported healthy and masked a crashed collector. The

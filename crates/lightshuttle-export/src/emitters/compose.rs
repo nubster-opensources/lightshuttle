@@ -86,6 +86,8 @@ struct ComposeService {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     volumes: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    entrypoint: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     command: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     healthcheck: Option<ComposeHealthcheck>,
@@ -162,6 +164,7 @@ fn compose_service(service: &ExportService, model: &ExportModel) -> ComposeServi
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect(),
         volumes: spec.volumes.iter().map(volume_string).collect(),
+        entrypoint: spec.entrypoint.clone(),
         command: spec.command.clone(),
         healthcheck: spec.healthcheck.as_ref().map(|hc| ComposeHealthcheck {
             test: hc.test.clone(),
