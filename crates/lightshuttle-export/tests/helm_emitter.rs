@@ -430,6 +430,24 @@ resources:
     }
 }
 
+/// Reparse the first document of an emitted Helm template as YAML,
+/// preserving every byte after the leading Go template directive line,
+/// including all trailing newlines. Go's templater consumes the
+/// `{{- $svc := ... -}}` directive line before the YAML parser ever
+/// sees it, so that one line is dropped here; nothing else is touched.
+/// A lenient reconstruction built from `str::lines()` drops the final
+/// line terminator and never yields a trailing empty line, silently
+/// masking a trailing-newline bug in the emitter this oracle exists to
+/// catch, so this helper preserves trailing bytes exactly instead.
+fn reparse_first_document(svc: &str) -> serde_norway::Value {
+    let first_doc = svc.split("---").next().expect("at least one document");
+    let without_directive = first_doc
+        .split_once('\n')
+        .expect("template has a leading directive line")
+        .1;
+    serde_norway::from_str(without_directive).expect("the emitted chart must reparse as YAML")
+}
+
 /// Fix wave 2, Critical B. `serde_norway` indents a block scalar's body
 /// two columns from the document root, but this emitter splices the
 /// result after a `        - ` list marker (column 10): an unindented
@@ -454,19 +472,7 @@ resources:
     let a = artifacts(&yaml);
     let svc = file(&a, "templates/svc.yaml");
 
-    let first_doc = svc.split("---").next().expect("at least one document");
-    // Go's templater consumes the leading `{{- $svc := ... -}}`
-    // directive before the YAML parser ever runs; drop that one line
-    // here so the reparse below is not derailed by an unrelated
-    // concern (this file emits raw, unrendered Go template text).
-    let without_directive: String = first_doc
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("{{-"))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let parsed: serde_norway::Value = serde_norway::from_str(&without_directive)
-        .expect("the emitted chart must reparse as YAML after Fix B");
+    let parsed = reparse_first_document(svc);
     let args = parsed["spec"]["template"]["spec"]["containers"][0]["args"]
         .as_sequence()
         .expect("args is a sequence");
@@ -508,19 +514,7 @@ resources:
     let a = artifacts(&yaml);
     let svc = file(&a, "templates/svc.yaml");
 
-    let first_doc = svc.split("---").next().expect("at least one document");
-    // Go's templater consumes the leading `{{- $svc := ... -}}`
-    // directive before the YAML parser ever runs; drop that one line
-    // here so the reparse below is not derailed by an unrelated
-    // concern (this file emits raw, unrendered Go template text).
-    let without_directive: String = first_doc
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("{{-"))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let parsed: serde_norway::Value =
-        serde_norway::from_str(&without_directive).expect("the emitted chart must reparse as YAML");
+    let parsed = reparse_first_document(svc);
     let args = parsed["spec"]["template"]["spec"]["containers"][0]["args"]
         .as_sequence()
         .expect("args is a sequence");
