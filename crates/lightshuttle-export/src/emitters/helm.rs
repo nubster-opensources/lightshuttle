@@ -451,8 +451,16 @@ const ARGV_SCALAR_COLUMN: usize = 10;
 /// [`ARGV_SCALAR_COLUMN`], the column where the list item's scalar
 /// starts.
 fn yaml_scalar(value: &str) -> String {
-    let serialised = serde_norway::to_string(value)
-        .map_or_else(|_| value.to_owned(), |s| s.trim_end().to_owned());
+    let serialised = serde_norway::to_string(value).map_or_else(
+        |_| value.to_owned(),
+        |s| {
+            if value.ends_with('\n') {
+                s
+            } else {
+                s.strip_suffix('\n').unwrap_or(&s).to_owned()
+            }
+        },
+    );
     let escaped = serialised.replace("{{", r#"{{ "{{" }}"#);
     reindent_block_scalar(&escaped, ARGV_SCALAR_COLUMN)
 }
