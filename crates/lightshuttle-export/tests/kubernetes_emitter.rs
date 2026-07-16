@@ -21,6 +21,9 @@ resources:
       version: '16'
       password: devsecret
       volume: dbdata
+  cache:
+    redis:
+      version: '7'
   api:
     container:
       image: alpine:3.20
@@ -59,6 +62,11 @@ fn matches_golden_files() {
         file(&a, "db.yaml"),
         include_str!("golden/k8s/db.yaml"),
         "db.yaml drifted from the golden file"
+    );
+    assert_eq!(
+        file(&a, "cache.yaml"),
+        include_str!("golden/k8s/cache.yaml"),
+        "cache.yaml drifted from the golden file"
     );
 }
 
@@ -209,5 +217,23 @@ fn portless_worker_matches_golden() {
         file(&a, "worker.yaml"),
         include_str!("golden/k8s/worker.yaml"),
         "worker.yaml drifted from the golden file"
+    );
+}
+
+/// The resolved `command` is Docker's `Cmd`. Kubernetes calls that `args`;
+/// its `command` field is Docker's `ENTRYPOINT`. Emitting the resolved
+/// command as `command` replaces the image entrypoint, which makes
+/// `lightshuttle up` and `lightshuttle export kubernetes` disagree.
+#[test]
+fn emits_resolved_command_as_args_not_command() {
+    let a = artifacts(STACK);
+    let cache = file(&a, "cache.yaml");
+    assert!(
+        cache.contains("        args:\n        - redis-server\n"),
+        "cache args missing, got:\n{cache}"
+    );
+    assert!(
+        !cache.contains("        command:\n        - redis-server\n"),
+        "redis-server must be args, not command, got:\n{cache}"
     );
 }
