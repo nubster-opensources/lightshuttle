@@ -125,3 +125,25 @@ fn environment_is_sorted() {
     let log = out.find("LOG_LEVEL").expect("LOG_LEVEL present");
     assert!(app < log, "environment keys should be sorted, got:\n{out}");
 }
+
+/// Compose names both concepts as the manifest does, so this is a
+/// pass-through: `entrypoint` is the executable, `command` its arguments.
+#[test]
+fn emits_entrypoint_and_command_separately() {
+    let yaml = r"
+project:
+  name: shop
+resources:
+  svc:
+    container:
+      image: alpine:3.20
+      entrypoint: ['sh', '-c']
+      command: ['echo hi']
+";
+    let out = emit(yaml);
+    assert!(
+        out.contains("entrypoint:\n    - sh\n    - -c\n"),
+        "got:\n{out}"
+    );
+    assert!(out.contains("command:\n    - echo hi\n"), "got:\n{out}");
+}

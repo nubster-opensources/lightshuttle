@@ -14,6 +14,7 @@ resulting image as it would for a [`crate::ContainerConfig`].
 | `context` | string | yes |  | Build context path, relative to the manifest file. Resolved to an absolute path by [`crate::Manifest::resolve_host_volume_paths`] before it is handed to the runtime. |
 | `depends_on` | array of string | no |  | Names of other resources this build must wait for before starting. Validated by [`crate::Manifest::validate`]. |
 | `dockerfile` | string | no | `"Dockerfile"` | Path to the Dockerfile within `context`. Defaults to `"Dockerfile"`. |
+| `entrypoint` | [Command](common-types.md#command) | no |  | Optional override for the image `ENTRYPOINT`, the executable the container runs. See [`Command`] for the accepted forms. Setting this discards the image `CMD`: every target (the Engine API, Compose and Kubernetes) ignores the image default command once an entrypoint is overridden. Set `command` as well to supply arguments. An empty list or a blank string is rejected; omit the field to keep the image entrypoint. |
 | `env` | map of string | no |  | Environment variables injected into the container at runtime. Values support `${env.NAME}` and `${resources.name.property}` interpolation. |
 | `healthcheck` | [Healthcheck](common-types.md#healthcheck) | no |  | Optional healthcheck override. See [`Healthcheck`] for field semantics. |
 | `ports` | array of [PortMapping](common-types.md#portmapping) | no |  | Port mappings between the host and the container. See [`PortMapping`]. |

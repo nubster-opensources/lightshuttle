@@ -21,7 +21,7 @@ use indexmap::IndexMap;
 
 use crate::error::{ManifestError, Result};
 use crate::interpolate::{InterpolationContext, Interpolator, Reference};
-use crate::model::{Healthcheck, Manifest, ResourceKind};
+use crate::model::{Command, Healthcheck, Manifest, ResourceKind};
 
 const NAME_PATTERN: &str = "^[a-z][a-z0-9_-]{0,31}$";
 const DATABASE_PATTERN: &str = "^[a-z][a-z0-9_]{0,62}$";
@@ -162,6 +162,7 @@ fn validate_resource_kind(name: &str, kind: &ResourceKind) -> Result<()> {
                     field: "image",
                 });
             }
+            validate_entrypoint(name, c.entrypoint.as_ref())?;
         }
         ResourceKind::Dockerfile(c) => {
             if c.context.trim().is_empty() {
@@ -170,6 +171,7 @@ fn validate_resource_kind(name: &str, kind: &ResourceKind) -> Result<()> {
                     field: "context",
                 });
             }
+            validate_entrypoint(name, c.entrypoint.as_ref())?;
         }
         ResourceKind::Redis(_) => {}
     }
@@ -178,6 +180,30 @@ fn validate_resource_kind(name: &str, kind: &ResourceKind) -> Result<()> {
         validate_healthcheck(hc)?;
     }
 
+    Ok(())
+}
+
+/// Rejects `entrypoint: []` and an empty (or whitespace-only) `entrypoint: ""`.
+///
+/// An empty list form, spelled `entrypoint: []` in Compose, is refused at
+/// the door: it resolves to a container with no command at all. A blank
+/// string form is rejected under the same error: it resolves to
+/// `["sh", "-c", ""]`, a container that exits instantly. The Docker Engine
+/// API's own reset spelling, `entrypoint: [""]`, is a one-element list, not
+/// an empty one, so it is not caught here and passes through unchanged.
+/// Whether that spelling should also be refused is out of scope for v0
+/// (locked design decision, left unarbitrated on purpose).
+fn validate_entrypoint(name: &str, entrypoint: Option<&Command>) -> Result<()> {
+    let is_empty = match entrypoint {
+        Some(Command::Args(args)) => args.is_empty(),
+        Some(Command::Single(s)) => s.trim().is_empty(),
+        None => false,
+    };
+    if is_empty {
+        return Err(ManifestError::EmptyEntrypoint {
+            resource: name.to_owned(),
+        });
+    }
     Ok(())
 }
 

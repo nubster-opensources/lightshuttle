@@ -216,6 +216,18 @@ fn deployment_block(spec: &ContainerSpec, name: &str) -> String {
             let _ = writeln!(s, "        - name: {vol}\n          mountPath: {target}");
         }
     }
+    if let Some(entrypoint) = &spec.entrypoint {
+        s.push_str("        command:\n");
+        for arg in entrypoint {
+            let _ = writeln!(s, "        - {}", yaml_scalar(arg));
+        }
+    }
+    if let Some(args) = &spec.command {
+        s.push_str("        args:\n");
+        for arg in args {
+            let _ = writeln!(s, "        - {}", yaml_scalar(arg));
+        }
+    }
     if let Some(dir) = &spec.working_dir {
         let _ = writeln!(s, "        workingDir: {dir}");
     }
@@ -400,6 +412,72 @@ fn to_yaml<T: Serialize>(value: &T) -> Result<String> {
         target: "helm",
         reason: format!("failed to serialise chart data: {e}"),
     })
+}
+
+/// Column, counted from the start of the line, at which a
+/// `command:`/`args:` list item's scalar begins: `        - ` is eight
+/// spaces, a dash and a space.
+const ARGV_SCALAR_COLUMN: usize = 10;
+
+/// Render a single string as a YAML scalar for splicing into the
+/// hand-written `command:`/`args:` blocks below, closing the Go
+/// `text/template` injection hazard those blocks are exposed to.
+///
+/// Two mechanisms are layered here, in this order:
+///
+/// 1. The value is quoted exactly as `serde_norway` would quote it when
+///    serialising the same value as part of a typed struct (as the
+///    Kubernetes emitter does): an argument containing `: ` is
+///    single-quoted so it is not read as a YAML mapping, and a
+///    multi-line argument becomes a literal block scalar.
+/// 2. Helm renders every file under a chart's `templates/` directory
+///    through Go `text/template` BEFORE any YAML parser sees it, so
+///    YAML quoting alone does nothing against `{{`: a value quoted as
+///    `'{{ .Values.x }}'` is handed to Go's templater as the literal
+///    characters `{{ .Values.x }}`, which Go evaluates as a template
+///    action at `helm install` time, quotes or not. Every `{{` in the
+///    already-serialised scalar is therefore additionally escaped to
+///    the Helm literal `{{ "{{" }}`, which Go renders back to a literal
+///    `{{` before the YAML parser ever runs. This is the point where
+///    the Helm emitter's raw template text deliberately diverges from
+///    what the Kubernetes emitter emits for the same value: the two
+///    agree again only after Helm renders.
+///
+/// A multi-line value also needs its block scalar body re-indented:
+/// `serde_norway` indents a block scalar's body two columns from the
+/// document root, but the result here is spliced after a `        - `
+/// list marker, so an unindented body would dedent out of the list
+/// item and the chart would fail to parse. The body is shifted to
+/// [`ARGV_SCALAR_COLUMN`], the column where the list item's scalar
+/// starts.
+fn yaml_scalar(value: &str) -> String {
+    let serialised = serde_norway::to_string(value).map_or_else(
+        |_| value.to_owned(),
+        |s| s.strip_suffix('\n').unwrap_or(&s).to_owned(),
+    );
+    let escaped = serialised.replace("{{", r#"{{ "{{" }}"#);
+    reindent_block_scalar(&escaped, ARGV_SCALAR_COLUMN)
+}
+
+/// Shift the body of a literal or folded block scalar (`serde_norway`'s
+/// `|`, `|-`, `|2-`, ... forms) from its default two-column indentation
+/// to `column`. A plain or quoted single-line scalar has no body to
+/// shift and is returned unchanged.
+fn reindent_block_scalar(scalar: &str, column: usize) -> String {
+    let Some(newline_at) = scalar.find('\n') else {
+        return scalar.to_owned();
+    };
+    let (header, body) = scalar.split_at(newline_at);
+    let pad = " ".repeat(column.saturating_sub(2));
+    let mut out = header.to_owned();
+    for line in body[1..].split('\n') {
+        out.push('\n');
+        if !line.is_empty() {
+            out.push_str(&pad);
+        }
+        out.push_str(line);
+    }
+    out
 }
 
 // --- Typed chart data ---------------------------------------------------

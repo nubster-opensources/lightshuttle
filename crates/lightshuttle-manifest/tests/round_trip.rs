@@ -1,7 +1,7 @@
 //! Round-trip tests: parse a manifest, re-serialise it, parse again, and
 //! confirm the two parsed values are equal.
 
-use lightshuttle_manifest::{Manifest, ResourceKind};
+use lightshuttle_manifest::{Command, Manifest, ResourceKind};
 
 const HELLO_WORLD: &str = include_str!("fixtures/hello-world.yml");
 const REAL_WORLD: &str = include_str!("fixtures/real-world.yml");
@@ -50,4 +50,31 @@ fn preserves_resource_order() {
     let manifest = Manifest::parse(REAL_WORLD).unwrap();
     let names: Vec<&str> = manifest.resources.keys().map(String::as_str).collect();
     assert_eq!(names, vec!["cache", "api_db", "api", "frontend"]);
+}
+
+#[test]
+fn entrypoint_and_command_are_independent() {
+    let yaml = r#"
+project:
+  name: app
+resources:
+  svc:
+    dockerfile:
+      context: .
+      entrypoint: ["sh", "-c"]
+      command: ["echo hi"]
+"#;
+    let manifest = Manifest::parse(yaml).expect("manifest parses");
+    let ResourceKind::Dockerfile(c) = &manifest.resources["svc"] else {
+        panic!("expected a dockerfile resource");
+    };
+    assert_eq!(
+        c.entrypoint,
+        Some(Command::Args(vec!["sh".to_owned(), "-c".to_owned()]))
+    );
+    assert_eq!(
+        c.command,
+        Some(Command::Args(vec!["echo hi".to_owned()])),
+        "setting entrypoint must not disturb command"
+    );
 }

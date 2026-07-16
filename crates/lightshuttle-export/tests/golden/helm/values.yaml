@@ -10,6 +10,12 @@ services:
       LOG_LEVEL: info
     secrets:
       API_TOKEN: '***'
+  cache:
+    replicas: 1
+    image:
+      repository: redis
+      tag: 7-alpine
+      pullPolicy: IfNotPresent
   db:
     replicas: 1
     image:

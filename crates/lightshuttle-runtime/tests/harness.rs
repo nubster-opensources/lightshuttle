@@ -6,7 +6,6 @@
 
 mod common;
 
-use std::collections::HashMap;
 use std::time::Duration;
 
 use lightshuttle_runtime::{
@@ -82,22 +81,18 @@ async fn wait_for_healthy_times_out_without_events() {
 }
 
 fn probe_spec(project: &str) -> ContainerSpec {
-    ContainerSpec {
-        name: format!("{project}-probe"),
-        project: project.to_owned(),
-        resource: "probe".to_owned(),
-        image: ImageSource::Pull("alpine:3.20".to_owned()),
-        env: HashMap::new(),
-        ports: Vec::new(),
-        volumes: Vec::new(),
-        command: Some(vec![
-            "sh".to_owned(),
-            "-c".to_owned(),
-            "sleep 30".to_owned(),
-        ]),
-        healthcheck: None,
-        working_dir: None,
-    }
+    let mut spec = ContainerSpec::new(
+        format!("{project}-probe"),
+        project.to_owned(),
+        "probe".to_owned(),
+        ImageSource::Pull("alpine:3.20".to_owned()),
+    );
+    spec.command = Some(vec![
+        "sh".to_owned(),
+        "-c".to_owned(),
+        "sleep 30".to_owned(),
+    ]);
+    spec
 }
 
 #[tokio::test]

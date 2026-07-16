@@ -21,6 +21,9 @@ resources:
       version: '16'
       password: devsecret
       volume: dbdata
+  cache:
+    redis:
+      version: '7'
   api:
     container:
       image: alpine:3.20
@@ -59,6 +62,11 @@ fn matches_golden_files() {
         file(&a, "db.yaml"),
         include_str!("golden/k8s/db.yaml"),
         "db.yaml drifted from the golden file"
+    );
+    assert_eq!(
+        file(&a, "cache.yaml"),
+        include_str!("golden/k8s/cache.yaml"),
+        "cache.yaml drifted from the golden file"
     );
 }
 
@@ -209,5 +217,86 @@ fn portless_worker_matches_golden() {
         file(&a, "worker.yaml"),
         include_str!("golden/k8s/worker.yaml"),
         "worker.yaml drifted from the golden file"
+    );
+}
+
+/// The resolved `command` is Docker's `Cmd`. Kubernetes calls that `args`;
+/// its `command` field is Docker's `ENTRYPOINT`. Emitting the resolved
+/// command as `command` replaces the image entrypoint, which makes
+/// `lightshuttle up` and `lightshuttle export kubernetes` disagree.
+#[test]
+fn emits_resolved_command_as_args_not_command() {
+    let a = artifacts(STACK);
+    let cache = file(&a, "cache.yaml");
+    assert!(
+        cache.contains("        args:\n        - redis-server\n"),
+        "cache args missing, got:\n{cache}"
+    );
+    assert!(
+        !cache.contains("        command:\n        - redis-server\n"),
+        "redis-server must be args, not command, got:\n{cache}"
+    );
+}
+
+/// The translation table applied end to end: the manifest `entrypoint`
+/// becomes the Kubernetes `command`, and the manifest `command` becomes
+/// `args`. Kubernetes is the only target that crosses the two names.
+#[test]
+fn entrypoint_becomes_kubernetes_command_and_command_becomes_args() {
+    let yaml = r"
+project:
+  name: shop
+resources:
+  svc:
+    container:
+      image: alpine:3.20
+      entrypoint: ['sh', '-c']
+      command: ['echo hi']
+";
+    let a = artifacts(yaml);
+    let svc = file(&a, "svc.yaml");
+    assert!(
+        svc.contains("        command:\n        - sh\n        - -c\n"),
+        "the manifest entrypoint must become the Kubernetes command, got:\n{svc}"
+    );
+    assert!(
+        svc.contains("        args:\n        - echo hi\n"),
+        "the manifest command must become args, got:\n{svc}"
+    );
+}
+
+/// Fix wave 2, folded-in oracle for the Helm Critical A fix. A
+/// Kubernetes manifest has no template engine: an argument containing
+/// `{{` is only ever read by a YAML parser, so quoting alone is enough
+/// and Go-escaping it would corrupt the value written to the cluster.
+/// This pins the divergence from the Helm emitter
+/// (`helm_escapes_template_braces_to_close_the_injection` in
+/// `helm_emitter.rs`) as intentional: the two emitters agree again only
+/// after Helm renders.
+#[test]
+fn kubernetes_does_not_escape_template_braces() {
+    let original = "redis {{ .Values.x }} arg";
+    let yaml = format!(
+        r"
+project:
+  name: shop
+resources:
+  svc:
+    container:
+      image: alpine:3.20
+      command: [{original:?}]
+"
+    );
+    let a = artifacts(&yaml);
+    let svc = file(&a, "svc.yaml");
+
+    assert!(
+        svc.contains(original),
+        "the Kubernetes manifest has no template engine and must keep \
+         the raw `{{{{` opener, got:\n{svc}"
+    );
+    assert!(
+        !svc.contains(r#"{{ "{{" }}"#),
+        "the Kubernetes emitter must never apply the Helm escape, got:\n{svc}"
     );
 }

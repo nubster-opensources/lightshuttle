@@ -14,6 +14,7 @@ use super::{command::Command, healthcheck::Healthcheck, port::PortMapping};
 ///
 /// The runtime performs a `docker build` in `context`, then starts the
 /// resulting image as it would for a [`crate::ContainerConfig`].
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DockerfileConfig {
@@ -54,6 +55,17 @@ pub struct DockerfileConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub volumes: Vec<String>,
 
+    /// Optional override for the image `ENTRYPOINT`, the executable the
+    /// container runs. See [`Command`] for the accepted forms.
+    ///
+    /// Setting this discards the image `CMD`: every target (the Engine
+    /// API, Compose and Kubernetes) ignores the image default command
+    /// once an entrypoint is overridden. Set `command` as well to supply
+    /// arguments. An empty list or a blank string is rejected; omit the
+    /// field to keep the image entrypoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entrypoint: Option<Command>,
+
     /// Optional override for the image default `CMD`. The image
     /// `ENTRYPOINT` is preserved. See [`Command`] for the accepted forms
     /// and for what this means against an image whose entrypoint is a
@@ -77,4 +89,31 @@ pub struct DockerfileConfig {
 
 fn default_dockerfile() -> String {
     "Dockerfile".to_owned()
+}
+
+impl DockerfileConfig {
+    /// Builds a [`DockerfileConfig`] for the given build `context`, with
+    /// the Dockerfile path defaulted to `"Dockerfile"` and every other
+    /// field (build args, target, ports, env, volumes, entrypoint,
+    /// command, working directory, healthcheck, dependencies) defaulted
+    /// to empty or `None`.
+    ///
+    /// Callers set the remaining fields as needed.
+    #[must_use]
+    pub fn new(context: String) -> Self {
+        Self {
+            context,
+            dockerfile: default_dockerfile(),
+            build_args: IndexMap::new(),
+            target: None,
+            ports: Vec::new(),
+            env: IndexMap::new(),
+            volumes: Vec::new(),
+            entrypoint: None,
+            command: None,
+            working_dir: None,
+            healthcheck: None,
+            depends_on: Vec::new(),
+        }
+    }
 }

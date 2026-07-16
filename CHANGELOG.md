@@ -7,7 +7,15 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 ## [Unreleased]
 
 ### Added
-- _Items in flight will be listed here until the next release._
+- `entrypoint` manifest field for `container` and `dockerfile` resources, overriding the image `ENTRYPOINT` independently of `command` (#259): setting `entrypoint` discards the image `CMD`, so `command` must be set as well to supply arguments.
+
+### Changed
+- `ContainerSpec` (`lightshuttle-spec`), `ContainerConfig` and `DockerfileConfig` (`lightshuttle-manifest`) gained the `entrypoint` field. These are public structs with public fields and no `#[non_exhaustive]`, so this is a breaking change for any struct-literal construction of these types downstream. The workspace is bumped to 0.5.0 accordingly.
+- All three structs are now `#[non_exhaustive]` and gain a `new` constructor for their required fields. Downstream code constructs them via `new(...)` plus field assignment instead of a struct literal; future field additions are no longer a breaking change.
+
+### Fixed
+- The Helm emitter no longer drops the resolved `command`: it was silently lost, for example a redis `--requirepass` value (#261).
+- The Kubernetes emitter and the Helm emitter no longer write the resolved `command` into the `command` field. In Kubernetes and Helm, `command` is the entrypoint, not the argument list: writing the resolved `command` there replaced the image entrypoint, so `lightshuttle up` and `lightshuttle export kubernetes`/`export helm` produced different containers. Previously exported Kubernetes manifests and Helm charts put the command in the wrong field: re-export them (#262).
 
 ## [0.4.0] - 2026-06-03
 

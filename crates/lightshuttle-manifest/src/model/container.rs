@@ -17,6 +17,7 @@ use super::{command::Command, healthcheck::Healthcheck, port::PortMapping};
 /// and injects environment variables before starting the container.
 ///
 /// See [`crate::DockerfileConfig`] for the locally-built equivalent.
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ContainerConfig {
@@ -45,6 +46,17 @@ pub struct ContainerConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub volumes: Vec<String>,
 
+    /// Optional override for the image `ENTRYPOINT`, the executable the
+    /// container runs. See [`Command`] for the accepted forms.
+    ///
+    /// Setting this discards the image `CMD`: every target (the Engine
+    /// API, Compose and Kubernetes) ignores the image default command
+    /// once an entrypoint is overridden. Set `command` as well to supply
+    /// arguments. An empty list or a blank string is rejected; omit the
+    /// field to keep the image entrypoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entrypoint: Option<Command>,
+
     /// Optional override for the image default `CMD`. The image
     /// `ENTRYPOINT` is preserved. See [`Command`] for the two accepted
     /// forms (string or argument list) and for what this means against an
@@ -66,4 +78,26 @@ pub struct ContainerConfig {
     /// starting. Validated by [`crate::Manifest::validate`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<String>,
+}
+
+impl ContainerConfig {
+    /// Builds a [`ContainerConfig`] pulling `image`, with no port mappings,
+    /// environment variables, volumes, entrypoint, command, working
+    /// directory, healthcheck or dependencies.
+    ///
+    /// Callers set the remaining fields as needed.
+    #[must_use]
+    pub fn new(image: String) -> Self {
+        Self {
+            image,
+            ports: Vec::new(),
+            env: IndexMap::new(),
+            volumes: Vec::new(),
+            entrypoint: None,
+            command: None,
+            working_dir: None,
+            healthcheck: None,
+            depends_on: Vec::new(),
+        }
+    }
 }

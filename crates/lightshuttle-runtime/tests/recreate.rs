@@ -2,25 +2,18 @@
 //! duplicate container name and accept a fresh start once the previous
 //! container has been removed.
 
-use std::collections::HashMap;
 use std::time::Duration;
 
 use lightshuttle_runtime::testkit::MockRuntime;
 use lightshuttle_runtime::{ContainerRuntime, ContainerSpec, ImageSource};
 
 fn spec(name: &str) -> ContainerSpec {
-    ContainerSpec {
-        name: name.to_owned(),
-        project: "app".to_owned(),
-        resource: name.to_owned(),
-        image: ImageSource::Pull("alpine".to_owned()),
-        env: HashMap::new(),
-        ports: Vec::new(),
-        volumes: Vec::new(),
-        command: None,
-        healthcheck: None,
-        working_dir: None,
-    }
+    ContainerSpec::new(
+        name.to_owned(),
+        "app".to_owned(),
+        name.to_owned(),
+        ImageSource::Pull("alpine".to_owned()),
+    )
 }
 
 #[tokio::test]
