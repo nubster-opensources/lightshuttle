@@ -133,7 +133,7 @@
           }
         },
         "entrypoint": {
-          "description": "Optional override for the image `ENTRYPOINT`, the executable the\ncontainer runs. See [`Command`] for the accepted forms.\n\nSetting this discards the image `CMD`: every target (the Engine\nAPI, Compose and Kubernetes) ignores the image default command\nonce an entrypoint is overridden. Set `command` as well to supply\narguments. An empty list is rejected; omit the field to keep the\nimage entrypoint.",
+          "description": "Optional override for the image `ENTRYPOINT`, the executable the\ncontainer runs. See [`Command`] for the accepted forms.\n\nSetting this discards the image `CMD`: every target (the Engine\nAPI, Compose and Kubernetes) ignores the image default command\nonce an entrypoint is overridden. Set `command` as well to supply\narguments. An empty list or a blank string is rejected; omit the\nfield to keep the image entrypoint.",
           "anyOf": [
             {
               "$ref": "#/$defs/Command"
@@ -248,7 +248,7 @@
           "default": "Dockerfile"
         },
         "entrypoint": {
-          "description": "Optional override for the image `ENTRYPOINT`, the executable the\ncontainer runs. See [`Command`] for the accepted forms.\n\nSetting this discards the image `CMD`: every target (the Engine\nAPI, Compose and Kubernetes) ignores the image default command\nonce an entrypoint is overridden. Set `command` as well to supply\narguments. An empty list is rejected; omit the field to keep the\nimage entrypoint.",
+          "description": "Optional override for the image `ENTRYPOINT`, the executable the\ncontainer runs. See [`Command`] for the accepted forms.\n\nSetting this discards the image `CMD`: every target (the Engine\nAPI, Compose and Kubernetes) ignores the image default command\nonce an entrypoint is overridden. Set `command` as well to supply\narguments. An empty list or a blank string is rejected; omit the\nfield to keep the image entrypoint.",
           "anyOf": [
             {
               "$ref": "#/$defs/Command"

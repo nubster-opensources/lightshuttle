@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 ## [Unreleased]
 
 ### Added
-- `entrypoint` manifest field for `container` and `dockerfile` resources, overriding the image `ENTRYPOINT` independently of `command` (#259).
+- `entrypoint` manifest field for `container` and `dockerfile` resources, overriding the image `ENTRYPOINT` independently of `command` (#259): setting `entrypoint` discards the image `CMD`, so `command` must be set as well to supply arguments.
 
 ### Changed
 - `ContainerSpec` (`lightshuttle-spec`), `ContainerConfig` and `DockerfileConfig` (`lightshuttle-manifest`) gained the `entrypoint` field. These are public structs with public fields and no `#[non_exhaustive]`, so this is a breaking change for any struct-literal construction of these types downstream. The workspace is bumped to 0.5.0 accordingly.

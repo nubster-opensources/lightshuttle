@@ -264,3 +264,39 @@ resources:
         "the manifest command must become args, got:\n{svc}"
     );
 }
+
+/// Fix wave 2, folded-in oracle for the Helm Critical A fix. A
+/// Kubernetes manifest has no template engine: an argument containing
+/// `{{` is only ever read by a YAML parser, so quoting alone is enough
+/// and Go-escaping it would corrupt the value written to the cluster.
+/// This pins the divergence from the Helm emitter
+/// (`helm_escapes_template_braces_to_close_the_injection` in
+/// `helm_emitter.rs`) as intentional: the two emitters agree again only
+/// after Helm renders.
+#[test]
+fn kubernetes_does_not_escape_template_braces() {
+    let original = "redis {{ .Values.x }} arg";
+    let yaml = format!(
+        r"
+project:
+  name: shop
+resources:
+  svc:
+    container:
+      image: alpine:3.20
+      command: [{original:?}]
+"
+    );
+    let a = artifacts(&yaml);
+    let svc = file(&a, "svc.yaml");
+
+    assert!(
+        svc.contains(original),
+        "the Kubernetes manifest has no template engine and must keep \
+         the raw `{{{{` opener, got:\n{svc}"
+    );
+    assert!(
+        !svc.contains(r#"{{ "{{" }}"#),
+        "the Kubernetes emitter must never apply the Helm escape, got:\n{svc}"
+    );
+}

@@ -196,11 +196,16 @@ fn argv_block<'a>(text: &'a str, header: &str) -> Vec<&'a str> {
 
 /// The motivating case of #261: a redis `--requirepass s3cr:t` argument
 /// contains a colon followed by a space, which YAML would otherwise
-/// parse as a mapping key rather than part of the scalar. A second
-/// argument containing `{{` exercises the same quoting path. Both
-/// emitters must agree on how the same resolved argv is quoted, since
-/// `up` and `export kubernetes`/`export helm` describe the same
-/// container.
+/// parse as a mapping key rather than part of the scalar. Both emitters
+/// must agree on how this argument is quoted, since `up` and
+/// `export kubernetes`/`export helm` describe the same container.
+///
+/// An argument containing `{{` is deliberately NOT exercised here: as
+/// of fix wave 2, the two emitters diverge on that input on purpose
+/// (see `helm_escapes_template_braces_to_close_the_injection` below and
+/// `kubernetes_does_not_escape_template_braces` in
+/// `kubernetes_emitter.rs`), so it would make this cross-emitter
+/// equality check fail for the wrong reason.
 #[test]
 fn helm_quotes_scalars_like_the_kubernetes_emitter() {
     let yaml = r"
@@ -211,7 +216,7 @@ resources:
     container:
       image: alpine:3.20
       entrypoint: ['sh', '-c']
-      command: ['echo a: b', 'a {{ b }}']
+      command: ['echo a: b']
 ";
     let manifest = Manifest::parse(yaml).expect("manifest parses");
     let model = lower(&manifest).expect("lowering succeeds");
@@ -317,5 +322,112 @@ resources:
     assert!(
         svc.contains("        args:\n        - echo hi\n"),
         "the manifest command must become args, got:\n{svc}"
+    );
+}
+
+/// Fix wave 2, Critical A. Helm renders every file under `templates/`
+/// through Go `text/template` BEFORE any YAML parser sees it, so a
+/// resolved argv element containing `{{` is a template injection path,
+/// not a formatting nit: quoting it as a YAML string does nothing to
+/// Go's templater, which reads past the quotes. The oracle here is
+/// independent of the Kubernetes emitter (that cross-check is what let
+/// this hole through last wave): it applies the inverse of Helm's
+/// literal escape, the same substitution Go's templater performs on
+/// `{{ "{{" }}` at `helm install` time, and reparses the result as
+/// YAML to check the argument comes back exactly as it went in.
+#[test]
+fn helm_escapes_template_braces_to_close_the_injection() {
+    let original = "redis {{ .Values.x }} arg";
+    let yaml = format!(
+        r"
+project:
+  name: shop
+resources:
+  svc:
+    container:
+      image: alpine:3.20
+      command: [{original:?}]
+"
+    );
+    let a = artifacts(&yaml);
+    let svc = file(&a, "templates/svc.yaml");
+
+    let args = argv_block(svc, "        args:\n");
+    assert_eq!(args.len(), 1, "expected exactly one arg, got:\n{svc}");
+    let scalar = args[0]
+        .strip_prefix("        - ")
+        .expect("list item has the expected prefix");
+
+    assert!(
+        scalar.contains(r#"{{ "{{" }}"#),
+        "the `{{{{` opener must be escaped to the Helm literal, got:\n{scalar}"
+    );
+    // Every escaped occurrence in the arg accounted for, nothing bare
+    // should remain (the rest of the file legitimately has other,
+    // unrelated `{{ ... }}` Go template directives, so this check is
+    // scoped to the arg's own scalar, not the whole file).
+    let without_escapes = scalar.replace(r#"{{ "{{" }}"#, "");
+    assert!(
+        !without_escapes.contains("{{"),
+        "a raw, unescaped `{{{{` opener survived in the arg, got:\n{scalar}"
+    );
+
+    // Simulate Go's templater: it renders `{{ "{{" }}` back to a
+    // literal `{{` before the YAML parser ever runs.
+    let rendered = scalar.replace(r#"{{ "{{" }}"#, "{{");
+    let round_tripped: String =
+        serde_norway::from_str(&rendered).expect("the rendered scalar reparses as YAML");
+    assert_eq!(
+        round_tripped, original,
+        "the arg must round-trip through the escape/render/parse chain to the exact original value"
+    );
+}
+
+/// Fix wave 2, Critical B. `serde_norway` indents a block scalar's body
+/// two columns from the document root, but this emitter splices the
+/// result after a `        - ` list marker (column 10): an unindented
+/// body dedents out of the list item and the chart fails to parse.
+/// Reparsing the emitted template as YAML is the oracle: it must
+/// reproduce the exact multi-line value, not merely look plausible.
+#[test]
+fn multiline_arg_round_trips_through_the_emitted_template() {
+    let original = "set -e\necho one\nexec app";
+    let yaml = format!(
+        r"
+project:
+  name: shop
+resources:
+  svc:
+    container:
+      image: alpine:3.20
+      entrypoint: ['sh', '-c']
+      command: [{original:?}]
+"
+    );
+    let a = artifacts(&yaml);
+    let svc = file(&a, "templates/svc.yaml");
+
+    let first_doc = svc.split("---").next().expect("at least one document");
+    // Go's templater consumes the leading `{{- $svc := ... -}}`
+    // directive before the YAML parser ever runs; drop that one line
+    // here so the reparse below is not derailed by an unrelated
+    // concern (this file emits raw, unrendered Go template text).
+    let without_directive: String = first_doc
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("{{-"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let parsed: serde_norway::Value = serde_norway::from_str(&without_directive)
+        .expect("the emitted chart must reparse as YAML after Fix B");
+    let args = parsed["spec"]["template"]["spec"]["containers"][0]["args"]
+        .as_sequence()
+        .expect("args is a sequence");
+    assert_eq!(args.len(), 1, "expected exactly one arg, got: {args:?}");
+    assert_eq!(
+        args[0].as_str(),
+        Some(original),
+        "the multi-line arg must round-trip exactly, got: {:?}",
+        args[0]
     );
 }

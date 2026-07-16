@@ -185,12 +185,14 @@ fn validate_resource_kind(name: &str, kind: &ResourceKind) -> Result<()> {
 
 /// Rejects `entrypoint: []` and an empty (or whitespace-only) `entrypoint: ""`.
 ///
-/// An empty argument vector is ambiguous: at the Docker Engine API level,
-/// resetting an entrypoint is spelled `[""]`, while Compose spells it `[]`.
-/// LightShuttle supports neither for now, so the ambiguity is refused at the
-/// door rather than resolved differently by each consumer. A blank string
-/// form is rejected under the same error: it resolves to `["sh", "-c", ""]`,
-/// a container that exits instantly.
+/// An empty list form, spelled `entrypoint: []` in Compose, is refused at
+/// the door: it resolves to a container with no command at all. A blank
+/// string form is rejected under the same error: it resolves to
+/// `["sh", "-c", ""]`, a container that exits instantly. The Docker Engine
+/// API's own reset spelling, `entrypoint: [""]`, is a one-element list, not
+/// an empty one, so it is not caught here and passes through unchanged.
+/// Whether that spelling should also be refused is out of scope for v0
+/// (locked design decision, left unarbitrated on purpose).
 fn validate_entrypoint(name: &str, entrypoint: Option<&Command>) -> Result<()> {
     let is_empty = match entrypoint {
         Some(Command::Args(args)) => args.is_empty(),

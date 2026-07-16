@@ -60,8 +60,8 @@ pub struct DockerfileConfig {
     /// Setting this discards the image `CMD`: every target (the Engine
     /// API, Compose and Kubernetes) ignores the image default command
     /// once an entrypoint is overridden. Set `command` as well to supply
-    /// arguments. An empty list is rejected; omit the field to keep the
-    /// image entrypoint.
+    /// arguments. An empty list or a blank string is rejected; omit the
+    /// field to keep the image entrypoint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entrypoint: Option<Command>,
 
