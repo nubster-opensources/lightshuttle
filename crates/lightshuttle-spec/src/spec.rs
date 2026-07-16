@@ -99,7 +99,10 @@ const HEALTHCHECK_DEFAULT_START_PERIOD: Duration = Duration::from_secs(5);
 /// runtime and the export pipeline) can use this struct directly
 /// without any further resolution.
 ///
-/// Created exclusively by [`from_resource`].
+/// Produced by [`from_resource`] when resolving a manifest, or built
+/// directly via [`ContainerSpec::new`] by consumers that synthesize a
+/// spec themselves.
+#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct ContainerSpec {
     /// Container name, of the form `<project>_<resource>`.
@@ -144,6 +147,31 @@ pub struct ContainerSpec {
     pub healthcheck: Option<HealthcheckSpec>,
     /// Optional working directory override inside the container.
     pub working_dir: Option<String>,
+}
+
+impl ContainerSpec {
+    /// Builds a [`ContainerSpec`] with no env, ports, volumes, entrypoint,
+    /// command, healthcheck or working directory.
+    ///
+    /// Intended for consumers that synthesize a spec directly rather than
+    /// resolving one from a manifest via [`from_resource`]. Callers set the
+    /// remaining fields as needed.
+    #[must_use]
+    pub fn new(name: String, project: String, resource: String, image: ImageSource) -> Self {
+        Self {
+            name,
+            project,
+            resource,
+            image,
+            env: HashMap::new(),
+            ports: Vec::new(),
+            volumes: Vec::new(),
+            entrypoint: None,
+            command: None,
+            healthcheck: None,
+            working_dir: None,
+        }
+    }
 }
 
 /// How the container image is obtained.

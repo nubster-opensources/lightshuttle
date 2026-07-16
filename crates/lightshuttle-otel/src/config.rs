@@ -1,7 +1,5 @@
 //! OpenTelemetry collector configuration and container spec generation.
 
-use std::collections::HashMap;
-
 use lightshuttle_runtime::{ContainerSpec, ImageSource, PortBinding};
 
 /// Reserved resource name for the bundled collector inside the lifecycle plan.
@@ -109,38 +107,33 @@ impl CollectorConfig {
     /// ```
     #[must_use]
     pub fn to_container_spec(&self, project: &str) -> ContainerSpec {
-        ContainerSpec {
-            name: format!("{project}_{SYNTHETIC_RESOURCE_NAME}"),
-            project: project.to_owned(),
-            resource: SYNTHETIC_RESOURCE_NAME.to_owned(),
-            image: ImageSource::Pull(self.image.clone()),
-            env: HashMap::new(),
-            ports: vec![
-                PortBinding {
-                    container_port: DEFAULT_OTLP_GRPC_PORT,
-                    host_address: Some("127.0.0.1".to_owned()),
-                    host_port: self.otlp_grpc_port,
-                },
-                PortBinding {
-                    container_port: DEFAULT_OTLP_HTTP_PORT,
-                    host_address: Some("127.0.0.1".to_owned()),
-                    host_port: self.otlp_http_port,
-                },
-            ],
-            volumes: Vec::new(),
-            entrypoint: None,
-            command: None,
-            // No Docker healthcheck. The previous `... || exit 0` probe
-            // always reported healthy and masked a crashed collector. The
-            // collector image runs `--config=builtin:default-config`,
-            // which does not enable the health_check extension, so there
-            // is no reliable HTTP probe to target. A crash is instead
-            // surfaced through the container exit status: `wait_healthy`
-            // observes a stopped container and fails rather than passing
-            // a dead collector off as healthy.
-            healthcheck: None,
-            working_dir: None,
-        }
+        // No Docker healthcheck. The previous `... || exit 0` probe
+        // always reported healthy and masked a crashed collector. The
+        // collector image runs `--config=builtin:default-config`,
+        // which does not enable the health_check extension, so there
+        // is no reliable HTTP probe to target. A crash is instead
+        // surfaced through the container exit status: `wait_healthy`
+        // observes a stopped container and fails rather than passing
+        // a dead collector off as healthy.
+        let mut spec = ContainerSpec::new(
+            format!("{project}_{SYNTHETIC_RESOURCE_NAME}"),
+            project.to_owned(),
+            SYNTHETIC_RESOURCE_NAME.to_owned(),
+            ImageSource::Pull(self.image.clone()),
+        );
+        spec.ports = vec![
+            PortBinding {
+                container_port: DEFAULT_OTLP_GRPC_PORT,
+                host_address: Some("127.0.0.1".to_owned()),
+                host_port: self.otlp_grpc_port,
+            },
+            PortBinding {
+                container_port: DEFAULT_OTLP_HTTP_PORT,
+                host_address: Some("127.0.0.1".to_owned()),
+                host_port: self.otlp_http_port,
+            },
+        ];
+        spec
     }
 }
 

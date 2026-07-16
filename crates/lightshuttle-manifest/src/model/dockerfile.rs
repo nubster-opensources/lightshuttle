@@ -14,6 +14,7 @@ use super::{command::Command, healthcheck::Healthcheck, port::PortMapping};
 ///
 /// The runtime performs a `docker build` in `context`, then starts the
 /// resulting image as it would for a [`crate::ContainerConfig`].
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DockerfileConfig {
@@ -88,4 +89,31 @@ pub struct DockerfileConfig {
 
 fn default_dockerfile() -> String {
     "Dockerfile".to_owned()
+}
+
+impl DockerfileConfig {
+    /// Builds a [`DockerfileConfig`] for the given build `context`, with
+    /// the Dockerfile path defaulted to `"Dockerfile"` and every other
+    /// field (build args, target, ports, env, volumes, entrypoint,
+    /// command, working directory, healthcheck, dependencies) defaulted
+    /// to empty or `None`.
+    ///
+    /// Callers set the remaining fields as needed.
+    #[must_use]
+    pub fn new(context: String) -> Self {
+        Self {
+            context,
+            dockerfile: default_dockerfile(),
+            build_args: IndexMap::new(),
+            target: None,
+            ports: Vec::new(),
+            env: IndexMap::new(),
+            volumes: Vec::new(),
+            entrypoint: None,
+            command: None,
+            working_dir: None,
+            healthcheck: None,
+            depends_on: Vec::new(),
+        }
+    }
 }

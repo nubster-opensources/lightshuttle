@@ -143,17 +143,7 @@ fn push_dep(deps: &mut Vec<String>, name: String) {
 }
 
 fn prepend_collector_resource(manifest: &mut Manifest, config: &CollectorConfig) {
-    let collector = ContainerConfig {
-        image: config.image.clone(),
-        ports: Vec::new(),
-        env: IndexMap::new(),
-        volumes: Vec::new(),
-        entrypoint: None,
-        command: None,
-        working_dir: None,
-        healthcheck: None,
-        depends_on: Vec::new(),
-    };
+    let collector = ContainerConfig::new(config.image.clone());
 
     // Reinsert every existing resource so the collector lands first.
     let existing: Vec<(String, ResourceKind)> = manifest

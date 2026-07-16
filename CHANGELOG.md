@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ### Changed
 - `ContainerSpec` (`lightshuttle-spec`), `ContainerConfig` and `DockerfileConfig` (`lightshuttle-manifest`) gained the `entrypoint` field. These are public structs with public fields and no `#[non_exhaustive]`, so this is a breaking change for any struct-literal construction of these types downstream. The workspace is bumped to 0.5.0 accordingly.
+- All three structs are now `#[non_exhaustive]` and gain a `new` constructor for their required fields. Downstream code constructs them via `new(...)` plus field assignment instead of a struct literal; future field additions are no longer a breaking change.
 
 ### Fixed
 - The Helm emitter no longer drops the resolved `command`: it was silently lost, for example a redis `--requirepass` value (#261).

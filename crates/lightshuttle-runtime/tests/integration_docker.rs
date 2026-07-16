@@ -13,19 +13,14 @@ use lightshuttle_runtime::{
 };
 
 fn small_image_spec(name: &str) -> ContainerSpec {
-    ContainerSpec {
-        name: name.to_owned(),
-        project: "lightshuttle_it".to_owned(),
-        resource: name.to_owned(),
-        image: ImageSource::Pull("alpine:3.20".to_owned()),
-        env: HashMap::new(),
-        ports: Vec::new(),
-        volumes: Vec::new(),
-        entrypoint: None,
-        command: Some(vec!["sh".to_owned(), "-c".to_owned(), "sleep 5".to_owned()]),
-        healthcheck: None,
-        working_dir: None,
-    }
+    let mut spec = ContainerSpec::new(
+        name.to_owned(),
+        "lightshuttle_it".to_owned(),
+        name.to_owned(),
+        ImageSource::Pull("alpine:3.20".to_owned()),
+    );
+    spec.command = Some(vec!["sh".to_owned(), "-c".to_owned(), "sleep 5".to_owned()]);
+    spec
 }
 
 #[tokio::test]
@@ -66,25 +61,18 @@ async fn builds_and_runs_a_dockerfile_resource() {
     std::fs::write(context.path().join(".dockerignore"), b"*.tmp\n").expect("ignore written");
 
     let runtime = DockerRuntime::connect().expect("Docker daemon reachable");
-    let spec = ContainerSpec {
-        name: "lightshuttle_it_build_run".to_owned(),
-        project: "lightshuttle_it".to_owned(),
-        resource: "build_run".to_owned(),
-        image: ImageSource::Build {
+    let spec = ContainerSpec::new(
+        "lightshuttle_it_build_run".to_owned(),
+        "lightshuttle_it".to_owned(),
+        "build_run".to_owned(),
+        ImageSource::Build {
             context: context.path().to_string_lossy().into_owned(),
             dockerfile: "Dockerfile".to_owned(),
             build_args: HashMap::new(),
             target: None,
             tag: "lightshuttle/it_build_run:dev".to_owned(),
         },
-        env: HashMap::new(),
-        ports: Vec::new(),
-        volumes: Vec::new(),
-        entrypoint: None,
-        command: None,
-        healthcheck: None,
-        working_dir: None,
-    };
+    );
 
     let id = runtime
         .start(&spec)
@@ -141,25 +129,18 @@ async fn builds_buildkit_only_dockerfile() {
     drop(dockerfile);
 
     let runtime = DockerRuntime::connect().expect("Docker daemon reachable");
-    let spec = ContainerSpec {
-        name: "lightshuttle_it_buildkit".to_owned(),
-        project: "lightshuttle_it".to_owned(),
-        resource: "buildkit".to_owned(),
-        image: ImageSource::Build {
+    let spec = ContainerSpec::new(
+        "lightshuttle_it_buildkit".to_owned(),
+        "lightshuttle_it".to_owned(),
+        "buildkit".to_owned(),
+        ImageSource::Build {
             context: context.path().to_string_lossy().into_owned(),
             dockerfile: "Dockerfile".to_owned(),
             build_args: HashMap::new(),
             target: None,
             tag: "lightshuttle/it_buildkit:dev".to_owned(),
         },
-        env: HashMap::new(),
-        ports: Vec::new(),
-        volumes: Vec::new(),
-        entrypoint: None,
-        command: None,
-        healthcheck: None,
-        working_dir: None,
-    };
+    );
 
     let id = runtime
         .start(&spec)
