@@ -4,10 +4,14 @@ A container image declares two things: an `ENTRYPOINT`, the executable it
 runs, and a `CMD`, the arguments handed to that executable. The manifest
 mirrors them as `entrypoint` and `command`.
 
-The two are independent. Setting `entrypoint` alone leaves the image `CMD`
-in place, so it is appended as arguments to the new entrypoint. Setting
-`command` alone leaves the image `ENTRYPOINT` in place, so the value is
-appended to it as arguments.
+The two manifest fields are independent: setting one never clears the
+other's field. Their runtime effect is not symmetric, though. Setting
+`entrypoint` discards the image `CMD`: every target (the Engine API,
+Compose and Kubernetes) ignores the image default command once an
+entrypoint is overridden, so a service that relies on the image `CMD`
+must now set `command` explicitly as well. Setting `command` alone
+leaves the image `ENTRYPOINT` in place, so the value is appended to it
+as arguments.
 
 ## Why a shim needs both
 

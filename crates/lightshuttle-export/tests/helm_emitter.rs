@@ -1,6 +1,6 @@
 //! Tests for the Helm emitter.
 
-use lightshuttle_export::{Emitter, ExportArtifacts, HelmEmitter, lower};
+use lightshuttle_export::{Emitter, ExportArtifacts, HelmEmitter, KubernetesEmitter, lower};
 use lightshuttle_manifest::Manifest;
 
 mod common;
@@ -175,6 +175,84 @@ fn emits_resolved_command_as_args() {
     assert!(
         !cache.contains("        command:\n        - redis-server\n"),
         "redis-server must be args, not command: command is the entrypoint in Kubernetes, got:\n{cache}"
+    );
+}
+
+/// Extracts the `- item` lines directly following the `header` line
+/// (e.g. `"        command:\n"`), stopping at the first line that is not
+/// a list item at the same indentation. Used to compare the argv block
+/// written by the Helm emitter (hand-written text) against the same
+/// block written by the Kubernetes emitter (typed struct through
+/// serde), independently of the rest of the surrounding document.
+fn argv_block<'a>(text: &'a str, header: &str) -> Vec<&'a str> {
+    let after = text.split(header).nth(1).unwrap_or_else(|| {
+        panic!("header {header:?} not found in:\n{text}");
+    });
+    after
+        .lines()
+        .take_while(|line| line.starts_with("        - "))
+        .collect()
+}
+
+/// The motivating case of #261: a redis `--requirepass s3cr:t` argument
+/// contains a colon followed by a space, which YAML would otherwise
+/// parse as a mapping key rather than part of the scalar. A second
+/// argument containing `{{` exercises the same quoting path. Both
+/// emitters must agree on how the same resolved argv is quoted, since
+/// `up` and `export kubernetes`/`export helm` describe the same
+/// container.
+#[test]
+fn helm_quotes_scalars_like_the_kubernetes_emitter() {
+    let yaml = r"
+project:
+  name: shop
+resources:
+  svc:
+    container:
+      image: alpine:3.20
+      entrypoint: ['sh', '-c']
+      command: ['echo a: b', 'a {{ b }}']
+";
+    let manifest = Manifest::parse(yaml).expect("manifest parses");
+    let model = lower(&manifest).expect("lowering succeeds");
+
+    let helm = HelmEmitter.emit(&model).expect("helm emit succeeds");
+    let kubernetes = KubernetesEmitter
+        .emit(&model)
+        .expect("kubernetes emit succeeds");
+
+    let helm_svc = helm
+        .files
+        .iter()
+        .find(|f| f.path.to_str() == Some("templates/svc.yaml"))
+        .expect("helm template emitted")
+        .contents
+        .as_str();
+    let kubernetes_svc = kubernetes
+        .files
+        .iter()
+        .find(|f| f.path.to_str() == Some("svc.yaml"))
+        .expect("kubernetes manifest emitted")
+        .contents
+        .as_str();
+
+    assert_eq!(
+        argv_block(helm_svc, "        command:\n"),
+        argv_block(kubernetes_svc, "        command:\n"),
+        "Helm command: block quoted differently from Kubernetes, got helm:\n{helm_svc}\nkubernetes:\n{kubernetes_svc}"
+    );
+    assert_eq!(
+        argv_block(helm_svc, "        args:\n"),
+        argv_block(kubernetes_svc, "        args:\n"),
+        "Helm args: block quoted differently from Kubernetes, got helm:\n{helm_svc}\nkubernetes:\n{kubernetes_svc}"
+    );
+
+    // The colon-space argument is the ambiguous one: unquoted, YAML
+    // would parse it as a mapping key rather than as a scalar.
+    let args = argv_block(helm_svc, "        args:\n");
+    assert!(
+        args.contains(&"        - 'echo a: b'"),
+        "the colon-space argument must be quoted, got:\n{helm_svc}"
     );
 }
 

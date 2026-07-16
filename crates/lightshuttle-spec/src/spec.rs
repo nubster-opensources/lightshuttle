@@ -976,6 +976,34 @@ resources:
     }
 
     #[test]
+    fn entrypoint_without_command_leaves_command_none() {
+        let yaml = r#"
+project:
+  name: app
+resources:
+  svc:
+    dockerfile:
+      context: .
+      entrypoint: ["sh", "-c", "entrypoint.sh"]
+"#;
+        let manifest = lightshuttle_manifest::Manifest::parse(yaml).expect("manifest parses");
+        let resolved =
+            from_resource("app", "svc", &manifest.resources["svc"]).expect("resolution succeeds");
+        assert_eq!(
+            resolved.spec.entrypoint,
+            Some(vec![
+                "sh".to_owned(),
+                "-c".to_owned(),
+                "entrypoint.sh".to_owned()
+            ])
+        );
+        assert_eq!(
+            resolved.spec.command, None,
+            "entrypoint alone must not synthesise a command: the image CMD, not the manifest, decides what runs"
+        );
+    }
+
+    #[test]
     fn absent_entrypoint_resolves_to_none() {
         let yaml = r"
 project:

@@ -219,13 +219,13 @@ fn deployment_block(spec: &ContainerSpec, name: &str) -> String {
     if let Some(entrypoint) = &spec.entrypoint {
         s.push_str("        command:\n");
         for arg in entrypoint {
-            let _ = writeln!(s, "        - {arg}");
+            let _ = writeln!(s, "        - {}", yaml_scalar(arg));
         }
     }
     if let Some(args) = &spec.command {
         s.push_str("        args:\n");
         for arg in args {
-            let _ = writeln!(s, "        - {arg}");
+            let _ = writeln!(s, "        - {}", yaml_scalar(arg));
         }
     }
     if let Some(dir) = &spec.working_dir {
@@ -412,6 +412,22 @@ fn to_yaml<T: Serialize>(value: &T) -> Result<String> {
         target: "helm",
         reason: format!("failed to serialise chart data: {e}"),
     })
+}
+
+/// Render a single string as a YAML scalar, quoting it exactly as
+/// `serde_norway` would when the same value is serialised as part of a
+/// typed struct (as the Kubernetes emitter does).
+///
+/// The `command:`/`args:` blocks below are hand-written text, not typed
+/// structs, so an argument written verbatim would not be quoted even
+/// when quoting is required for correctness: an argument containing
+/// `: ` would parse as a YAML mapping instead of a scalar, and an
+/// argument containing `{{` would be evaluated as a Go template action
+/// by Helm at install time. Routing every scalar through the same
+/// serialiser the Kubernetes emitter uses keeps the two outputs
+/// equivalent.
+fn yaml_scalar(value: &str) -> String {
+    serde_norway::to_string(value).map_or_else(|_| value.to_owned(), |s| s.trim_end().to_owned())
 }
 
 // --- Typed chart data ---------------------------------------------------

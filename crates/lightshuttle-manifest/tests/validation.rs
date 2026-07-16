@@ -215,6 +215,24 @@ resources:
 }
 
 #[test]
+fn blank_string_entrypoint_is_rejected() {
+    let yaml = r#"
+project:
+  name: app
+resources:
+  svc:
+    dockerfile:
+      context: .
+      entrypoint: "   "
+"#;
+    let err = Manifest::parse(yaml).expect_err("blank string entrypoint must be rejected");
+    assert!(
+        matches!(err, ManifestError::EmptyEntrypoint { .. }),
+        "got: {err:?}"
+    );
+}
+
+#[test]
 fn accepts_omitted_lightshuttle_discriminator() {
     let yaml = r"
 project:
