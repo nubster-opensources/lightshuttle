@@ -170,7 +170,7 @@ jobs:
         with:
           key: bench-cold-start
       - run: cargo xtask bench cold-start --out target/bench/cold-start.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cold-start-benchmark
           path: target/bench/cold-start.json
