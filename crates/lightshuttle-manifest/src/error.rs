@@ -102,4 +102,15 @@ pub enum ManifestError {
         /// The resource whose configuration is in error.
         resource: String,
     },
+
+    /// The same variable was declared as both plain and sensitive.
+    #[error(
+        "environment variable `{key}` on resource `{resource}` is declared in both `env` and `secrets`"
+    )]
+    DuplicateEnvironmentKey {
+        /// Resource containing the duplicate declaration.
+        resource: String,
+        /// Environment variable declared twice.
+        key: String,
+    },
 }

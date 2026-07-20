@@ -163,6 +163,7 @@ fn validate_resource_kind(name: &str, kind: &ResourceKind) -> Result<()> {
                 });
             }
             validate_entrypoint(name, c.entrypoint.as_ref())?;
+            validate_secret_keys(name, &c.env, &c.secrets)?;
         }
         ResourceKind::Dockerfile(c) => {
             if c.context.trim().is_empty() {
@@ -172,6 +173,7 @@ fn validate_resource_kind(name: &str, kind: &ResourceKind) -> Result<()> {
                 });
             }
             validate_entrypoint(name, c.entrypoint.as_ref())?;
+            validate_secret_keys(name, &c.env, &c.secrets)?;
         }
         ResourceKind::Redis(_) => {}
     }
@@ -180,6 +182,20 @@ fn validate_resource_kind(name: &str, kind: &ResourceKind) -> Result<()> {
         validate_healthcheck(hc)?;
     }
 
+    Ok(())
+}
+
+fn validate_secret_keys(
+    resource: &str,
+    env: &indexmap::IndexMap<String, String>,
+    secrets: &indexmap::IndexMap<String, String>,
+) -> Result<()> {
+    if let Some(key) = secrets.keys().find(|key| env.contains_key(*key)) {
+        return Err(ManifestError::DuplicateEnvironmentKey {
+            resource: resource.to_owned(),
+            key: key.clone(),
+        });
+    }
     Ok(())
 }
 

@@ -6,7 +6,7 @@
 //! private resolution helpers that apply v0 defaults. The public entry
 //! point is [`from_resource`].
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::time::Duration;
 
 use indexmap::IndexMap;
@@ -126,6 +126,12 @@ pub struct ContainerSpec {
     pub image: ImageSource,
     /// Environment variables to inject into the container at startup.
     pub env: HashMap<String, String>,
+    /// Environment keys explicitly marked sensitive by the manifest.
+    ///
+    /// Values remain in `env` for runtime injection. Exporters use this set
+    /// to redact them from generated artifacts without relying on key-name
+    /// heuristics.
+    pub secret_env_keys: BTreeSet<String>,
     /// Host-to-container port bindings to publish.
     pub ports: Vec<PortBinding>,
     /// Volume and bind-mount mappings to attach.
@@ -164,6 +170,7 @@ impl ContainerSpec {
             resource,
             image,
             env: HashMap::new(),
+            secret_env_keys: BTreeSet::new(),
             ports: Vec::new(),
             volumes: Vec::new(),
             entrypoint: None,
@@ -471,6 +478,7 @@ fn spec_postgres(
         resource: resource_name.to_owned(),
         image: ImageSource::Pull(image),
         env: env.clone(),
+        secret_env_keys: ["POSTGRES_PASSWORD".to_owned()].into_iter().collect(),
         ports,
         volumes,
         entrypoint: None,
@@ -548,6 +556,7 @@ fn spec_redis(
         resource: resource_name.to_owned(),
         image: ImageSource::Pull(image),
         env: HashMap::new(),
+        secret_env_keys: BTreeSet::new(),
         ports,
         volumes,
         entrypoint: None,
@@ -577,7 +586,10 @@ fn spec_container(
     resource_name: &str,
     c: &ContainerConfig,
 ) -> Result<ResolvedResource> {
-    let env: HashMap<String, String> = c.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let mut env: HashMap<String, String> =
+        c.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    env.extend(c.secrets.iter().map(|(k, v)| (k.clone(), v.clone())));
+    let secret_env_keys = c.secrets.keys().cloned().collect();
 
     let ports = c
         .ports
@@ -608,6 +620,7 @@ fn spec_container(
         resource: resource_name.to_owned(),
         image: ImageSource::Pull(c.image.clone()),
         env,
+        secret_env_keys,
         ports,
         volumes,
         entrypoint,
@@ -632,7 +645,10 @@ fn spec_dockerfile(
 ) -> Result<ResolvedResource> {
     let tag = format!("lightshuttle/{name}:dev");
 
-    let env: HashMap<String, String> = c.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let mut env: HashMap<String, String> =
+        c.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    env.extend(c.secrets.iter().map(|(k, v)| (k.clone(), v.clone())));
+    let secret_env_keys = c.secrets.keys().cloned().collect();
 
     let build_args: HashMap<String, String> = c
         .build_args
@@ -675,6 +691,7 @@ fn spec_dockerfile(
             tag,
         },
         env,
+        secret_env_keys,
         ports,
         volumes,
         entrypoint,

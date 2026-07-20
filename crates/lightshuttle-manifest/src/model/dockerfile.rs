@@ -48,6 +48,13 @@ pub struct DockerfileConfig {
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub env: IndexMap<String, String>,
 
+    /// Sensitive environment variables injected at runtime.
+    ///
+    /// Exporters preserve each key but replace its value with a placeholder,
+    /// preventing credentials from being baked into generated artifacts.
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub secrets: IndexMap<String, String>,
+
     /// Volume mappings in `"host:container"` or `"named:container"` form.
     ///
     /// Relative host paths are resolved by
@@ -108,6 +115,7 @@ impl DockerfileConfig {
             target: None,
             ports: Vec::new(),
             env: IndexMap::new(),
+            secrets: IndexMap::new(),
             volumes: Vec::new(),
             entrypoint: None,
             command: None,

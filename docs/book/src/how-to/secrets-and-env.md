@@ -49,7 +49,7 @@ resources:
     container:
       image: alpine:3.20
       command: ["sh", "-c", "echo token=$API_TOKEN && sleep 3600"]
-      env:
+      secrets:
         DATABASE_URL: ${resources.db.url}
         # Optional: falls back to `dev-token` when unset.
         API_TOKEN: ${env.DEMO_API_TOKEN:-dev-token}
@@ -78,9 +78,15 @@ variable is unset or empty, so the stack always boots, and a developer can
 override it locally without touching the manifest:
 
 ```yaml
-      env:
+      secrets:
         API_TOKEN: ${env.DEMO_API_TOKEN:-dev-token}
 ```
+
+Use `secrets:` instead of `env:` for every sensitive value consumed by a
+container. Lightshuttle injects both maps into the process environment at
+runtime, but export commands replace `secrets:` values with deployment-time
+placeholders instead of writing their resolved contents to disk. A key cannot
+appear in both maps on the same resource.
 
 Precedence still applies: a value in the `.env` file overrides the default,
 and a value in the `.env` file also overrides the same name in the process

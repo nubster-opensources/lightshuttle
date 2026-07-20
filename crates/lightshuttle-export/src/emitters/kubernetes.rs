@@ -14,7 +14,7 @@ use crate::emit::Emitter;
 use crate::error::Result;
 use crate::model::{ExportModel, ExportService, Target};
 use crate::resolve::{
-    SECRET_MARKERS, dns_name, enabled_for, image_pull_policy_for, namespace_for, replicas_for,
+    dns_name, enabled_for, image_pull_policy_for, namespace_for, replicas_for, split_env,
 };
 
 /// Emits plain Kubernetes manifests from the export model.
@@ -91,7 +91,7 @@ fn resource_docs(service: &ExportService, model: &ExportModel, namespace: &str) 
     let spec = &service.spec;
     let name = dns_name(&spec.resource);
     let labels = labels(&name);
-    let (config_env, secret_env) = split_env(&spec.env);
+    let (config_env, secret_env) = split_env(spec);
 
     let mut docs: Vec<String> = Vec::new();
 
@@ -138,7 +138,7 @@ fn deployment(
     let pull_policy = image_pull_policy_for(&spec.resource, model.export.as_ref());
 
     let mut env_from: Vec<EnvFromSource> = Vec::new();
-    let (config_env, secret_env) = split_env(&spec.env);
+    let (config_env, secret_env) = split_env(spec);
     if !config_env.is_empty() {
         env_from.push(EnvFromSource::config(format!("{name}-config")));
     }
@@ -255,26 +255,6 @@ fn pod_volume(resource: &str, idx: usize, volume: &VolumeBinding) -> (String, Po
             }),
         ),
     }
-}
-
-/// Split env into (config, secret) by case-insensitive key marker.
-///
-/// Secret values are replaced with a placeholder so the exported
-/// manifest never contains real credentials.
-fn split_env(
-    env: &std::collections::HashMap<String, String>,
-) -> (BTreeMap<String, String>, BTreeMap<String, String>) {
-    let mut config = BTreeMap::new();
-    let mut secret = BTreeMap::new();
-    for (key, value) in env {
-        let upper = key.to_ascii_uppercase();
-        if SECRET_MARKERS.iter().any(|m| upper.contains(m)) {
-            secret.insert(key.clone(), "***".to_owned());
-        } else {
-            config.insert(key.clone(), value.clone());
-        }
-    }
-    (config, secret)
 }
 
 fn probe(hc: &HealthcheckSpec) -> Probe {

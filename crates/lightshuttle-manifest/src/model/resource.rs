@@ -112,6 +112,7 @@ impl ResourceKind {
             Self::Container(c) => {
                 out.push(c.image.clone());
                 out.extend(c.env.values().cloned());
+                out.extend(c.secrets.values().cloned());
                 out.extend(c.volumes.iter().cloned());
                 if let Some(w) = &c.working_dir {
                     out.push(w.clone());
@@ -124,6 +125,7 @@ impl ResourceKind {
                 out.push(c.context.clone());
                 out.push(c.dockerfile.clone());
                 out.extend(c.env.values().cloned());
+                out.extend(c.secrets.values().cloned());
                 out.extend(c.volumes.iter().cloned());
                 out.extend(c.build_args.values().cloned());
                 if let Some(t) = &c.target {

@@ -6,7 +6,10 @@
 //! one, resources enabled by default) means they are defined and tested once
 //! and shared by every emitter without duplication.
 
+use std::collections::BTreeMap;
+
 use lightshuttle_manifest::{ExportConfig, ImagePullPolicy};
+use lightshuttle_spec::ContainerSpec;
 
 use crate::model::Target;
 
@@ -40,6 +43,48 @@ pub const SECRET_MARKERS: &[&str] = &[
     "CERT",
     "PWD",
 ];
+
+/// Split a resolved environment into plain configuration and redacted
+/// secrets. Explicit manifest classification takes precedence; the legacy
+/// key-name heuristic remains as a compatibility safety net.
+pub(crate) fn split_env(
+    spec: &ContainerSpec,
+) -> (BTreeMap<String, String>, BTreeMap<String, String>) {
+    let mut config = BTreeMap::new();
+    let mut secret = BTreeMap::new();
+    for (key, value) in &spec.env {
+        if is_secret_key(spec, key) {
+            secret.insert(key.clone(), "***".to_owned());
+        } else {
+            config.insert(key.clone(), value.clone());
+        }
+    }
+    (config, secret)
+}
+
+/// Environment emitted to Compose. Sensitive values are read from the
+/// caller's environment at `docker compose` time instead of being copied from
+/// the manifest into the generated YAML.
+pub(crate) fn compose_env(spec: &ContainerSpec) -> BTreeMap<String, String> {
+    spec.env
+        .iter()
+        .map(|(key, value)| {
+            let value = if is_secret_key(spec, key) {
+                format!("${{{key}}}")
+            } else {
+                value.clone()
+            };
+            (key.clone(), value)
+        })
+        .collect()
+}
+
+fn is_secret_key(spec: &ContainerSpec, key: &str) -> bool {
+    spec.secret_env_keys.contains(key)
+        || SECRET_MARKERS
+            .iter()
+            .any(|marker| key.to_ascii_uppercase().contains(marker))
+}
 
 /// Default replica count when neither a per-resource nor a per-target
 /// override is set.

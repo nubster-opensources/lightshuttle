@@ -19,16 +19,17 @@ resources:
       image: alpine:3.20
       command: ["sh", "-c", "echo worker booting && sleep 3600"]
       env:
+        LOG_LEVEL: ${env.LOG_LEVEL:-info}
+      secrets:
         DATABASE_URL: ${resources.api_db.url}
         REDIS_URL: ${resources.cache.url}
-        LOG_LEVEL: ${env.LOG_LEVEL:-info}
 
   api:
     dockerfile:
       context: ./apps/api
       dockerfile: Dockerfile
       target: dev
-      env:
+      secrets:
         DATABASE_URL: ${resources.api_db.url}
         REDIS_URL: ${resources.cache.url}
       ports:

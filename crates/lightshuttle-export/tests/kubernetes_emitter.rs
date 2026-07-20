@@ -211,6 +211,26 @@ fn mixed_env_routes_to_secret_and_configmap() {
 }
 
 #[test]
+fn explicit_secret_classification_redacts_non_secret_key_names() {
+    let a = artifacts(
+        r"
+project:
+  name: secure
+resources:
+  api:
+    container:
+      image: alpine
+      secrets:
+        DATABASE_URL: postgres://user:real-password@db/app
+",
+    );
+    let api = file(&a, "api.yaml");
+    assert!(!api.contains("real-password"), "got:\n{api}");
+    assert!(api.contains("kind: Secret"), "got:\n{api}");
+    assert!(api.contains("DATABASE_URL: '***'"), "got:\n{api}");
+}
+
+#[test]
 fn portless_worker_matches_golden() {
     let a = artifacts(PORTLESS_STACK);
     assert_eq!(

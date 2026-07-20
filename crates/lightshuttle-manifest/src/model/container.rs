@@ -38,6 +38,14 @@ pub struct ContainerConfig {
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub env: IndexMap<String, String>,
 
+    /// Sensitive environment variables injected at runtime.
+    ///
+    /// These values behave like `env` during local execution, but production
+    /// exporters replace them with placeholders instead of writing their
+    /// contents to Compose, Kubernetes or Helm artifacts.
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub secrets: IndexMap<String, String>,
+
     /// Volume mappings in `"host:container"` or `"named:container"` form.
     ///
     /// Relative host paths (starting with `.`) are resolved against the
@@ -92,6 +100,7 @@ impl ContainerConfig {
             image,
             ports: Vec::new(),
             env: IndexMap::new(),
+            secrets: IndexMap::new(),
             volumes: Vec::new(),
             entrypoint: None,
             command: None,

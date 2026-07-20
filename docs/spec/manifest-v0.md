@@ -258,6 +258,8 @@ api:
       - 8080                     # short form: host port = container port
       - "9090:9090"              # full form: host:container
     env:                         # optional
+      LOG_LEVEL: info
+    secrets:                     # optional
       DATABASE_URL: ${resources.api_db.url}
     volumes: []                  # optional
     command: null                # optional
@@ -271,6 +273,7 @@ api:
 | `image` | string | yes | — | Full image reference, including tag. Untagged references **MUST** produce a warning. |
 | `ports` | list | no | `[]` | Port mappings. See [Port mappings](#port-mappings). |
 | `env` | map of string to string | no | `{}` | Environment variables. Values support interpolation. |
+| `secrets` | map of string to string | no | `{}` | Sensitive environment variables. Values support interpolation and exporters never embed their resolved values. A key MUST NOT also appear in `env`. |
 | `volumes` | list of strings | no | `[]` | Volume mappings. See [Volume mappings](#volume-mappings). |
 | `command` | string or list of strings | no | image default | Command override. |
 | `working_dir` | string | no | image default | Working directory inside the container. |
@@ -295,6 +298,7 @@ frontend:
     target: null                 # optional
     ports: []
     env: {}
+    secrets: {}
     volumes: []
     command: null
     working_dir: null

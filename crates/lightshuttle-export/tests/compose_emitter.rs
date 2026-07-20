@@ -126,6 +126,24 @@ fn environment_is_sorted() {
     assert!(app < log, "environment keys should be sorted, got:\n{out}");
 }
 
+#[test]
+fn explicit_secrets_are_runtime_placeholders_not_plaintext() {
+    let out = emit(
+        r"
+project:
+  name: secure
+resources:
+  api:
+    container:
+      image: alpine
+      secrets:
+        DATABASE_URL: postgres://user:real-password@db/app
+",
+    );
+    assert!(!out.contains("real-password"), "got:\n{out}");
+    assert!(out.contains("DATABASE_URL: ${DATABASE_URL}"), "got:\n{out}");
+}
+
 /// Compose names both concepts as the manifest does, so this is a
 /// pass-through: `entrypoint` is the executable, `command` its arguments.
 #[test]
