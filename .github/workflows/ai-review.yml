@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   team:
-    uses: nubster-opensources/.github/.github/workflows/ai-review.yml@main
+    uses: nubster-opensources/.github/.github/workflows/ai-review.yml@6b806938ea17fb50106fc3317f9da40b277f9e34 # main 2026-07-20
     with:
       pr-number: ${{ github.event.pull_request.number }}
       mode: team
@@ -19,7 +19,7 @@ jobs:
       mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
 
   describe:
-    uses: nubster-opensources/.github/.github/workflows/ai-review.yml@main
+    uses: nubster-opensources/.github/.github/workflows/ai-review.yml@6b806938ea17fb50106fc3317f9da40b277f9e34 # main 2026-07-20
     with:
       pr-number: ${{ github.event.pull_request.number }}
       mode: describe
