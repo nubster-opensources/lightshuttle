@@ -2,10 +2,12 @@
 
 use axum::Router;
 use axum::extract::Request;
-use axum::http::HeaderValue;
-use axum::http::header::{CONTENT_SECURITY_POLICY, X_CONTENT_TYPE_OPTIONS, X_FRAME_OPTIONS};
+use axum::http::header::{
+    CONTENT_SECURITY_POLICY, HOST, ORIGIN, X_CONTENT_TYPE_OPTIONS, X_FRAME_OPTIONS,
+};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri};
 use axum::middleware::Next;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use lightshuttle_runtime::LifecycleHandle;
 
 use crate::state::ControlState;
@@ -71,7 +73,75 @@ where
         .nest("/_assets", assets)
         .nest("/_partials", partials)
         .with_state(state)
+        .layer(axum::middleware::from_fn(enforce_local_browser_boundary))
         .layer(axum::middleware::from_fn(security_headers))
+}
+
+/// Reject browser requests that did not originate from the local control
+/// plane itself.
+///
+/// Binding to loopback prevents direct remote connections, but it does not
+/// stop a hostile web page from opening a WebSocket or submitting a POST to
+/// localhost. Browsers attach `Origin` and Fetch Metadata headers to those
+/// requests, so enforce a same-origin boundary whenever they are present.
+/// Non-browser clients such as the LightShuttle CLI do not send those headers
+/// and remain supported, provided their `Host` header targets loopback.
+async fn enforce_local_browser_boundary(request: Request, next: Next) -> Response {
+    if !is_allowed_local_request(request.headers()) {
+        return (StatusCode::FORBIDDEN, "forbidden cross-origin request").into_response();
+    }
+    next.run(request).await
+}
+
+fn is_allowed_local_request(headers: &HeaderMap) -> bool {
+    let host = match headers.get(HOST) {
+        Some(value) => match value.to_str() {
+            Ok(value) if is_loopback_authority(value) => Some(value),
+            _ => return false,
+        },
+        // In-process router users and HTTP/2 test harnesses may omit Host.
+        // Real HTTP/1.1 browser requests always carry it.
+        None => None,
+    };
+
+    if headers
+        .get("sec-fetch-site")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.eq_ignore_ascii_case("cross-site"))
+    {
+        return false;
+    }
+
+    let Some(origin) = headers.get(ORIGIN) else {
+        return true;
+    };
+    let Ok(origin) = origin.to_str() else {
+        return false;
+    };
+    let Ok(uri) = origin.parse::<Uri>() else {
+        return false;
+    };
+    if !matches!(uri.scheme_str(), Some("http" | "https")) {
+        return false;
+    }
+    let Some(authority) = uri.authority() else {
+        return false;
+    };
+    if !is_loopback_authority(authority.as_str()) {
+        return false;
+    }
+
+    host.is_none_or(|host| authority.as_str().eq_ignore_ascii_case(host))
+}
+
+fn is_loopback_authority(raw: &str) -> bool {
+    let Ok(authority) = raw.parse::<axum::http::uri::Authority>() else {
+        return false;
+    };
+    matches!(
+        authority.host(),
+        "127.0.0.1" | "[::1]" | "::1" | "localhost"
+    )
 }
 
 /// Attach baseline security headers to every response.

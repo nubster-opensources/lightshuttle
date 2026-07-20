@@ -228,3 +228,58 @@ async fn restart_returns_404_for_unknown_resource() {
     assert_eq!(json["error"], "unknown resource");
     assert_eq!(json["resource"], "nope");
 }
+
+#[tokio::test]
+async fn restart_rejects_a_cross_site_browser_request() {
+    let app = build_app(vec![sample_view("cache", "redis")]);
+
+    let response = app
+        .oneshot(
+            Request::post("/api/resources/cache/restart")
+                .header("host", "127.0.0.1:49152")
+                .header("origin", "https://attacker.example")
+                .header("sec-fetch-site", "cross-site")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn restart_accepts_a_same_origin_browser_request() {
+    let app = build_app(vec![sample_view("cache", "redis")]);
+
+    let response = app
+        .oneshot(
+            Request::post("/api/resources/cache/restart")
+                .header("host", "127.0.0.1:49152")
+                .header("origin", "http://127.0.0.1:49152")
+                .header("sec-fetch-site", "same-origin")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+}
+
+#[tokio::test]
+async fn api_rejects_a_dns_rebinding_host() {
+    let app = build_app(vec![sample_view("cache", "redis")]);
+
+    let response = app
+        .oneshot(
+            Request::get("/api/resources")
+                .header("host", "attacker.example")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
