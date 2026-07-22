@@ -126,6 +126,34 @@ impl ExportArtifacts {
             contents: contents.into(),
         });
     }
+
+    /// Rejects a set that would write two files at the same path.
+    ///
+    /// Names are normalised before they become paths, and a normalisation
+    /// that is not injective silently drops one resource: the artifact list
+    /// is written in order, so the later file overwrites the earlier one and
+    /// nothing reports it. The normalisation is injective now, which makes
+    /// this a net rather than the primary defence, and a net is what turns
+    /// "unlikely" into "impossible".
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::ExportError::Unsupported`] naming the duplicated path.
+    pub fn ensure_unique_paths(&self) -> crate::error::Result<()> {
+        let mut seen = std::collections::BTreeSet::new();
+        for file in &self.files {
+            if !seen.insert(&file.path) {
+                return Err(crate::ExportError::Unsupported {
+                    resource: file.path.to_string_lossy().into_owned(),
+                    target: "export",
+                    reason:
+                        "two resources resolve to this same output path, so one would overwrite the other"
+                            .to_owned(),
+                });
+            }
+        }
+        Ok(())
+    }
 }
 
 /// A single emitted file: a relative path and its textual contents.

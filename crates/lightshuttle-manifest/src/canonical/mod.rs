@@ -16,6 +16,8 @@
 //! and `lightshuttle-runtime` in the workspace dependency graph, which is why
 //! the canonical types live here.
 
+pub mod dns_name;
 pub mod image_reference;
 
+pub use dns_name::{DnsName, DnsNameError, is_dns_label};
 pub use image_reference::{ImageReference, ImageReferenceError};
