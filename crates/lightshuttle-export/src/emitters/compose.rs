@@ -61,6 +61,7 @@ impl Emitter for ComposeEmitter {
         })?;
         let mut artifacts = crate::ExportArtifacts::new();
         artifacts.push("docker-compose.yml", yaml);
+        artifacts.ensure_unique_paths()?;
         Ok(artifacts)
     }
 }

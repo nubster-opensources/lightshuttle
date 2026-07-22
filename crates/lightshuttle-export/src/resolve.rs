@@ -8,9 +8,10 @@
 
 use std::collections::BTreeMap;
 
-use lightshuttle_manifest::{ExportConfig, ImagePullPolicy};
+use lightshuttle_manifest::{DnsName, ExportConfig, ImagePullPolicy};
 use lightshuttle_spec::ContainerSpec;
 
+use crate::error::Result;
 use crate::model::Target;
 
 /// Environment key fragments that classify a variable as a secret rather than
@@ -247,80 +248,88 @@ pub fn chart_version_for(project_version: Option<&str>, export: Option<&ExportCo
         .unwrap_or_else(|| DEFAULT_CHART_VERSION.to_owned())
 }
 
-/// Sanitise a manifest name into a DNS-1123 compliant label.
+/// Converts a manifest name into a DNS-1123 label.
 ///
-/// Lowercases the input, replaces every character outside `[a-z0-9-]`
-/// with a hyphen, prepends `x` when the result would start with a digit
-/// or a hyphen, and truncates to 63 characters (stripping any trailing
-/// hyphens produced by the truncation).
-#[must_use]
-pub(crate) fn dns_name(name: &str) -> String {
-    let normalized: String = name
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect();
-    let prefixed = if normalized
-        .chars()
-        .next()
-        .is_none_or(|c| c == '-' || c.is_ascii_digit())
-    {
-        format!("x{normalized}")
-    } else {
-        normalized
-    };
-    let truncated: String = prefixed.chars().take(63).collect();
-    truncated.trim_end_matches('-').to_owned()
+/// Delegates to [`DnsName::from_manifest_name`], which is injective: a name
+/// that is not already a label receives a deterministic suffix, so `foo_bar`
+/// and `foo-bar` no longer converge onto one identifier and overwrite each
+/// other's artifact.
+///
+/// # Errors
+///
+/// Returns [`crate::ExportError::Unsupported`] when the name is empty. That
+/// is unreachable for a validated resource name, and reachable for a
+/// user-supplied chart name.
+pub(crate) fn dns_name(name: &str) -> Result<String> {
+    DnsName::from_manifest_name(name)
+        .map(|label| label.as_str().to_owned())
+        .map_err(|source| crate::ExportError::Unsupported {
+            resource: name.to_owned(),
+            target: "export",
+            reason: source.to_string(),
+        })
+}
+
+/// Resolves the namespace an export targets, as a validated DNS label.
+///
+/// An explicit `export.kubernetes.namespace` is a deliberate value, so it is
+/// validated and rejected when it is not a label, never rewritten: handing
+/// back an identifier the user did not write would be worse than refusing.
+/// A namespace derived from the project name is normalised like any other
+/// manifest name.
+///
+/// # Errors
+///
+/// Returns [`crate::ExportError::Unsupported`] when an explicit override is
+/// not a valid Kubernetes namespace.
+pub fn namespace_label_for(project: &str, export: Option<&ExportConfig>) -> Result<String> {
+    let override_value = export
+        .and_then(|config| config.kubernetes.as_ref())
+        .and_then(|kubernetes| kubernetes.namespace.clone());
+
+    match override_value {
+        Some(value) => DnsName::parse(&value)
+            .map(|label| label.as_str().to_owned())
+            .map_err(|source| crate::ExportError::Unsupported {
+                resource: "export.kubernetes.namespace".to_owned(),
+                target: "kubernetes",
+                reason: source.to_string(),
+            }),
+        None => dns_name(project),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::dns_name;
 
-    #[test]
-    fn dns_name_already_valid() {
-        assert_eq!(dns_name("my-service"), "my-service");
+    fn label(name: &str) -> String {
+        dns_name(name).unwrap_or_else(|error| panic!("`{name}` should normalise, got {error}"))
     }
 
     #[test]
-    fn dns_name_lowercase() {
-        assert_eq!(dns_name("MyService"), "myservice");
+    fn a_name_that_is_already_a_label_is_left_alone() {
+        assert_eq!(label("my-service"), "my-service");
+    }
+
+    /// This test previously asserted that `my_service` became `my-service`,
+    /// which is the defect: `my-service` is itself a valid manifest name, so
+    /// the two converged and one artifact overwrote the other. The corpus was
+    /// defending the bug.
+    #[test]
+    fn an_underscore_name_does_not_converge_with_its_hyphen_twin() {
+        assert_ne!(label("my_service"), label("my-service"));
     }
 
     #[test]
-    fn dns_name_underscores_become_hyphens() {
-        assert_eq!(dns_name("my_service"), "my-service");
-    }
-
-    #[test]
-    fn dns_name_leading_digit_gets_prefix() {
-        assert_eq!(dns_name("1redis"), "x1redis");
-    }
-
-    #[test]
-    fn dns_name_leading_hyphen_gets_prefix() {
-        assert_eq!(dns_name("-leading"), "x-leading");
-    }
-
-    #[test]
-    fn dns_name_trailing_hyphen_stripped() {
-        assert_eq!(dns_name("trailing-"), "trailing");
-    }
-
-    #[test]
-    fn dns_name_truncated_to_63() {
+    fn every_label_stays_within_the_dns_limit() {
         let long = "a".repeat(70);
-        assert_eq!(dns_name(&long).len(), 63);
+        assert!(label(&long).len() <= 63);
+        assert!(!label(&long).ends_with('-'));
     }
 
     #[test]
-    fn dns_name_truncation_strips_trailing_hyphen() {
-        let name = format!("{}-b", "a".repeat(62));
-        let result = dns_name(&name);
-        assert!(
-            !result.ends_with('-'),
-            "must not end with hyphen after truncation"
-        );
-        assert!(result.len() <= 63);
+    fn an_empty_name_is_rejected_rather_than_invented() {
+        assert!(dns_name("").is_err());
     }
 }

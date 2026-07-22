@@ -53,7 +53,7 @@
 //! `docs/spec/manifest-v0.md` in the main repository.
 #![deny(missing_docs)]
 
-pub use crate::canonical::{ImageReference, ImageReferenceError};
+pub use crate::canonical::{DnsName, DnsNameError, ImageReference, ImageReferenceError};
 pub use crate::error::{ManifestError, Result};
 pub use crate::interpolate::{InterpolationContext, Interpolator, Reference};
 pub use crate::model::{

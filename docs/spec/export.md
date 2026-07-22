@@ -74,8 +74,17 @@ the documented default. Exclusion is expressed once, with
 
 These hold for every target.
 
-- **Resource names.** Names are sanitised to DNS-1123 for Kubernetes and
-  Helm: `_` becomes `-`.
+- **Resource names.** Names are normalised to DNS-1123 labels for Kubernetes
+  and Helm. The normalisation is injective: a name that already is a valid
+  label passes through untouched, and any other name receives a deterministic
+  suffix derived from it. Mapping `_` onto `-` alone was not injective, so
+  `foo_bar` and `foo-bar` produced one identifier and one silently overwrote
+  the other. Emission additionally refuses two artifacts at the same path.
+- **Namespace.** A namespace derived from the project name is normalised like
+  any other name. An explicit `export.kubernetes.namespace` is validated
+  instead: it must already be a DNS label, and export fails when it is not.
+  An explicit value is an intention, so it is never rewritten into something
+  the user did not ask for.
 - **Secret split.** Values declared under a resource's `secrets:` map are
   always treated as sensitive. For compatibility, environment keys are also
   treated as sensitive when their name contains `PASSWORD`, `PASSWD`, `PASS`,

@@ -7,11 +7,14 @@
 //! ## Network model
 //!
 //! Each project gets a dedicated user-defined bridge network named
-//! `lightshuttle-<project>` (non-alphanumeric characters replaced by `-`,
-//! lower-cased). Containers are attached to that network with their resource
-//! name as a DNS alias, so `${resources.db.host}` resolves to `db` inside
-//! the network. [`DockerRuntime::connect`] uses the platform default transport
-//! (Unix socket on Linux and macOS, named pipe on Windows).
+//! `lightshuttle-<project>`, where the project name goes through the canonical
+//! DNS normalisation. That normalisation is injective, so two distinct project
+//! names never land on one network. An existing network is reused only when it
+//! carries this project's [`LABEL_PROJECT`]; a same-named network owned by
+//! anything else is refused rather than shared. Containers are attached with
+//! their resource name as a DNS alias, so `${resources.db.host}` resolves to
+//! `db` inside the network. [`DockerRuntime::connect`] uses the platform
+//! default transport (Unix socket on Linux and macOS, named pipe on Windows).
 //!
 //! ## Container naming
 //!
@@ -53,7 +56,7 @@ use bollard::query_parameters::{
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 
-use lightshuttle_manifest::ImageReference;
+use lightshuttle_manifest::{DnsName, ImageReference};
 
 use crate::error::{Result, RuntimeError};
 use crate::runtime::{
@@ -67,6 +70,9 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Tag assumed when a reference carries none, matching the daemon default.
 const DEFAULT_TAG: &str = "latest";
+
+/// Prefix every LightShuttle managed Docker network carries.
+const NETWORK_PREFIX: &str = "lightshuttle-";
 
 /// Docker container runtime backed by the `bollard` crate.
 ///
@@ -278,29 +284,53 @@ fn build_tar_archive(context: &Path) -> std::io::Result<Vec<u8>> {
 
 /// Build the Docker network name for a project.
 ///
-/// Non-alphanumeric characters are replaced with `-` and the result is
-/// lower-cased so the name is valid across all Docker network name rules.
-fn network_name(project: &str) -> String {
-    let sanitized: String = project
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .to_lowercase();
-    format!("lightshuttle-{sanitized}")
+/// Derived through the canonical DNS normalisation, which is injective:
+/// `foo_bar` and `foo-bar` used to map onto the same name, so two separately
+/// named projects attached their containers to one network and could reach
+/// each other.
+///
+/// # Errors
+///
+/// Returns [`RuntimeError::InvalidSpec`] when the project name is empty.
+fn network_name(project: &str) -> Result<String> {
+    let label = DnsName::from_manifest_name(project)
+        .map_err(|source| RuntimeError::InvalidSpec(source.to_string()))?;
+    Ok(format!("{NETWORK_PREFIX}{}", label.as_str()))
+}
+
+/// Rejects a network that carries this name but belongs to something else.
+///
+/// A name being free of collisions between projects does not make it free of
+/// collisions with the rest of the host: a network created by hand, or by an
+/// older version, can carry the same name. Attaching to it would silently
+/// place the project on a network nobody owns.
+fn ensure_network_ownership(
+    name: &str,
+    project: &str,
+    labels: Option<&HashMap<String, String>>,
+) -> Result<()> {
+    let owner = labels.and_then(|labels| labels.get(LABEL_PROJECT));
+    if owner.is_some_and(|owner| owner == project) {
+        return Ok(());
+    }
+    Err(RuntimeError::InvalidSpec(match owner {
+        Some(owner) => format!(
+            "network `{name}` already exists and belongs to project `{owner}`, not `{project}`. Remove it, or rename one of the two projects."
+        ),
+        None => format!(
+            "network `{name}` already exists and was not created by LightShuttle. Remove it, or rename the project, rather than sharing a network of unknown ownership."
+        ),
+    }))
 }
 
 impl ContainerRuntime for DockerRuntime {
     async fn ensure_project_network(&self, project: &str) -> Result<()> {
-        let name = network_name(project);
+        let name = network_name(project)?;
 
         match self.client.inspect_network(&name, None).await {
-            Ok(_) => return Ok(()),
+            Ok(existing) => {
+                return ensure_network_ownership(&name, project, existing.labels.as_ref());
+            }
             Err(bollard::errors::Error::DockerResponseServerError {
                 status_code: 404, ..
             }) => {}
@@ -326,7 +356,19 @@ impl ContainerRuntime for DockerRuntime {
     }
 
     async fn teardown_project_network(&self, project: &str) -> Result<()> {
-        let name = network_name(project);
+        let name = network_name(project)?;
+
+        // Never remove a network this project does not own. A name collision
+        // with something else on the host must not turn a teardown into
+        // collateral damage.
+        match self.client.inspect_network(&name, None).await {
+            Ok(existing) => ensure_network_ownership(&name, project, existing.labels.as_ref())?,
+            Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 404, ..
+            }) => return Ok(()),
+            Err(e) => return Err(RuntimeError::NetworkRemove { name, source: e }),
+        }
+
         match self.client.remove_network(&name).await {
             Ok(())
             | Err(bollard::errors::Error::DockerResponseServerError {
@@ -357,7 +399,7 @@ impl ContainerRuntime for DockerRuntime {
 
         self.ensure_project_network(&spec.project).await?;
 
-        let net = network_name(&spec.project);
+        let net = network_name(&spec.project)?;
         let mut endpoints = HashMap::new();
         endpoints.insert(
             net,
@@ -701,7 +743,65 @@ fn timestamp_to_system_time(ts: jiff::Timestamp) -> Option<SystemTime> {
 
 #[cfg(test)]
 mod tests {
-    use super::{PortBinding, build_host_config, split_image_ref};
+    use super::{
+        LABEL_PROJECT, PortBinding, build_host_config, ensure_network_ownership, network_name,
+        split_image_ref,
+    };
+    use std::collections::HashMap;
+
+    fn network_for(project: &str) -> String {
+        network_name(project).unwrap_or_else(|error| {
+            panic!("`{project}` should yield a network name, got {error}");
+        })
+    }
+
+    fn labels_owned_by(project: &str) -> HashMap<String, String> {
+        let mut labels = HashMap::new();
+        labels.insert(LABEL_PROJECT.to_owned(), project.to_owned());
+        labels
+    }
+
+    /// Both names were sanitised onto `lightshuttle-foo-bar`, so two separate
+    /// projects attached their containers to one network and could reach each
+    /// other, defeating the documented per-project isolation.
+    #[test]
+    fn two_projects_differing_only_by_separator_get_two_networks() {
+        assert_ne!(network_for("foo_bar"), network_for("foo-bar"));
+    }
+
+    #[test]
+    fn a_project_name_that_is_already_a_label_keeps_its_network_name() {
+        assert_eq!(network_for("shop"), "lightshuttle-shop");
+    }
+
+    #[test]
+    fn an_existing_network_owned_by_this_project_is_reused() {
+        let labels = labels_owned_by("shop");
+        assert!(
+            ensure_network_ownership("lightshuttle-shop", "shop", Some(&labels)).is_ok(),
+            "a network this project created must be reusable"
+        );
+    }
+
+    #[test]
+    fn an_existing_network_owned_by_another_project_is_refused() {
+        let labels = labels_owned_by("other");
+        let error = ensure_network_ownership("lightshuttle-shop", "shop", Some(&labels))
+            .expect_err("a foreign network must not be shared");
+
+        assert!(
+            error.to_string().contains("other"),
+            "the diagnostic should name the owner, got: {error}"
+        );
+    }
+
+    /// A network created by hand, or by a version that predates the label,
+    /// carries no ownership marker. Attaching to it silently would put the
+    /// project on a network nobody owns.
+    #[test]
+    fn an_existing_unlabelled_network_is_refused() {
+        assert!(ensure_network_ownership("lightshuttle-shop", "shop", None).is_err());
+    }
 
     /// A syntactically valid digest, so the test is about the split and not
     /// about digest validation.

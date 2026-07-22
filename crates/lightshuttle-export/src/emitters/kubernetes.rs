@@ -14,7 +14,7 @@ use crate::emit::Emitter;
 use crate::error::Result;
 use crate::model::{ExportModel, ExportService, Target};
 use crate::resolve::{
-    dns_name, enabled_for, image_pull_policy_for, namespace_for, replicas_for, split_env,
+    dns_name, enabled_for, image_pull_policy_for, namespace_label_for, replicas_for, split_env,
 };
 
 /// Emits plain Kubernetes manifests from the export model.
@@ -22,7 +22,7 @@ use crate::resolve::{
 /// The produced artifact set contains:
 ///
 /// - `namespace.yaml`: a `Namespace` object using the name resolved by
-///   [`crate::resolve::namespace_for`].
+///   [`crate::resolve::namespace_label_for`].
 /// - `<name>.yaml` per enabled resource: a multi-document YAML file containing
 ///   a `Deployment`, optionally a `Service` (when ports are declared), a
 ///   `ConfigMap` (non-secret environment variables), a `Secret` (secret
@@ -56,7 +56,7 @@ impl Emitter for KubernetesEmitter {
     }
 
     fn emit(&self, model: &ExportModel) -> Result<crate::ExportArtifacts> {
-        let namespace = namespace_for(&model.project.name, model.export.as_ref());
+        let namespace = namespace_label_for(&model.project.name, model.export.as_ref())?;
         let mut artifacts = crate::ExportArtifacts::new();
         artifacts.push("namespace.yaml", namespace_doc(&namespace)?);
 
@@ -69,9 +69,10 @@ impl Emitter for KubernetesEmitter {
                 continue;
             }
             let docs = resource_docs(service, model, &namespace)?;
-            artifacts.push(format!("{}.yaml", dns_name(&service.spec.resource)), docs);
+            artifacts.push(format!("{}.yaml", dns_name(&service.spec.resource)?), docs);
         }
 
+        artifacts.ensure_unique_paths()?;
         Ok(artifacts)
     }
 }
@@ -89,7 +90,7 @@ fn namespace_doc(namespace: &str) -> Result<String> {
 
 fn resource_docs(service: &ExportService, model: &ExportModel, namespace: &str) -> Result<String> {
     let spec = &service.spec;
-    let name = dns_name(&spec.resource);
+    let name = dns_name(&spec.resource)?;
     let labels = labels(&name);
     let (config_env, secret_env) = split_env(spec);
 
@@ -97,7 +98,7 @@ fn resource_docs(service: &ExportService, model: &ExportModel, namespace: &str) 
 
     docs.push(to_yaml(&deployment(
         spec, model, namespace, &name, &labels,
-    ))?);
+    )?)?);
     if !spec.ports.is_empty() {
         docs.push(to_yaml(&service_object(spec, namespace, &name, &labels))?);
     }
@@ -120,7 +121,7 @@ fn resource_docs(service: &ExportService, model: &ExportModel, namespace: &str) 
     }
     for volume in &spec.volumes {
         if let VolumeSource::Named(vol) = &volume.source {
-            docs.push(to_yaml(&pvc(&name, &dns_name(vol), namespace, &labels))?);
+            docs.push(to_yaml(&pvc(&name, &dns_name(vol)?, namespace, &labels))?);
         }
     }
 
@@ -133,7 +134,7 @@ fn deployment(
     namespace: &str,
     name: &str,
     labels: &BTreeMap<String, String>,
-) -> Deployment {
+) -> Result<Deployment> {
     let replicas = replicas_for(Target::Kubernetes, &spec.resource, model.export.as_ref());
     let pull_policy = image_pull_policy_for(&spec.resource, model.export.as_ref());
 
@@ -149,7 +150,7 @@ fn deployment(
     let mut mounts: Vec<VolumeMount> = Vec::new();
     let mut volumes: Vec<PodVolume> = Vec::new();
     for (idx, volume) in spec.volumes.iter().enumerate() {
-        let (vol_name, source) = pod_volume(name, idx, volume);
+        let (vol_name, source) = pod_volume(name, idx, volume)?;
         mounts.push(VolumeMount {
             name: vol_name.clone(),
             mount_path: volume.target.clone(),
@@ -162,7 +163,7 @@ fn deployment(
 
     let probe = spec.healthcheck.as_ref().map(probe);
 
-    Deployment {
+    Ok(Deployment {
         api_version: "apps/v1",
         kind: "Deployment",
         metadata: meta(name, namespace, labels),
@@ -193,7 +194,7 @@ fn deployment(
                 },
             },
         },
-    }
+    })
 }
 
 fn service_object(
@@ -235,10 +236,14 @@ fn pvc(name: &str, volume: &str, namespace: &str, labels: &BTreeMap<String, Stri
 }
 
 /// Build the pod volume name and source for `volume`.
-fn pod_volume(resource: &str, idx: usize, volume: &VolumeBinding) -> (String, PodVolumeSource) {
-    match &volume.source {
+fn pod_volume(
+    resource: &str,
+    idx: usize,
+    volume: &VolumeBinding,
+) -> Result<(String, PodVolumeSource)> {
+    let resolved = match &volume.source {
         VolumeSource::Named(vol) => {
-            let vol = dns_name(vol);
+            let vol = dns_name(vol)?;
             let claim = format!("{resource}-{vol}");
             (vol, PodVolumeSource::Pvc(PvcRef::new(claim)))
         }
@@ -254,7 +259,8 @@ fn pod_volume(resource: &str, idx: usize, volume: &VolumeBinding) -> (String, Po
                 empty_dir: EmptyDirInner {},
             }),
         ),
-    }
+    };
+    Ok(resolved)
 }
 
 fn probe(hc: &HealthcheckSpec) -> Probe {

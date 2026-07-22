@@ -134,8 +134,24 @@ async fn injected_secret_authenticates_against_a_real_postgres() {
     // Create the project network before starting Postgres so it exists when
     // Postgres is connected. Tolerate "already exists" in case the runtime
     // creates it first.
+    //
+    // The ownership label is what the runtime itself writes, and it is not
+    // decoration here: the runtime refuses to attach to a `lightshuttle-*`
+    // network that carries no owner, because such a network is
+    // indistinguishable from one that belongs to something else on the host.
+    // Pre-creating it without the label would make this test simulate a
+    // foreign network rather than the project's own.
     let network = format!("lightshuttle-{project}");
-    run_docker(&["network", "create", &network], true);
+    run_docker(
+        &[
+            "network",
+            "create",
+            "--label",
+            &format!("lightshuttle.project={project}"),
+            &network,
+        ],
+        true,
+    );
 
     // Start a Postgres container directly via the Docker CLI to avoid a
     // bollard version conflict that testcontainers would introduce.
