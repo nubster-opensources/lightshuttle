@@ -283,3 +283,47 @@ async fn api_rejects_a_dns_rebinding_host() {
 
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
+
+/// A page served by another loopback port is the realistic attacker on a
+/// developer machine: a local development server, or a compromised dependency
+/// running inside one. Browsers label it `same-site`, not `cross-site`, and its
+/// `Origin` is a loopback authority, so it clears both earlier checks. Only the
+/// strict `Origin` against `Host` comparison rejects it.
+#[tokio::test]
+async fn restart_rejects_a_same_site_request_from_another_local_port() {
+    let app = build_app(vec![sample_view("cache", "redis")]);
+
+    let response = app
+        .oneshot(
+            Request::post("/api/resources/cache/restart")
+                .header("host", "127.0.0.1:49152")
+                .header("origin", "http://localhost:3000")
+                .header("sec-fetch-site", "same-site")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+/// The CLI is not a browser: it sends neither `Origin` nor Fetch Metadata
+/// headers. Tightening the boundary must never lock it out, so pin the
+/// behaviour here rather than discovering the regression at runtime.
+#[tokio::test]
+async fn restart_accepts_a_non_browser_client_targeting_loopback() {
+    let app = build_app(vec![sample_view("cache", "redis")]);
+
+    let response = app
+        .oneshot(
+            Request::post("/api/resources/cache/restart")
+                .header("host", "127.0.0.1:49152")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+}
