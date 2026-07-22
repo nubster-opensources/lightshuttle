@@ -16,7 +16,7 @@ use serde::Serialize;
 use crate::emit::Emitter;
 use crate::error::{ExportError, Result};
 use crate::model::{ExportModel, ExportService, Target};
-use crate::resolve::enabled_for;
+use crate::resolve::{compose_env, enabled_for};
 
 /// Loopback address used when a port declares no explicit host bind, so
 /// the exported stack keeps the same not-exposed-by-default posture as
@@ -158,11 +158,7 @@ fn compose_service(service: &ExportService, model: &ExportModel) -> ComposeServi
         image,
         build,
         ports: spec.ports.iter().map(port_string).collect(),
-        environment: spec
-            .env
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect(),
+        environment: compose_env(spec),
         volumes: spec.volumes.iter().map(volume_string).collect(),
         entrypoint: spec.entrypoint.clone(),
         command: spec.command.clone(),

@@ -22,7 +22,7 @@ resources:
     container:
       image: alpine:3.20
       command: ["sh", "-c", "sleep 2 && touch /tmp/ready && echo ready && sleep 3600"]
-      env:
+      secrets:
         DATABASE_URL: ${resources.db.url}
       # Custom healthcheck: the resource is only considered ready once
       # the command starts succeeding, and dependents wait for it.

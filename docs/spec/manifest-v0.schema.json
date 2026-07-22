@@ -172,6 +172,13 @@
             "$ref": "#/$defs/PortMapping"
           }
         },
+        "secrets": {
+          "description": "Sensitive environment variables injected at runtime.\n\nThese values behave like `env` during local execution, but production\nexporters replace them with placeholders instead of writing their\ncontents to Compose, Kubernetes or Helm artifacts.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
         "volumes": {
           "description": "Volume mappings in `\"host:container\"` or `\"named:container\"` form.\n\nRelative host paths (starting with `.`) are resolved against the\nmanifest directory by [`crate::Manifest::resolve_host_volume_paths`] before\nthey reach the runtime.",
           "type": "array",
@@ -281,6 +288,13 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/PortMapping"
+          }
+        },
+        "secrets": {
+          "description": "Sensitive environment variables injected at runtime.\n\nExporters preserve each key but replace its value with a placeholder,\npreventing credentials from being baked into generated artifacts.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
           }
         },
         "target": {

@@ -19,8 +19,8 @@ use crate::emit::Emitter;
 use crate::error::Result;
 use crate::model::{ExportModel, ExportProject, Target};
 use crate::resolve::{
-    SECRET_MARKERS, chart_name_for, chart_version_for, dns_name, enabled_for,
-    image_pull_policy_for, namespace_for, replicas_for,
+    chart_name_for, chart_version_for, dns_name, enabled_for, image_pull_policy_for, namespace_for,
+    replicas_for, split_env,
 };
 
 /// Emits a Helm chart from the export model.
@@ -106,7 +106,7 @@ fn values_yaml(model: &ExportModel) -> Result<String> {
             continue;
         }
         let name = dns_name(&service.spec.resource);
-        let (env, secrets) = split_env(&service.spec.env);
+        let (env, secrets) = split_env(&service.spec);
         let (repository, tag) = split_image(&service.spec.image);
         services.insert(
             name,
@@ -142,11 +142,11 @@ fn resource_template(spec: &ContainerSpec, name: &str) -> String {
         out.push_str("---\n");
         out.push_str(&service_block(spec, name));
     }
-    if !split_env(&spec.env).0.is_empty() {
+    if !split_env(spec).0.is_empty() {
         out.push_str("---\n");
         out.push_str(&configmap_block(name));
     }
-    if !split_env(&spec.env).1.is_empty() {
+    if !split_env(spec).1.is_empty() {
         out.push_str("---\n");
         out.push_str(&secret_block(name));
     }
@@ -162,7 +162,7 @@ fn resource_template(spec: &ContainerSpec, name: &str) -> String {
 fn deployment_block(spec: &ContainerSpec, name: &str) -> String {
     let mut s = String::new();
     let (has_config, has_secret) = {
-        let (config_env, secret_env) = split_env(&spec.env);
+        let (config_env, secret_env) = split_env(spec);
         (!config_env.is_empty(), !secret_env.is_empty())
     };
 
@@ -359,26 +359,6 @@ fn named_mounts(spec: &ContainerSpec) -> Vec<(String, &str)> {
             _ => None,
         })
         .collect()
-}
-
-/// Secret values are replaced with a placeholder so the exported
-/// chart never contains real credentials.
-fn split_env(
-    env: &std::collections::HashMap<String, String>,
-) -> (BTreeMap<String, String>, BTreeMap<String, String>) {
-    let mut config = BTreeMap::new();
-    let mut secret = BTreeMap::new();
-    for (key, value) in env {
-        if SECRET_MARKERS
-            .iter()
-            .any(|m| key.to_ascii_uppercase().contains(m))
-        {
-            secret.insert(key.clone(), "***".to_owned());
-        } else {
-            config.insert(key.clone(), value.clone());
-        }
-    }
-    (config, secret)
 }
 
 /// Split an image reference into `(repository, tag)` on the last colon.

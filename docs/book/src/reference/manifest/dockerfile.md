@@ -18,6 +18,7 @@ resulting image as it would for a [`crate::ContainerConfig`].
 | `env` | map of string | no |  | Environment variables injected into the container at runtime. Values support `${env.NAME}` and `${resources.name.property}` interpolation. |
 | `healthcheck` | [Healthcheck](common-types.md#healthcheck) | no |  | Optional healthcheck override. See [`Healthcheck`] for field semantics. |
 | `ports` | array of [PortMapping](common-types.md#portmapping) | no |  | Port mappings between the host and the container. See [`PortMapping`]. |
+| `secrets` | map of string | no |  | Sensitive environment variables injected at runtime. Exporters preserve each key but replace its value with a placeholder, preventing credentials from being baked into generated artifacts. |
 | `target` | string | no |  | Multi-stage build target passed to `docker build --target`. |
 | `volumes` | array of string | no |  | Volume mappings in `"host:container"` or `"named:container"` form. Relative host paths are resolved by [`crate::Manifest::resolve_host_volume_paths`]. |
 | `working_dir` | string | no |  | Optional working directory override inside the container. |

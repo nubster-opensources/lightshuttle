@@ -41,6 +41,7 @@ resources:
         - 8080:80
       env:
         LOG_LEVEL: info
+      secrets:
         API_TOKEN: ${env.SHOP_API_TOKEN:-change-me-in-your-vault}
       depends_on:
         - db

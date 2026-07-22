@@ -49,7 +49,7 @@ resources:
     container:
       image: alpine:3.20
       command: ["sh", "-c", "echo token=$API_TOKEN && sleep 3600"]
-      env:
+      secrets:
         DATABASE_URL: ${resources.db.url}
         # Optional: falls back to `dev-token` when unset.
         API_TOKEN: ${env.DEMO_API_TOKEN:-dev-token}
@@ -78,9 +78,37 @@ variable is unset or empty, so the stack always boots, and a developer can
 override it locally without touching the manifest:
 
 ```yaml
-      env:
+      secrets:
         API_TOKEN: ${env.DEMO_API_TOKEN:-dev-token}
 ```
+
+Use `secrets:` instead of `env:` for every sensitive value consumed by a
+container. Lightshuttle injects both maps into the process environment at
+runtime, but export commands replace `secrets:` values with deployment-time
+placeholders instead of writing their resolved contents to disk. A key cannot
+appear in both maps on the same resource.
+
+### What each export target writes
+
+The placeholder differs per target, because each one has its own way of
+supplying a value at deployment time:
+
+| Target | Emitted value | How to supply the real value |
+| --- | --- | --- |
+| Compose | `${KEY}` | Exported in the shell, or set in a `.env` file next to the generated `docker-compose.yml` |
+| Kubernetes | `'***'` in the `Secret` | Replaced before `kubectl apply`, or the `Secret` is managed out of band |
+| Helm | `'***'` in `values.yaml` | Overridden with `--set` or a private values file |
+
+Because Compose emits `${KEY}` rather than the resolved value, a generated
+`docker-compose.yml` is no longer self contained: `docker compose up` needs
+those variables to be present in its environment. Compose substitutes an unset
+variable with an empty string, so supply every key the export declares rather
+than relying on the service to fail loudly.
+
+Note that a value derived from another resource, such as
+`${resources.db.url}`, is also replaced once it is declared under `secrets:`.
+This is deliberate, since that URL carries credentials, but it does mean the
+exported stack expects the value to be provided rather than recomputed.
 
 Precedence still applies: a value in the `.env` file overrides the default,
 and a value in the `.env` file also overrides the same name in the process

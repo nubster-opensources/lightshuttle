@@ -76,19 +76,21 @@ These hold for every target.
 
 - **Resource names.** Names are sanitised to DNS-1123 for Kubernetes and
   Helm: `_` becomes `-`.
-- **Secret split.** Environment keys are routed to a `Secret` (Kubernetes,
-  Helm) when the key contains `PASSWORD`, `PASSWD`, `SECRET`, `TOKEN` or
-  `KEY`, case-insensitively; every other key goes to a `ConfigMap`. The
-  split is a name heuristic because the manifest does not mark which
-  values are secret.
+- **Secret split.** Values declared under a resource's `secrets:` map are
+  always treated as sensitive. For compatibility, environment keys are also
+  treated as sensitive when their name contains `PASSWORD`, `PASSWD`, `PASS`,
+  `SECRET`, `TOKEN`, `KEY`, `CREDENTIAL`, `AUTH`, `CERT` or `PWD`,
+  case-insensitively. Kubernetes and Helm route them to a `Secret` using a
+  placeholder value; Compose emits a `${KEY}` reference. Exported artifacts
+  therefore require those values to be provisioned separately.
 - **Built images.** A `dockerfile` resource has no registry image, so the
   generated build tag is emitted as the image reference. You are
   responsible for building and pushing that tag before applying a
   Kubernetes or Helm artifact.
 - **Reproducibility.** A `postgres` or `redis` resource with no explicit
-  `password` resolves to a freshly generated one on every run. Set an
-  explicit password when you intend to export, otherwise each export bakes
-  a different secret.
+  `password` resolves to a freshly generated one on every run. Exporters do
+  not embed that password; provision the corresponding environment or Secret
+  value before deploying the generated artifact.
 
 ## Compose mapping
 
@@ -101,6 +103,8 @@ One service per enabled resource, keyed by the resource name.
   with an explicit `address:host:container` form keeps that address.
 - `depends_on` uses the long form with `condition: service_healthy`.
 - Named volumes are declared in the top-level `volumes:` block.
+- Sensitive environment keys use `${KEY}` references and must be supplied to
+  Compose by the caller.
 - Healthchecks carry `test`, `interval`, `timeout`, `retries` and
   `start_period`.
 

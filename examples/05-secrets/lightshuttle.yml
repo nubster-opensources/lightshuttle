@@ -15,7 +15,7 @@ resources:
     container:
       image: alpine:3.20
       command: ["sh", "-c", "echo token=$API_TOKEN && sleep 3600"]
-      env:
+      secrets:
         DATABASE_URL: ${resources.db.url}
         # Optional reference: falls back to `dev-token` when unset.
         API_TOKEN: ${env.DEMO_API_TOKEN:-dev-token}

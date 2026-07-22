@@ -245,3 +245,24 @@ resources:
     let manifest = Manifest::parse(yaml).expect("missing discriminator should default to v0");
     assert!(manifest.lightshuttle.is_none());
 }
+
+#[test]
+fn rejects_a_key_declared_as_plain_and_secret_env() {
+    let yaml = r"
+project:
+  name: app
+resources:
+  api:
+    container:
+      image: alpine
+      env:
+        DATABASE_URL: public
+      secrets:
+        DATABASE_URL: private
+";
+    let err = Manifest::parse(yaml).expect_err("duplicate env classification must fail");
+    assert!(
+        matches!(err, ManifestError::DuplicateEnvironmentKey { .. }),
+        "got: {err:?}"
+    );
+}

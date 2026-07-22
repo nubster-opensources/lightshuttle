@@ -23,6 +23,8 @@ resources:
         - "9090:9090"
       env:
         LEVEL: info
+      secrets:
+        DATABASE_URL: postgres://user:password@db/app
 "#;
 
 #[test]
@@ -113,6 +115,12 @@ fn container_keeps_explicit_image_and_ports() {
     assert_eq!(spec.name, "app_api");
     assert!(matches!(spec.image, ImageSource::Pull(ref s) if s == "my-org/api:1.0"));
     assert_eq!(spec.env.get("LEVEL").map(String::as_str), Some("info"));
+    assert_eq!(
+        spec.env.get("DATABASE_URL").map(String::as_str),
+        Some("postgres://user:password@db/app")
+    );
+    assert!(spec.secret_env_keys.contains("DATABASE_URL"));
+    assert!(!spec.secret_env_keys.contains("LEVEL"));
     // Short form 8080 maps host = container.
     assert!(
         spec.ports
