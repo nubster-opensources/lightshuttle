@@ -53,6 +53,8 @@ use bollard::query_parameters::{
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 
+use lightshuttle_manifest::ImageReference;
+
 use crate::error::{Result, RuntimeError};
 use crate::runtime::{
     ContainerId, ContainerRuntime, ContainerStatus, LogChunk, LogChunkStream, LogStream,
@@ -62,6 +64,9 @@ use lightshuttle_spec::{
 };
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
+
+/// Tag assumed when a reference carries none, matching the daemon default.
+const DEFAULT_TAG: &str = "latest";
 
 /// Docker container runtime backed by the `bollard` crate.
 ///
@@ -103,10 +108,10 @@ impl DockerRuntime {
     }
 
     async fn ensure_image(&self, image: &str) -> Result<()> {
-        let (from_image, tag) = split_image_ref(image);
+        let (from_image, tag) = split_image_ref(image)?;
         let options = CreateImageOptionsBuilder::default()
-            .from_image(from_image)
-            .tag(tag)
+            .from_image(&from_image)
+            .tag(&tag)
             .build();
         let mut stream = self.client.create_image(Some(options), None, None);
         while let Some(event) = stream.next().await {
@@ -523,8 +528,22 @@ impl ContainerRuntime for DockerRuntime {
     }
 }
 
-fn split_image_ref(image: &str) -> (&str, &str) {
-    image.split_once(':').unwrap_or((image, "latest"))
+/// Splits an image reference into the `fromImage` and `tag` parameters the
+/// image creation endpoint expects.
+///
+/// Splitting on a colon does not work here: a registry port introduces one
+/// before the repository path, and a digest introduces one after it. A
+/// digest pinned reference is passed through the tag parameter, which the
+/// daemon accepts in place of a tag.
+fn split_image_ref(image: &str) -> Result<(String, String)> {
+    let reference = ImageReference::parse(image)
+        .map_err(|source| RuntimeError::InvalidSpec(source.to_string()))?;
+    let tag = reference
+        .digest()
+        .or_else(|| reference.tag())
+        .unwrap_or(DEFAULT_TAG)
+        .to_owned();
+    Ok((reference.qualified_repository(), tag))
 }
 
 fn build_env(env: &HashMap<String, String>) -> Vec<String> {
@@ -682,7 +701,65 @@ fn timestamp_to_system_time(ts: jiff::Timestamp) -> Option<SystemTime> {
 
 #[cfg(test)]
 mod tests {
-    use super::{PortBinding, build_host_config};
+    use super::{PortBinding, build_host_config, split_image_ref};
+
+    /// A syntactically valid digest, so the test is about the split and not
+    /// about digest validation.
+    const DIGEST: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    fn pull_target(image: &str) -> (String, String) {
+        split_image_ref(image).unwrap_or_else(|error| {
+            panic!("`{image}` should split, got {error}");
+        })
+    }
+
+    #[test]
+    fn a_bare_reference_pulls_the_default_tag() {
+        assert_eq!(
+            pull_target("postgres"),
+            ("postgres".to_owned(), "latest".to_owned())
+        );
+    }
+
+    /// Splitting on the first colon turned the registry port into the tag, so
+    /// the pull targeted `registry.example.com` with a tag of
+    /// `5000/team/api:1.2`, a repository that does not exist.
+    #[test]
+    fn a_registry_port_does_not_become_the_tag() {
+        assert_eq!(
+            pull_target("registry.example.com:5000/team/api:1.2"),
+            (
+                "registry.example.com:5000/team/api".to_owned(),
+                "1.2".to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn an_untagged_reference_on_a_ported_registry_pulls_the_default_tag() {
+        assert_eq!(
+            pull_target("registry.example.com:5000/team/api"),
+            (
+                "registry.example.com:5000/team/api".to_owned(),
+                "latest".to_owned()
+            )
+        );
+    }
+
+    /// The daemon accepts a digest where a tag is expected, which is how a
+    /// pinned reference stays pinned across the split.
+    #[test]
+    fn a_digest_pinned_reference_keeps_its_digest() {
+        assert_eq!(
+            pull_target(&format!("alpine@{DIGEST}")),
+            ("alpine".to_owned(), DIGEST.to_owned())
+        );
+    }
+
+    #[test]
+    fn a_malformed_reference_is_reported_rather_than_pulled() {
+        assert!(split_image_ref("Postgres:16").is_err());
+    }
 
     fn host_ip_for(ports: &[PortBinding], key: &str) -> Option<String> {
         let config = build_host_config(ports, &[]);

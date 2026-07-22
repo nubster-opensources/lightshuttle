@@ -131,10 +131,14 @@ A chart whose `templates/` reach parity with the Kubernetes target while
 the knobs surface in `values.yaml`.
 
 - `values.yaml` carries, per service, `replicas`, `image`
-  (`repository`, `tag`, `pullPolicy`) and the `env` and `secrets` maps.
-- Templates reference `{{ $svc.replicas }}`,
-  `{{ $svc.image.repository }}:{{ $svc.image.tag }}` and render the
-  environment with `{{- range $k, $v := $svc.env }}`.
+  (`repository`, `tag`, `pullPolicy`, and `digest` when the reference is
+  digest pinned) and the `env` and `secrets` maps.
+- `repository` is the registry qualified repository, so a registry serving
+  on a custom port keeps its `host:port` prefix intact.
+- Templates reference `{{ $svc.replicas }}` and render the image as
+  `{{ $svc.image.repository }}@{{ $svc.image.digest }}` when a digest is
+  present, `{{ $svc.image.repository }}:{{ $svc.image.tag }}` otherwise. The
+  environment is rendered with `{{- range $k, $v := $svc.env }}`.
 - Services are accessed with `index .Values.services "<name>"` so
   DNS-sanitised names containing a dash resolve.
 

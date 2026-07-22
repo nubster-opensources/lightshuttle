@@ -28,4 +28,5 @@ serde.workspace = true
 serde_norway.workspace = true
 
 [dev-dependencies]
+serde_norway.workspace = true
 tempfile = "3"

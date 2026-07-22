@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: worker
-        image: "{{ $svc.image.repository }}:{{ $svc.image.tag }}"
+        image: "{{ $svc.image.repository }}{{ if $svc.image.digest }}@{{ $svc.image.digest }}{{ else }}:{{ $svc.image.tag }}{{ end }}"
         imagePullPolicy: {{ $svc.image.pullPolicy }}
         envFrom:
         - configMapRef:
