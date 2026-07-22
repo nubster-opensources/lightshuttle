@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ## [Unreleased]
 
+### Added
+- `secrets:` manifest map for `container` and `dockerfile` resources, declaring which environment variables are sensitive. Values are injected at runtime exactly like `env:`, but export targets emit a placeholder instead of the resolved value. Declaring the same key under both `env:` and `secrets:` is rejected.
+- `ContainerSpec` (`lightshuttle-spec`) gained the `secret_env_keys` field. The struct is `#[non_exhaustive]`, so this is not a breaking change.
+
+### Changed
+- `lightshuttle export compose` now writes `${KEY}` for every value classified as sensitive, instead of its resolved contents. A generated `docker-compose.yml` is therefore no longer self contained: supply those variables through the environment or a `.env` file placed next to it. This applies to values derived from other resources, such as a database URL, since those carry credentials.
+- The control plane rejects browser requests whose `Origin` does not match the request `Host`, and requests whose `Host` is not a loopback authority. Binding to loopback does not prevent a hostile local page from reaching the API, so the boundary is enforced on the headers as well. Non-browser clients such as the CLI send neither `Origin` nor Fetch Metadata headers and are unaffected.
+
+### Security
+- Values declared under `secrets:` are no longer written into exported Compose, Kubernetes or Helm artifacts. The previous key-name heuristic is kept as a safety net, so a key such as `DB_PASSWORD` stays redacted even when it is not declared, but a name that carries no marker, such as `DATABASE_URL`, was previously exported in clear text.
+- The reusable `ai-review` workflow is pinned by commit SHA instead of a moving branch reference. A reusable workflow referenced by branch executes whatever that branch contains, in a job that receives repository secrets.
+
 ## [0.5.0] - 2026-07-16
 
 ### Added
