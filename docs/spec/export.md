@@ -131,6 +131,11 @@ Per enabled resource: a `Deployment`, a `ClusterIP` `Service`, a
   `livenessProbe`: `interval` to `periodSeconds`, `timeout` to
   `timeoutSeconds`, `retries` to `failureThreshold` and `start_period` to
   `initialDelaySeconds`.
+- The Kubernetes API requires each of those to be at least 1, while the
+  manifest accepts sub-second durations and `retries: 0`. Durations therefore
+  round up, with a floor of one second, and a `retries` of zero emits a
+  `failureThreshold` of one. Rounding up rather than down keeps the emitted
+  probe at least as patient as the manifest asked for.
 - Named volumes become a `PersistentVolumeClaim` (`ReadWriteOnce`, `1Gi`);
   anonymous volumes become an `emptyDir`; host paths become a `hostPath`.
 

@@ -352,8 +352,14 @@ The `healthcheck` object follows the Docker Compose convention:
 | `retries` | integer | no | `5` | Consecutive failures before considered unhealthy. |
 | `start_period` | duration string | no | `"5s"` | Grace period after start. |
 
-Duration strings follow the Go duration format (`"5s"`, `"500ms"`,
-`"2m"`).
+Duration strings are a decimal number followed by one unit among `ns`, `us`,
+`ms`, `s`, `m`, `h`: `"5s"`, `"500ms"`, `"1.5m"`. The abbreviated decimal forms
+`".5s"` and `"5.s"` are accepted. A compound form such as `"1m30s"` is not.
+
+The same parser serves validation, `up` and `export`, so a duration accepted by
+`lightshuttle validate` is never refused later. A value too large to represent,
+and a positive value shorter than one nanosecond, are both reported rather than
+silently saturated or zeroed.
 
 ## Dependencies and ordering
 

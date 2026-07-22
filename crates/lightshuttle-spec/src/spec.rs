@@ -806,45 +806,14 @@ fn parse_healthcheck(hc: &Healthcheck) -> Result<HealthcheckSpec> {
     })
 }
 
+/// Parses a manifest duration through the single grammar of the project.
+///
+/// Lowering used to re-implement this with `f64`, which silently saturated on
+/// an oversized value and lost precision on a fractional one, and which read
+/// strings differently from the validation pass.
 fn parse_duration(input: &str) -> Result<Duration> {
-    let trimmed = input.trim();
-    let (digits, unit) = split_duration(trimmed)
-        .ok_or_else(|| SpecError::InvalidSpec(format!("invalid duration `{input}`")))?;
-    let value: f64 = digits
-        .parse()
-        .map_err(|_| SpecError::InvalidSpec(format!("invalid duration `{input}`")))?;
-    let nanos = match unit {
-        "ns" => value,
-        "us" => value * 1_000.0,
-        "ms" => value * 1_000_000.0,
-        "s" => value * 1_000_000_000.0,
-        "m" => value * 60.0 * 1_000_000_000.0,
-        "h" => value * 3_600.0 * 1_000_000_000.0,
-        _ => {
-            return Err(SpecError::InvalidSpec(format!(
-                "invalid duration unit `{unit}`"
-            )));
-        }
-    };
-    if nanos.is_sign_negative() || !nanos.is_finite() {
-        return Err(SpecError::InvalidSpec(format!(
-            "invalid duration `{input}`"
-        )));
-    }
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    Ok(Duration::from_nanos(nanos as u64))
-}
-
-fn split_duration(input: &str) -> Option<(&str, &str)> {
-    let bytes = input.as_bytes();
-    let mut idx = 0;
-    while idx < bytes.len() && (bytes[idx].is_ascii_digit() || bytes[idx] == b'.') {
-        idx += 1;
-    }
-    if idx == 0 || idx == bytes.len() {
-        return None;
-    }
-    Some((&input[..idx], &input[idx..]))
+    lightshuttle_manifest::canonical::parse_duration(input)
+        .map_err(|source| SpecError::InvalidSpec(source.to_string()))
 }
 
 /// Generate a 24-character alphanumeric password from a cryptographically

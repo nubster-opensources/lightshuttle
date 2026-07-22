@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use lightshuttle_manifest::ImagePullPolicy;
+use lightshuttle_manifest::canonical::to_whole_seconds;
 use lightshuttle_spec::{
     ContainerSpec, HealthcheckSpec, ImageSource, PortBinding, VolumeBinding, VolumeSource,
 };
@@ -275,7 +276,7 @@ fn probe(hc: &HealthcheckSpec) -> Probe {
         exec: ExecAction { command },
         period_seconds: secs(hc.interval),
         timeout_seconds: secs(hc.timeout),
-        failure_threshold: hc.retries,
+        failure_threshold: failure_threshold(hc.retries),
         initial_delay_seconds: secs(hc.start_period),
     }
 }
@@ -313,9 +314,23 @@ fn meta(name: &str, namespace: &str, labels: &BTreeMap<String, String>) -> Meta 
     }
 }
 
-#[allow(clippy::cast_possible_truncation)]
+/// Whole seconds for a probe field, never zero.
+///
+/// `Duration::as_secs` floored a sub second value to zero, and the Kubernetes
+/// API requires `periodSeconds` and `timeoutSeconds` to be at least one. A
+/// probe with a period of zero does not fail loudly: it leaves the container
+/// permanently unready.
 fn secs(d: Duration) -> u32 {
-    d.as_secs().min(u64::from(u32::MAX)) as u32
+    to_whole_seconds(d)
+}
+
+/// A failure threshold the API accepts.
+///
+/// `retries` is an unrestricted `u32` in the manifest, and Kubernetes rejects
+/// a `failureThreshold` of zero. One is the closest value the target can
+/// express for "do not retry".
+fn failure_threshold(retries: u32) -> u32 {
+    retries.max(1)
 }
 
 fn to_yaml<T: Serialize>(value: &T) -> Result<String> {

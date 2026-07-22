@@ -235,24 +235,18 @@ fn validate_healthcheck(hc: &Healthcheck) -> Result<()> {
     Ok(())
 }
 
+/// Checks a duration against the single grammar of the project.
+///
+/// Validation used to have its own, looser reading of a duration: a run of
+/// digits and dots followed by a unit. `.s` and `1..2s` matched that and are
+/// not numbers, so a manifest could pass `validate` and fail at `up`. Both
+/// stages now go through [`crate::canonical::parse_duration`], which is what
+/// makes the promise of `validate` true by construction rather than by
+/// coincidence.
 fn parse_duration(input: &str) -> Result<()> {
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        return Err(ManifestError::InvalidDuration(input.to_owned()));
-    }
-    let bytes = trimmed.as_bytes();
-    let mut idx = 0;
-    while idx < bytes.len() && (bytes[idx].is_ascii_digit() || bytes[idx] == b'.') {
-        idx += 1;
-    }
-    if idx == 0 {
-        return Err(ManifestError::InvalidDuration(input.to_owned()));
-    }
-    let unit = &trimmed[idx..];
-    if !matches!(unit, "ns" | "us" | "ms" | "s" | "m" | "h") {
-        return Err(ManifestError::InvalidDuration(input.to_owned()));
-    }
-    Ok(())
+    crate::canonical::parse_duration(input)
+        .map(|_| ())
+        .map_err(|_| ManifestError::InvalidDuration(input.to_owned()))
 }
 
 fn validate_dependency_graph(resources: &IndexMap<String, ResourceKind>) -> Result<()> {
