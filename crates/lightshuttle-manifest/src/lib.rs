@@ -53,6 +53,7 @@
 //! `docs/spec/manifest-v0.md` in the main repository.
 #![deny(missing_docs)]
 
+pub use crate::canonical::{ImageReference, ImageReferenceError};
 pub use crate::error::{ManifestError, Result};
 pub use crate::interpolate::{InterpolationContext, Interpolator, Reference};
 pub use crate::model::{
@@ -63,6 +64,8 @@ pub use crate::model::{
 };
 pub use crate::schema::schema;
 
+/// Canonical parsers for the normalised grammars shared across the workspace.
+pub mod canonical;
 mod error;
 mod host_paths;
 /// Substitution engine for `${...}` interpolations in manifest string values.

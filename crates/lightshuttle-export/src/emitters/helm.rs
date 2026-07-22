@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::time::Duration;
 
-use lightshuttle_manifest::ImagePullPolicy;
+use lightshuttle_manifest::{ImagePullPolicy, ImageReference};
 use lightshuttle_spec::{ContainerSpec, HealthcheckSpec, ImageSource, VolumeSource};
 use serde::Serialize;
 
@@ -22,6 +22,10 @@ use crate::resolve::{
     chart_name_for, chart_version_for, dns_name, enabled_for, image_pull_policy_for, namespace_for,
     replicas_for, split_env,
 };
+
+/// Tag assumed when a reference carries none, matching the container runtime
+/// default.
+const DEFAULT_TAG: &str = "latest";
 
 /// Emits a Helm chart from the export model.
 ///
@@ -107,14 +111,15 @@ fn values_yaml(model: &ExportModel) -> Result<String> {
         }
         let name = dns_name(&service.spec.resource);
         let (env, secrets) = split_env(&service.spec);
-        let (repository, tag) = split_image(&service.spec.image);
+        let image = parse_image(&service.spec.image, &service.spec.resource)?;
         services.insert(
             name,
             ServiceValues {
                 replicas: replicas_for(Target::Helm, &service.spec.resource, export),
                 image: ImageValues {
-                    repository,
-                    tag,
+                    repository: image.qualified_repository(),
+                    tag: image.tag().unwrap_or(DEFAULT_TAG).to_owned(),
+                    digest: image.digest().map(str::to_owned),
                     pull_policy: pull_policy_str(image_pull_policy_for(
                         &service.spec.resource,
                         export,
@@ -187,7 +192,7 @@ fn deployment_block(spec: &ContainerSpec, name: &str) -> String {
          \x20\x20\x20 spec:\n\
          \x20\x20\x20\x20\x20 containers:\n\
          \x20\x20\x20\x20\x20 - name: {name}\n\
-         \x20\x20\x20\x20\x20\x20\x20 image: \"{{{{ $svc.image.repository }}}}:{{{{ $svc.image.tag }}}}\"\n\
+         \x20\x20\x20\x20\x20\x20\x20 image: \"{{{{ $svc.image.repository }}}}{{{{ if $svc.image.digest }}}}@{{{{ $svc.image.digest }}}}{{{{ else }}}}:{{{{ $svc.image.tag }}}}{{{{ end }}}}\"\n\
          \x20\x20\x20\x20\x20\x20\x20 imagePullPolicy: {{{{ $svc.image.pullPolicy }}}}\n"
     );
 
@@ -361,16 +366,21 @@ fn named_mounts(spec: &ContainerSpec) -> Vec<(String, &str)> {
         .collect()
 }
 
-/// Split an image reference into `(repository, tag)` on the last colon.
-fn split_image(image: &ImageSource) -> (String, String) {
+/// Parses the image of a service into the canonical reference type.
+///
+/// The chart renders `repository`, `tag` and `digest` separately, so the
+/// reference has to be understood rather than split: a registry port and a
+/// digest both introduce a colon that is not a tag separator.
+fn parse_image(image: &ImageSource, resource: &str) -> Result<ImageReference> {
     let reference = match image {
-        ImageSource::Pull(img) => img.clone(),
-        ImageSource::Build { tag, .. } => tag.clone(),
+        ImageSource::Pull(img) => img.as_str(),
+        ImageSource::Build { tag, .. } => tag.as_str(),
     };
-    match reference.rsplit_once(':') {
-        Some((repo, tag)) if !repo.is_empty() => (repo.to_owned(), tag.to_owned()),
-        _ => (reference, "latest".to_owned()),
-    }
+    ImageReference::parse(reference).map_err(|source| crate::ExportError::Unsupported {
+        resource: resource.to_owned(),
+        target: "helm",
+        reason: source.to_string(),
+    })
 }
 
 fn pull_policy_str(policy: ImagePullPolicy) -> &'static str {
@@ -491,6 +501,10 @@ struct ServiceValues {
 struct ImageValues {
     repository: String,
     tag: String,
+    /// Present only when the reference is digest pinned, so a chart for an
+    /// ordinary tagged image keeps the values file it had before.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    digest: Option<String>,
     #[serde(rename = "pullPolicy")]
     pull_policy: String,
 }
