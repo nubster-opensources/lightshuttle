@@ -37,6 +37,7 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 ### Security
 - Values declared under `secrets:` are no longer written into exported Compose, Kubernetes or Helm artifacts. The previous key-name heuristic is kept as a safety net, so a key such as `DB_PASSWORD` stays redacted even when it is not declared, but a name that carries no marker, such as `DATABASE_URL`, was previously exported in clear text.
 - The reusable `ai-review` workflow is pinned by commit SHA instead of a moving branch reference. A reusable workflow referenced by branch executes whatever that branch contains, in a job that receives repository secrets.
+- A relative host volume `src` that escapes the manifest directory through a `..` component is now rejected instead of being emitted verbatim (#118). The traversal check was present but its result was returned as `None`, which the caller treated as "leave the mapping unchanged", so a mapping such as `./foo/../../etc/passwd:/etc/passwd` survived into the exported Compose or Kubernetes `hostPath`. Anyone who controlled a manifest could mount an arbitrary host path into a container. The rejection is now a propagated `ManifestError::InvalidVolumePath`, so `resolve_host_volume_paths` fails loudly, and `ManifestError` is `#[non_exhaustive]` so future variants stay non breaking.
 
 ## [0.5.0] - 2026-07-16
 

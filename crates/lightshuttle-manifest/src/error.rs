@@ -14,7 +14,12 @@ use thiserror::Error;
 pub type Result<T> = std::result::Result<T, ManifestError>;
 
 /// Errors raised while parsing, validating or interpolating a manifest.
+///
+/// The enum is `#[non_exhaustive]`: new variants can be added in a patch
+/// release without breaking downstream `match` statements, so consumers must
+/// keep a wildcard arm.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum ManifestError {
     /// The YAML payload could not be parsed at the syntactic level.
     #[error("failed to parse YAML")]
@@ -112,5 +117,16 @@ pub enum ManifestError {
         resource: String,
         /// Environment variable declared twice.
         key: String,
+    },
+
+    /// A relative volume `src` escapes the manifest base directory through a
+    /// `..` component. Such a mapping is rejected rather than resolved: it
+    /// would mount an arbitrary host path into the container.
+    #[error(
+        "invalid volume path `{mapping}`: a relative source must not escape the manifest directory with `..`"
+    )]
+    InvalidVolumePath {
+        /// The offending `src:target` mapping, verbatim.
+        mapping: String,
     },
 }

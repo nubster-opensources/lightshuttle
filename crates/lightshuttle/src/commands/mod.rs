@@ -57,7 +57,7 @@ impl ExitOutcome {
 pub(crate) fn load_manifest(path: &Path) -> Result<lightshuttle_manifest::Manifest> {
     let yaml = std::fs::read_to_string(path)?;
     let mut manifest = lightshuttle_manifest::Manifest::parse(&yaml)?;
-    manifest.resolve_host_volume_paths(&manifest_base_dir(path));
+    manifest.resolve_host_volume_paths(&manifest_base_dir(path))?;
     Ok(manifest)
 }
 
