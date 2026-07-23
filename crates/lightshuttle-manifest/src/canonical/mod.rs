@@ -17,7 +17,9 @@
 //! the canonical types live here.
 
 pub mod dns_name;
+pub mod duration;
 pub mod image_reference;
 
 pub use dns_name::{DnsName, DnsNameError, is_dns_label};
+pub use duration::{DurationError, parse_duration, to_whole_seconds};
 pub use image_reference::{ImageReference, ImageReferenceError};
