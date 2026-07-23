@@ -155,6 +155,10 @@ the knobs surface in `values.yaml`.
   environment is rendered with `{{- range $k, $v := $svc.env }}`.
 - Services are accessed with `index .Values.services "<name>"` so
   DNS-sanitised names containing a dash resolve.
+- Volumes are represented exactly as the Kubernetes target represents them: a
+  claim for a named volume, a `hostPath` for a host path, an `emptyDir` for an
+  anonymous volume. The pod volume names are the same in both targets, so the
+  two artifacts can be compared rather than merely assumed to agree.
 
 ## Validation
 

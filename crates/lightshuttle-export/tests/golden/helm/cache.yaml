@@ -22,6 +22,9 @@ spec:
         imagePullPolicy: {{ $svc.image.pullPolicy }}
         ports:
         - containerPort: 6379
+        volumeMounts:
+        - name: cache-data-0
+          mountPath: /data
         args:
         - redis-server
         readinessProbe:
@@ -42,6 +45,9 @@ spec:
           timeoutSeconds: 3
           failureThreshold: 5
           initialDelaySeconds: 5
+      volumes:
+      - name: cache-data-0
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

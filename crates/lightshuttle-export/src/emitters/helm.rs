@@ -216,11 +216,15 @@ fn deployment_block(spec: &ContainerSpec, name: &str) -> Result<String> {
             let _ = writeln!(s, "        - secretRef:\n            name: {name}-secret");
         }
     }
-    let mounts: Vec<(String, &str)> = named_mounts(spec)?;
+    let mounts = pod_volumes(spec, name)?;
     if !mounts.is_empty() {
         s.push_str("        volumeMounts:\n");
-        for (vol, target) in &mounts {
-            let _ = writeln!(s, "        - name: {vol}\n          mountPath: {target}");
+        for mount in &mounts {
+            let _ = writeln!(
+                s,
+                "        - name: {}\n          mountPath: {}",
+                mount.name, mount.target
+            );
         }
     }
     if let Some(entrypoint) = &spec.entrypoint {
@@ -245,11 +249,18 @@ fn deployment_block(spec: &ContainerSpec, name: &str) -> Result<String> {
     }
     if !mounts.is_empty() {
         s.push_str("      volumes:\n");
-        for (vol, _) in &mounts {
-            let _ = writeln!(
-                s,
-                "      - name: {vol}\n        persistentVolumeClaim:\n          claimName: {name}-{vol}"
-            );
+        for mount in &mounts {
+            let vol = &mount.name;
+            let backing = match &mount.kind {
+                PodVolumeKind::Claim => {
+                    format!("        persistentVolumeClaim:\n          claimName: {name}-{vol}\n")
+                }
+                PodVolumeKind::HostPath(path) => {
+                    format!("        hostPath:\n          path: {path}\n")
+                }
+                PodVolumeKind::EmptyDir => "        emptyDir: {}\n".to_owned(),
+            };
+            let _ = write!(s, "      - name: {vol}\n{backing}");
         }
     }
     Ok(s)
@@ -362,14 +373,54 @@ fn probe_block(hc: &HealthcheckSpec) -> String {
 }
 
 /// Named volume mounts as `(volume_name, mount_path)`.
-fn named_mounts(spec: &ContainerSpec) -> Result<Vec<(String, &str)>> {
+/// How a pod volume is backed, mirroring the Kubernetes target.
+enum PodVolumeKind {
+    /// A claim on a `PersistentVolumeClaim` emitted alongside the deployment.
+    Claim,
+    /// A directory on the node, taken from the manifest as written.
+    HostPath(String),
+    /// Storage that lives and dies with the pod.
+    EmptyDir,
+}
+
+/// A pod volume: the name it is referenced by, where it is mounted, and what
+/// backs it.
+struct PodVolume<'a> {
+    name: String,
+    target: &'a str,
+    kind: PodVolumeKind,
+}
+
+/// Resolves every volume of a spec into its pod representation.
+///
+/// Previously only named volumes were kept and the rest were discarded, so a
+/// chart mounted nothing where the manifest declared a host path or an
+/// anonymous volume, and said nothing about it. Names are built exactly as the
+/// Kubernetes target builds them, so the two artifacts can be compared line by
+/// line rather than merely believed to agree.
+fn pod_volumes<'a>(spec: &'a ContainerSpec, name: &str) -> Result<Vec<PodVolume<'a>>> {
     spec.volumes
         .iter()
-        .filter_map(|v| match &v.source {
-            VolumeSource::Named(name) => {
-                Some(dns_name(name).map(|label| (label, v.target.as_str())))
-            }
-            _ => None,
+        .enumerate()
+        .map(|(index, volume)| {
+            let resolved = match &volume.source {
+                VolumeSource::Named(label) => PodVolume {
+                    name: dns_name(label)?,
+                    target: volume.target.as_str(),
+                    kind: PodVolumeKind::Claim,
+                },
+                VolumeSource::HostPath(path) => PodVolume {
+                    name: format!("{name}-host-{index}"),
+                    target: volume.target.as_str(),
+                    kind: PodVolumeKind::HostPath(path.clone()),
+                },
+                VolumeSource::Anonymous => PodVolume {
+                    name: format!("{name}-data-{index}"),
+                    target: volume.target.as_str(),
+                    kind: PodVolumeKind::EmptyDir,
+                },
+            };
+            Ok(resolved)
         })
         .collect()
 }
