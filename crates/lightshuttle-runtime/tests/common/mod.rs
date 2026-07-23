@@ -85,6 +85,22 @@ pub(crate) async fn wait_for_healthy(
         .map_err(|_| format!("timed out waiting for `{resource}` to become healthy"))?
 }
 
+/// Returns `true` when the `lightshuttle-<project>` bridge network exists.
+///
+/// Shells out to `docker network inspect` and reports presence by exit status
+/// alone, so the integration tests can assert a shutdown left no network
+/// behind without depending on any private runtime API.
+#[must_use]
+pub(crate) fn network_exists(project: &str) -> bool {
+    Command::new("docker")
+        .args(["network", "inspect", &format!("lightshuttle-{project}")])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
 /// RAII teardown for a LightShuttle project's Docker resources.
 ///
 /// On drop it force-removes every container labelled

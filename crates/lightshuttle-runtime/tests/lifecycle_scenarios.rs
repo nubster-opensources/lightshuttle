@@ -50,13 +50,14 @@ fn is_live(status: &ContainerStatus) -> bool {
 
 // --- Scenario A: up then down ------------------------------------------------
 
-/// `start_all` brings a two-resource stack live, then `stop_all` stops every
-/// container and removes the project network.
+/// `start_all` brings a two-resource stack live, then `stop_all` stops and
+/// removes every container and tears down the project network.
 ///
-/// `stop_all` stops containers but does not remove them, and `list_managed`
-/// lists with `all(true)`, so "down" is asserted by every managed container
-/// having left a live state, not by the list being empty. The RAII guard
-/// performs the actual `docker rm -f`.
+/// Shutdown leaves nothing behind: `list_managed` (which lists with
+/// `all(true)`) returns an empty set once every container is removed, and the
+/// `lightshuttle-<project>` network no longer exists. This locks the fix for
+/// the shutdown that used to leave stopped containers attached to a network it
+/// could then never delete. The RAII guard is a belt-and-braces fallback.
 #[tokio::test]
 #[ignore = "requires a running Docker daemon"]
 async fn up_brings_the_stack_live_then_down_stops_it() {
@@ -90,13 +91,17 @@ async fn up_brings_the_stack_live_then_down_stops_it() {
 
     manager.stop_all(STOP_GRACE).await.expect("stack stops");
 
-    let stopped = observer()
+    let remaining = observer()
         .list_managed(&project)
         .await
         .expect("list after stop");
     assert!(
-        stopped.iter().all(|c| !is_live(&c.status)),
-        "no resource should remain live after stop, got {stopped:?}"
+        remaining.is_empty(),
+        "no managed container should remain after stop, got {remaining:?}"
+    );
+    assert!(
+        !common::network_exists(&project),
+        "the project network `lightshuttle-{project}` must be gone after stop"
     );
 }
 

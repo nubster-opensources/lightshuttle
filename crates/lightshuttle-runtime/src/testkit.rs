@@ -60,6 +60,7 @@ pub struct MockRuntime {
     fail_on: Arc<Mutex<Option<String>>>,
     start_order: Arc<Mutex<Vec<String>>>,
     stop_order: Arc<Mutex<Vec<String>>>,
+    remove_order: Arc<Mutex<Vec<String>>>,
     started_specs: Arc<Mutex<Vec<ContainerSpec>>>,
 }
 
@@ -79,6 +80,7 @@ impl MockRuntime {
             fail_on: Arc::new(Mutex::new(None)),
             start_order: Arc::new(Mutex::new(Vec::new())),
             stop_order: Arc::new(Mutex::new(Vec::new())),
+            remove_order: Arc::new(Mutex::new(Vec::new())),
             started_specs: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -107,6 +109,20 @@ impl MockRuntime {
         self.stop_order
             .lock()
             .expect("stop_order mutex poisoned")
+            .clone()
+    }
+
+    /// Names passed to [`ContainerRuntime::remove`] that matched a live
+    /// container, in call order.
+    ///
+    /// Only effective removals are recorded: the pre-start cleanup that
+    /// `start_one` performs against a not-yet-created container is a no-op and
+    /// leaves no trace, so this observer reflects teardown removals alone.
+    #[must_use]
+    pub fn removed_resources(&self) -> Vec<String> {
+        self.remove_order
+            .lock()
+            .expect("remove_order mutex poisoned")
             .clone()
     }
 
@@ -185,10 +201,18 @@ impl ContainerRuntime for MockRuntime {
     }
 
     async fn remove(&self, name: &str) -> Result<(), RuntimeError> {
-        self.state
+        let removed = self
+            .state
             .lock()
             .expect("state mutex poisoned")
-            .remove(&format!("mock-{name}"));
+            .remove(&format!("mock-{name}"))
+            .is_some();
+        if removed {
+            self.remove_order
+                .lock()
+                .expect("remove_order mutex poisoned")
+                .push(name.to_owned());
+        }
         Ok(())
     }
 

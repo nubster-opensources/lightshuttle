@@ -151,6 +151,76 @@ resources:
 }
 
 #[tokio::test]
+async fn stop_all_removes_every_container() {
+    let plan = build_plan(
+        r"
+project:
+  name: app
+resources:
+  db:
+    postgres:
+      version: '16'
+  api:
+    container:
+      image: alpine
+      depends_on: [db]
+",
+    );
+    let runtime = MockRuntime::new();
+    let observer = runtime.clone();
+    let (manager, _events) = LifecycleManager::new(plan, runtime);
+
+    manager.start_all().await.unwrap();
+    manager.stop_all(Duration::from_millis(50)).await.unwrap();
+
+    let mut removed = observer.removed_resources();
+    removed.sort();
+    assert_eq!(
+        removed,
+        vec!["app_api".to_owned(), "app_db".to_owned()],
+        "every managed container must be removed on shutdown, got {removed:?}"
+    );
+}
+
+#[tokio::test]
+async fn stop_all_removes_in_reverse_topological_order() {
+    let plan = build_plan(
+        r"
+project:
+  name: app
+resources:
+  db:
+    postgres:
+      version: '16'
+  api:
+    container:
+      image: alpine
+      depends_on: [db]
+",
+    );
+    let runtime = MockRuntime::new();
+    let observer = runtime.clone();
+    let (manager, _events) = LifecycleManager::new(plan, runtime);
+
+    manager.start_all().await.unwrap();
+    manager.stop_all(Duration::from_millis(50)).await.unwrap();
+
+    let removed = observer.removed_resources();
+    let api_idx = removed
+        .iter()
+        .position(|n| n == "app_api")
+        .expect("api removed");
+    let db_idx = removed
+        .iter()
+        .position(|n| n == "app_db")
+        .expect("db removed");
+    assert!(
+        api_idx < db_idx,
+        "api must be removed before db (reverse topo), got {removed:?}"
+    );
+}
+
+#[tokio::test]
 async fn emits_lifecycle_events() {
     let plan = build_plan(
         r"
