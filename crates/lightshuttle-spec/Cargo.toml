@@ -24,3 +24,6 @@ lightshuttle-manifest = { version = "0.5.0", path = "../lightshuttle-manifest" }
 indexmap.workspace = true
 thiserror.workspace = true
 rand.workspace = true
+
+[dev-dependencies]
+url.workspace = true

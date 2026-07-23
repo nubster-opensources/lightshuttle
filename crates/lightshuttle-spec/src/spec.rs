@@ -10,6 +10,9 @@ use std::collections::{BTreeSet, HashMap};
 use std::time::Duration;
 
 use indexmap::IndexMap;
+use lightshuttle_manifest::canonical::{
+    MappingSource, VolumeMapping, encode_path_segment, encode_userinfo,
+};
 use lightshuttle_manifest::{
     Command, ContainerConfig, DockerfileConfig, Healthcheck, PortMapping, PostgresConfig,
     RedisConfig, ResourceKind, Volume,
@@ -496,9 +499,17 @@ fn spec_postgres(
     outputs.insert("user".to_owned(), user_out.clone());
     outputs.insert("password".to_owned(), pwd_out.clone());
     outputs.insert("database".to_owned(), db_out.clone());
+    // The structured outputs above stay raw, because they are handed to the
+    // service as is. Only the URL is percent encoded, so a credential holding
+    // a reserved character cannot move a boundary of the URL it sits in.
     outputs.insert(
         "url".to_owned(),
-        format!("postgres://{user_out}:{pwd_out}@{name}:{port}/{db_out}"),
+        format!(
+            "postgres://{}:{}@{name}:{port}/{}",
+            encode_userinfo(&user_out),
+            encode_userinfo(&pwd_out),
+            encode_path_segment(&db_out)
+        ),
     );
 
     Ok(ResolvedResource { spec, outputs })
@@ -572,7 +583,7 @@ fn spec_redis(
     let url = if password_out.is_empty() {
         format!("redis://{name}:{port}")
     } else {
-        format!("redis://:{password_out}@{name}:{port}")
+        format!("redis://:{}@{name}:{port}", encode_userinfo(&password_out))
     };
     outputs.insert("url".to_owned(), url);
 
@@ -768,24 +779,15 @@ fn parse_port_string(input: &str) -> Result<PortBinding> {
 }
 
 fn parse_volume_string(input: &str) -> Result<VolumeBinding> {
-    let (source, target) = input.split_once(':').ok_or_else(|| {
-        SpecError::InvalidSpec(format!(
-            "invalid volume mapping `{input}`: expected `src:target`"
-        ))
-    })?;
-    let source = if source.starts_with('.') || source.starts_with('/') {
-        VolumeSource::HostPath(source.to_owned())
-    } else {
-        if source.contains(['{', '}']) {
-            return Err(SpecError::InvalidSpec(format!(
-                "volume name `{source}` must not contain '{{' or '}}': unsafe in export templates"
-            )));
-        }
-        VolumeSource::Named(source.to_owned())
+    let mapping =
+        VolumeMapping::parse(input).map_err(|source| SpecError::InvalidSpec(source.to_string()))?;
+    let source = match mapping.source() {
+        MappingSource::HostPath(path) => VolumeSource::HostPath(path.clone()),
+        MappingSource::Named(name) => VolumeSource::Named(name.clone()),
     };
     Ok(VolumeBinding {
         source,
-        target: target.to_owned(),
+        target: mapping.target().to_owned(),
     })
 }
 

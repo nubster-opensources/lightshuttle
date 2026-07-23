@@ -16,10 +16,14 @@
 //! and `lightshuttle-runtime` in the workspace dependency graph, which is why
 //! the canonical types live here.
 
+pub mod credential;
 pub mod dns_name;
 pub mod duration;
 pub mod image_reference;
+pub mod volume_mapping;
 
+pub use credential::{encode_path_segment, encode_userinfo};
 pub use dns_name::{DnsName, DnsNameError, is_dns_label};
 pub use duration::{DurationError, parse_duration, to_whole_seconds};
 pub use image_reference::{ImageReference, ImageReferenceError};
+pub use volume_mapping::{MappingSource, VolumeMapping, VolumeMappingError, is_drive_qualified};
