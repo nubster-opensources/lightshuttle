@@ -340,6 +340,18 @@ A volume entry **MAY** be:
 
 Relative host paths are resolved against the manifest directory.
 
+A mapping carries **exactly two fields**, a source and a target. Mount
+options such as `:ro` are not supported, and a mapping that carries a third
+field is rejected with a diagnostic naming it. Folding the extra field into
+the target would mount at a path the manifest never declared.
+
+A source is read as a host path when it starts with `.` or `/`, or when it is
+drive qualified, as in `C:\project\data` or `C:/project/data`. Drive letters
+are recognised on every platform, so a manifest reads the same way wherever
+the export runs. A single letter followed by a colon is otherwise a legal
+volume name: `c:/data` mounts the volume `c` at `/data`, because a mapping
+must carry two fields and that is the only reading that does.
+
 ### Healthcheck
 
 The `healthcheck` object follows the Docker Compose convention:
