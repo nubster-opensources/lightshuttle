@@ -117,6 +117,43 @@ fn wait_for_running(project: &str, deadline: Duration) {
     }
 }
 
+/// Returns `true` when at least one container (running or stopped) still
+/// carries the project's label.
+fn any_container_exists(project: &str) -> bool {
+    let label = format!("label=lightshuttle.project={project}");
+    let output = Command::new("docker")
+        .args(["ps", "-aq", "--filter", &label])
+        .output()
+        .expect("docker ps runs");
+    !String::from_utf8_lossy(&output.stdout).trim().is_empty()
+}
+
+/// Returns `true` when the `lightshuttle-<project>` bridge network exists.
+fn network_exists(project: &str) -> bool {
+    Command::new("docker")
+        .args(["network", "inspect", &format!("lightshuttle-{project}")])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+/// Force-remove every container labelled with `project`, leaving the network
+/// untouched. Used to simulate a manager killed hard after its containers were
+/// already reaped, so only an orphaned network remains.
+fn remove_project_containers(project: &str) {
+    let label = format!("label=lightshuttle.project={project}");
+    if let Ok(listed) = Command::new("docker")
+        .args(["ps", "-aq", "--filter", &label])
+        .output()
+    {
+        for id in String::from_utf8_lossy(&listed.stdout).split_whitespace() {
+            let _ = Command::new("docker").args(["rm", "-f", id]).output();
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Test
 // ---------------------------------------------------------------------------
@@ -167,7 +204,77 @@ resources:
         .success()
         .stdout(contains("stopped:"));
 
+    // Shutdown must leave no managed container and no project network behind.
+    assert!(
+        !any_container_exists(&project),
+        "down must remove every managed container, one still exists for `{project}`"
+    );
+    assert!(
+        !network_exists(&project),
+        "down must remove the project network `lightshuttle-{project}`"
+    );
+
     // Stop the supervisor child after teardown.
     let _ = up.kill();
     let _ = up.wait();
+}
+
+/// `down` reclaims a project network left orphaned by a manager that was
+/// killed hard after its containers were already gone. With no container to
+/// stop, `down` must still remove the network instead of returning early.
+#[test]
+#[ignore = "requires a running Docker daemon"]
+fn down_reclaims_an_orphaned_network_with_no_containers() {
+    if !docker_available() {
+        eprintln!("skipping: docker not available");
+        return;
+    }
+
+    let project = unique_project("orph");
+    let _guard = ProjectCleanup::new(project.clone());
+
+    let manifest = format!(
+        r#"
+project:
+  name: {project}
+resources:
+  app:
+    container:
+      image: alpine:3.20
+      command: ["sh", "-c", "sleep 120"]
+"#
+    );
+    let manifest_file = write_temp_manifest(&manifest);
+    let path = manifest_file.path().to_str().expect("path is UTF-8");
+
+    // Boot the stack so lightshuttle creates the labelled project network.
+    let mut up = Command::new(cargo_bin("lightshuttle"))
+        .args(["--file", path, "up"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("lightshuttle up spawns");
+    wait_for_running(&project, Duration::from_secs(60));
+
+    // Hard-kill the supervisor (no graceful teardown), then reap the
+    // containers manually. The labelled network is now orphaned.
+    let _ = up.kill();
+    let _ = up.wait();
+    remove_project_containers(&project);
+    assert!(
+        network_exists(&project),
+        "precondition: the orphaned network should still exist"
+    );
+
+    // `down` finds no container yet must still reclaim the network.
+    assert_cmd::Command::new(cargo_bin("lightshuttle"))
+        .args(["--file", path, "down"])
+        .assert()
+        .success()
+        .stdout(contains("nothing to stop"));
+
+    assert!(
+        !network_exists(&project),
+        "down must reclaim the orphaned network `lightshuttle-{project}`"
+    );
 }

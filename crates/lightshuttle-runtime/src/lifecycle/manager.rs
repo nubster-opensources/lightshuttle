@@ -281,15 +281,22 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
     /// Stop every resource in reverse topological order.
     ///
     /// Each resource receives `SIGTERM`. After `grace` elapses, the runtime
-    /// sends `SIGKILL` to any container that has not exited yet. Resources are
-    /// stopped in the reverse of startup order (dependents before their
-    /// dependencies). After all containers are removed, the per-project bridge
-    /// network is torn down (failure is logged but does not abort the call).
+    /// sends `SIGKILL` to any container that has not exited yet. Each container
+    /// is then removed (forced, named volumes preserved) so it releases its
+    /// endpoint on the project network. Resources are stopped and removed in
+    /// the reverse of startup order (dependents before their dependencies).
+    /// Once every container is gone, the per-project bridge network is torn
+    /// down (failure is logged but does not abort the call).
+    ///
+    /// Removal is attempted even for a container whose stop failed, so a single
+    /// unresponsive container cannot strand the whole network.
     ///
     /// # Errors
     ///
-    /// Returns the first [`crate::LifecycleError::Stop`] encountered. Other
-    /// stop failures are logged but not propagated.
+    /// Returns the first stop or remove failure encountered as a
+    /// [`crate::LifecycleError::Stop`]. Remaining failures are collected during
+    /// the sweep but only the first is propagated; the network teardown failure
+    /// is logged, never returned.
     #[instrument(skip_all, fields(resources = self.plan.nodes().len()))]
     pub async fn stop_all(&self, grace: Duration) -> Result<(), LifecycleError> {
         let _ = self.event_tx.send(LifecycleEvent::StackStopping);
@@ -316,6 +323,27 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
                     });
                 }
                 Err(e) => errors.push((node.name.clone(), e)),
+            }
+
+            // Remove the container (force) so it releases its endpoint on the
+            // project network. Without this the network teardown below is
+            // rejected while stopped containers stay attached, leaving both the
+            // containers and the network behind. Removal is attempted even when
+            // the stop above failed, so a container that refused `SIGTERM`
+            // cannot strand the network. Named volumes are preserved.
+            let remove_span = info_span!("remove", resource = %node.name);
+            if let Err(e) = self
+                .runtime
+                .remove(&node.spec.name)
+                .instrument(remove_span)
+                .await
+            {
+                errors.push((node.name.clone(), e));
+            } else {
+                *handle
+                    .container_id
+                    .lock()
+                    .expect("container_id mutex poisoned") = None;
             }
         }
 
