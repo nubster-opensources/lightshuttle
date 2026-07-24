@@ -19,7 +19,7 @@
 pub use crate::lifecycle::env_report::{EnvReport, EnvSource, EnvVarReport, EnvVarStatus};
 pub use crate::lifecycle::error::LifecycleError;
 pub use crate::lifecycle::handle::{LifecycleHandle, LifecycleHandleError, ManagerHandle};
-pub use crate::lifecycle::manager::LifecycleManager;
+pub use crate::lifecycle::manager::{LifecycleManager, RestartPermit};
 pub use crate::lifecycle::plan::{LifecyclePlan, PlanNode};
 pub use crate::lifecycle::status::{LifecycleEvent, NodeStatus};
 pub use crate::lifecycle::view::{ResourceStatus, ResourceView};

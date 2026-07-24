@@ -59,6 +59,47 @@ struct NodeHandle {
     outputs_rx: watch::Receiver<Option<ResourceOutputs>>,
     container_id: Arc<Mutex<Option<ContainerId>>>,
     started_at: Arc<Mutex<Option<SystemTime>>>,
+    /// Held for the full duration of a restart so concurrent restarts of
+    /// the same resource are serialized. Distinct resources own distinct
+    /// locks and restart independently.
+    restart_lock: Arc<tokio::sync::Mutex<()>>,
+}
+
+/// Proof that the caller holds exclusive restart access for one resource.
+///
+/// Acquired with [`LifecycleManager::try_begin_restart`] and must be kept
+/// alive for the whole restart: dropping it releases the resource for the
+/// next restart. While a permit exists, [`LifecycleManager::try_begin_restart`]
+/// for the same resource returns [`LifecycleError::RestartInProgress`].
+///
+/// A permit created with [`RestartPermit::unguarded`] carries no lock; it
+/// exists so control-plane test doubles and the default
+/// [`crate::LifecycleHandle`] implementation can satisfy the permit-passing
+/// API without real serialization.
+#[derive(Debug)]
+pub struct RestartPermit {
+    resource: String,
+    _guard: Option<tokio::sync::OwnedMutexGuard<()>>,
+}
+
+impl RestartPermit {
+    /// Name of the resource this permit admits.
+    #[must_use]
+    pub fn resource(&self) -> &str {
+        &self.resource
+    }
+
+    /// Build a permit that carries no lock.
+    ///
+    /// Used by callers that do not serialize restarts themselves (the
+    /// default [`crate::LifecycleHandle`] methods and test doubles).
+    #[must_use]
+    pub fn unguarded(resource: impl Into<String>) -> Self {
+        Self {
+            resource: resource.into(),
+            _guard: None,
+        }
+    }
 }
 
 /// Point-in-time snapshot of one managed resource, consumed by the
@@ -133,6 +174,7 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
                     outputs_rx,
                     container_id: Arc::new(Mutex::new(None)),
                     started_at: Arc::new(Mutex::new(None)),
+                    restart_lock: Arc::new(tokio::sync::Mutex::new(())),
                 },
             );
         }
@@ -427,6 +469,54 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
     /// [`crate::LifecycleError::Stop`] variant on runtime failure.
     #[instrument(skip(self), fields(resource = %resource))]
     pub async fn restart_one(&self, resource: &str) -> Result<(), LifecycleError> {
+        let permit = self.try_begin_restart(resource)?;
+        let outcome = self.restart_locked(&permit).await;
+        drop(permit);
+        outcome
+    }
+
+    /// Acquire the exclusive restart permit for `resource`.
+    ///
+    /// The returned [`RestartPermit`] serializes restarts per resource: it
+    /// must be handed to [`Self::restart_locked`] and kept alive for the whole
+    /// operation. Dropping it releases the resource for the next restart.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LifecycleError::ResourceNotFound`] when `resource` is not
+    /// part of the plan, or [`LifecycleError::RestartInProgress`] when a
+    /// restart of the same resource is already running.
+    pub fn try_begin_restart(&self, resource: &str) -> Result<RestartPermit, LifecycleError> {
+        let handle = self
+            .nodes
+            .get(resource)
+            .ok_or_else(|| LifecycleError::ResourceNotFound(resource.to_owned()))?;
+        let guard = Arc::clone(&handle.restart_lock)
+            .try_lock_owned()
+            .map_err(|_| LifecycleError::RestartInProgress {
+                resource: resource.to_owned(),
+            })?;
+        Ok(RestartPermit {
+            resource: resource.to_owned(),
+            _guard: Some(guard),
+        })
+    }
+
+    /// Run the stop-then-start restart cycle for the resource named by
+    /// `permit`, holding its admission for the full operation.
+    ///
+    /// Callers obtain `permit` from [`Self::try_begin_restart`]; the
+    /// convenience wrapper [`Self::restart_one`] does both in one call.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LifecycleError::ResourceNotFound`] when the permit names a
+    /// resource that is no longer in the plan, or a
+    /// [`LifecycleError::Start`] / [`LifecycleError::Stop`] variant on runtime
+    /// failure.
+    #[instrument(skip(self, permit), fields(resource = %permit.resource()))]
+    pub async fn restart_locked(&self, permit: &RestartPermit) -> Result<(), LifecycleError> {
+        let resource = permit.resource();
         let node = self
             .plan
             .nodes()

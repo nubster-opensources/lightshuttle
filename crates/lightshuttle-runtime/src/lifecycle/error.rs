@@ -73,6 +73,15 @@ pub enum LifecycleError {
     #[error("resource `{0}` not found in the current plan")]
     ResourceNotFound(String),
 
+    /// A restart was requested while another restart of the same resource
+    /// is still running. Restarts are serialized per resource so a fresh
+    /// container is never removed by a competing restart.
+    #[error("a restart of resource `{resource}` is already in progress")]
+    RestartInProgress {
+        /// Resource whose restart is already in flight.
+        resource: String,
+    },
+
     /// One or more `${env.VAR}` references in the manifest cannot be
     /// resolved because the variables are unset and have no default.
     #[error(

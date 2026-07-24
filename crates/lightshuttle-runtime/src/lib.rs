@@ -88,7 +88,7 @@ pub use crate::error::{Result, RuntimeError};
 pub use crate::lifecycle::{
     EnvReport, EnvSource, EnvVarReport, EnvVarStatus, LifecycleError, LifecycleEvent,
     LifecycleHandle, LifecycleHandleError, LifecycleManager, LifecyclePlan, ManagerHandle,
-    NodeStatus, PlanNode, ResourceStatus, ResourceView,
+    NodeStatus, PlanNode, ResourceStatus, ResourceView, RestartPermit,
 };
 pub use crate::runtime::{
     ContainerId, ContainerRuntime, ContainerStatus, LogChunk, LogChunkStream, LogStream,
