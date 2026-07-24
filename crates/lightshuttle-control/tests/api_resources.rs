@@ -11,7 +11,7 @@ use http_body_util::BodyExt;
 use lightshuttle_control::{ControlServer, ControlState};
 use lightshuttle_runtime::{
     LifecycleEvent, LifecycleHandle, LifecycleHandleError, LogChunkStream, ResourceStatus,
-    ResourceView,
+    ResourceView, RestartPermit,
 };
 use tokio::sync::broadcast;
 use tower::ServiceExt;
@@ -21,13 +21,22 @@ use tower::ServiceExt;
 #[derive(Clone, Default)]
 struct StubHandle {
     resources: Arc<Mutex<Vec<ResourceView>>>,
+    restart_conflicts: bool,
 }
 
 impl StubHandle {
     fn with_resources(views: Vec<ResourceView>) -> Self {
         Self {
             resources: Arc::new(Mutex::new(views)),
+            restart_conflicts: false,
         }
+    }
+
+    /// Configure admission to report a restart already in flight, so the
+    /// endpoint answers `409 Conflict`.
+    fn conflicting(mut self) -> Self {
+        self.restart_conflicts = true;
+        self
     }
 }
 
@@ -48,6 +57,14 @@ impl LifecycleHandle for StubHandle {
 
     async fn restart(&self, _name: &str) -> Result<(), LifecycleHandleError> {
         Err(LifecycleHandleError::NotSupported("restart"))
+    }
+
+    fn try_admit_restart(&self, name: &str) -> Result<RestartPermit, LifecycleHandleError> {
+        if self.restart_conflicts {
+            Err(LifecycleHandleError::RestartInProgress(name.to_owned()))
+        } else {
+            Ok(RestartPermit::unguarded(name))
+        }
     }
 
     async fn logs(
@@ -227,6 +244,33 @@ async fn restart_returns_404_for_unknown_resource() {
     let json: serde_json::Value = serde_json::from_slice(&bytes).expect("valid JSON");
     assert_eq!(json["error"], "unknown resource");
     assert_eq!(json["resource"], "nope");
+}
+
+#[tokio::test]
+async fn restart_returns_409_when_a_restart_is_already_in_flight() {
+    let handle = StubHandle::with_resources(vec![sample_view("cache", "redis")]).conflicting();
+    let state = ControlState::new("demo", handle);
+    let app = ControlServer::new(state).into_router();
+
+    let response = app
+        .oneshot(
+            Request::post("/api/resources/cache/restart")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body collected")
+        .to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&bytes).expect("valid JSON");
+    assert_eq!(json["error"], "restart already in progress");
+    assert_eq!(json["resource"], "cache");
 }
 
 #[tokio::test]

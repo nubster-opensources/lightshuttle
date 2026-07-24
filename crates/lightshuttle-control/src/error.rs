@@ -83,6 +83,22 @@ impl ApiError {
         }
     }
 
+    /// Build a 409 response for a restart that conflicts with one already
+    /// in flight for the same resource.
+    ///
+    /// The serialised body is
+    /// `{"error":"restart already in progress","resource":"<name>"}`.
+    #[must_use]
+    pub fn restart_in_progress(name: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
+            body: ApiErrorBody {
+                error: "restart already in progress".to_owned(),
+                resource: Some(name.into()),
+            },
+        }
+    }
+
     /// Build a 500 response for an unexpected runtime failure.
     ///
     /// The serialised body is `{"error":"<message>"}`.
@@ -103,6 +119,7 @@ impl From<LifecycleHandleError> for ApiError {
         match err {
             LifecycleHandleError::UnknownResource(name) => Self::unknown_resource(name),
             LifecycleHandleError::NotSupported(op) => Self::not_supported(op),
+            LifecycleHandleError::RestartInProgress(name) => Self::restart_in_progress(name),
             LifecycleHandleError::Runtime(e) => Self::runtime(e.to_string()),
         }
     }

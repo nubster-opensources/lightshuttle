@@ -48,12 +48,18 @@ where
     // Surface 404 immediately when the resource is unknown.
     let _ = state.handle.get(&name).await?;
 
+    // Admit the restart synchronously so a duplicate restart already in
+    // flight is rejected with `409 Conflict` before any work is scheduled.
+    // The permit is moved into the detached task, which holds it for the
+    // whole operation and releases it when the restart finishes.
+    let permit = state.handle.try_admit_restart(&name)?;
+
     crate::metrics::record_restart();
 
     let handle = state.handle.clone();
     let resource = name.clone();
     tokio::spawn(async move {
-        if let Err(err) = handle.restart(&resource).await {
+        if let Err(err) = handle.restart_with_permit(permit).await {
             tracing::error!(error = %err, resource = %resource, "restart failed");
         }
     });

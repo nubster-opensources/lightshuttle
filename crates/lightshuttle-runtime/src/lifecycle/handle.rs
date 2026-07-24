@@ -35,7 +35,7 @@ use thiserror::Error;
 use tokio::sync::broadcast;
 
 use crate::error::RuntimeError;
-use crate::lifecycle::manager::LifecycleManager;
+use crate::lifecycle::manager::{LifecycleManager, RestartPermit};
 use crate::lifecycle::status::LifecycleEvent;
 use crate::lifecycle::view::{ResourceStatus, ResourceView, image_label, last_error_from};
 use crate::runtime::{ContainerRuntime, LogChunkStream};
@@ -50,6 +50,10 @@ pub enum LifecycleHandleError {
     /// before the `restart_one` primitive lands in the manager).
     #[error("operation `{0}` is not supported by this handle yet")]
     NotSupported(&'static str),
+    /// A restart of the resource is already running. Restarts are
+    /// serialized per resource.
+    #[error("a restart of resource `{0}` is already in progress")]
+    RestartInProgress(String),
     /// Underlying runtime error.
     #[error(transparent)]
     Runtime(#[from] RuntimeError),
@@ -90,6 +94,30 @@ pub trait LifecycleHandle: Send + Sync {
         name: &str,
     ) -> impl std::future::Future<Output = Result<(), LifecycleHandleError>> + Send;
 
+    /// Admit a restart for `name`, returning a permit that must be held for
+    /// the whole operation and passed to [`Self::restart_with_permit`].
+    ///
+    /// Returns [`LifecycleHandleError::RestartInProgress`] when a restart of
+    /// the same resource is already running. The default implementation
+    /// admits unconditionally, without serialization; [`ManagerHandle`]
+    /// overrides it with a real per-resource lock so the REST layer can
+    /// answer a duplicate in-flight restart with `409 Conflict`.
+    fn try_admit_restart(&self, name: &str) -> Result<RestartPermit, LifecycleHandleError> {
+        Ok(RestartPermit::unguarded(name))
+    }
+
+    /// Run a restart to completion while holding an admission `permit`.
+    ///
+    /// The default implementation ignores the permit and delegates to
+    /// [`Self::restart`]; [`ManagerHandle`] runs the serialized restart under
+    /// the permit's lock and releases it when the future resolves.
+    fn restart_with_permit(
+        &self,
+        permit: RestartPermit,
+    ) -> impl std::future::Future<Output = Result<(), LifecycleHandleError>> + Send {
+        async move { self.restart(permit.resource()).await }
+    }
+
     /// Stream logs for a single resource by its manifest-declared name.
     ///
     /// When `follow` is `true` the stream stays open and emits new chunks as
@@ -110,6 +138,26 @@ pub trait LifecycleHandle: Send + Sync {
     /// channel capacity behind will observe a `RecvError::Lagged` and must
     /// resynchronise by calling [`LifecycleHandle::list`].
     fn subscribe_events(&self) -> broadcast::Receiver<LifecycleEvent>;
+}
+
+/// Map a [`crate::LifecycleError`] from the manager onto the control-plane
+/// facing [`LifecycleHandleError`], shared by every restart entry point so
+/// the status mapping stays consistent.
+fn map_restart_error(err: crate::LifecycleError) -> LifecycleHandleError {
+    match err {
+        crate::LifecycleError::ResourceNotFound(name) => {
+            LifecycleHandleError::UnknownResource(name)
+        }
+        crate::LifecycleError::RestartInProgress { resource } => {
+            LifecycleHandleError::RestartInProgress(resource)
+        }
+        crate::LifecycleError::Start { source, .. }
+        | crate::LifecycleError::Stop { source, .. } => LifecycleHandleError::Runtime(source),
+        crate::LifecycleError::SpecBuild { source, .. } => {
+            LifecycleHandleError::Runtime(RuntimeError::InvalidSpec(source.to_string()))
+        }
+        other => LifecycleHandleError::Runtime(RuntimeError::InvalidSpec(other.to_string())),
+    }
 }
 
 /// Newtype adapter turning an `Arc<LifecycleManager<R>>` into a
@@ -197,17 +245,23 @@ impl<R: ContainerRuntime + 'static> LifecycleHandle for ManagerHandle<R> {
     }
 
     async fn restart(&self, name: &str) -> Result<(), LifecycleHandleError> {
-        self.inner.restart_one(name).await.map_err(|err| match err {
-            crate::LifecycleError::ResourceNotFound(name) => {
-                LifecycleHandleError::UnknownResource(name)
-            }
-            crate::LifecycleError::Start { source, .. }
-            | crate::LifecycleError::Stop { source, .. } => LifecycleHandleError::Runtime(source),
-            crate::LifecycleError::SpecBuild { source, .. } => {
-                LifecycleHandleError::Runtime(RuntimeError::InvalidSpec(source.to_string()))
-            }
-            other => LifecycleHandleError::Runtime(RuntimeError::InvalidSpec(other.to_string())),
-        })
+        self.inner
+            .restart_one(name)
+            .await
+            .map_err(map_restart_error)
+    }
+
+    fn try_admit_restart(&self, name: &str) -> Result<RestartPermit, LifecycleHandleError> {
+        self.inner
+            .try_begin_restart(name)
+            .map_err(map_restart_error)
+    }
+
+    async fn restart_with_permit(&self, permit: RestartPermit) -> Result<(), LifecycleHandleError> {
+        self.inner
+            .restart_locked(&permit)
+            .await
+            .map_err(map_restart_error)
     }
 
     async fn logs(&self, name: &str, follow: bool) -> Result<LogChunkStream, LifecycleHandleError> {
