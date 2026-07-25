@@ -8,15 +8,21 @@
 //! dependencies, which allows the [`crate::LifecycleManager`] to start
 //! independent branches in parallel.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use lightshuttle_manifest::Manifest;
+use lightshuttle_manifest::{Manifest, ResourceKind};
 
 use crate::lifecycle::error::LifecycleError;
-use lightshuttle_spec::{ContainerSpec, ResolvedResource, ResourceOutputs, from_resource};
+use lightshuttle_spec::image_label;
 
-/// A single resource to manage, with its resolved [`ContainerSpec`],
-/// its exposed outputs and its explicit dependencies.
+/// A single resource to manage, kept in its pre-lowering manifest form.
+///
+/// The plan is built without lowering to a `ContainerSpec`: an interpolatable
+/// field such as a volume mapping cannot be canonically parsed while it still
+/// holds a `${...}` expression. The runtime resolves every interpolatable
+/// field and lowers the resource to a `ContainerSpec` only at start time, so a
+/// single canonical field walk drives both scanning and substitution without
+/// drift (#276).
 #[derive(Debug, Clone)]
 pub struct PlanNode {
     /// Resource name as declared in the manifest.
@@ -24,13 +30,27 @@ pub struct PlanNode {
     /// Resource kind discriminant (`postgres`, `redis`, `container`,
     /// `dockerfile`), mirrored from the manifest.
     pub kind: String,
-    /// Container specification derived from the manifest.
-    pub spec: ContainerSpec,
-    /// Outputs the resource exposes to its dependents (host, port,
-    /// password, url, ...).
-    pub outputs: ResourceOutputs,
+    /// Project name as declared in the manifest, needed to lower the resource
+    /// and to derive the container name and project label.
+    pub project: String,
+    /// Display image reference, derived without lowering. May still hold an
+    /// unresolved `${...}` expression for a `container` whose image is
+    /// interpolated; it is shown as-is until the resource starts.
+    pub image_label: String,
+    /// Raw manifest resource, resolved and lowered to a `ContainerSpec` at
+    /// start time.
+    pub resource: ResourceKind,
     /// Names of resources this one depends on.
     pub depends_on: Vec<String>,
+}
+
+impl PlanNode {
+    /// Container name, following the `<project>_<resource>` convention that
+    /// [`lightshuttle_spec::from_resource`] uses when it lowers the resource.
+    #[must_use]
+    pub fn container_name(&self) -> String {
+        format!("{}_{}", self.project, self.name)
+    }
 }
 
 /// Topologically sorted execution plan.
@@ -78,38 +98,40 @@ pub struct LifecyclePlan {
 impl LifecyclePlan {
     /// Build a plan from a parsed manifest.
     ///
-    /// Resolves the dependency graph, performs a topological sort (Kahn's
-    /// algorithm) and converts every resource to a [`ContainerSpec`].
+    /// Resolves the dependency graph and performs a topological sort (Kahn's
+    /// algorithm). Resources are kept in their raw manifest form; lowering to a
+    /// `ContainerSpec` happens at start time, after interpolation, so a field
+    /// that still holds a `${...}` expression is never parsed here.
     ///
     /// # Errors
     ///
     /// Returns [`crate::LifecycleError::Cycle`] when the dependency graph
-    /// contains a cycle, [`crate::LifecycleError::ResourceNotFound`] when a
-    /// resource references an unknown dependency, and
-    /// [`crate::LifecycleError::SpecBuild`] when a resource cannot be
-    /// converted to a [`ContainerSpec`].
+    /// contains a cycle, and [`crate::LifecycleError::ResourceNotFound`] when a
+    /// resource references an unknown dependency. Spec-build failures (an
+    /// invalid image reference, port or volume mapping) surface when the
+    /// resource is started, not here.
     pub fn from_manifest(manifest: &Manifest) -> Result<Self, LifecycleError> {
         let project = manifest.project.name.as_str();
 
-        // Build edges and collect spec + outputs for every resource.
-        let mut resolved: HashMap<String, ResolvedResource> = HashMap::new();
+        // Build edges and retain the raw resources. Lowering to a
+        // `ContainerSpec` is deferred to start time (after interpolation), so
+        // the plan never parses a field that may still hold a `${...}`
+        // expression.
         let mut deps: HashMap<String, Vec<String>> = HashMap::new();
         let mut kinds: HashMap<String, &'static str> = HashMap::new();
+        let mut raw_resources: HashMap<String, ResourceKind> = HashMap::new();
+        let mut image_labels: HashMap<String, String> = HashMap::new();
         for (name, kind) in &manifest.resources {
-            let r =
-                from_resource(project, name, kind).map_err(|source| LifecycleError::SpecBuild {
-                    resource: name.clone(),
-                    source,
-                })?;
-            resolved.insert(name.clone(), r);
             deps.insert(name.clone(), kind.merged_dependencies(name));
             kinds.insert(name.clone(), kind.kind_name());
+            image_labels.insert(name.clone(), image_label(project, name, kind));
+            raw_resources.insert(name.clone(), kind.clone());
         }
 
         // Verify every dependency points to an existing resource.
         for (name, dependencies) in &deps {
             for dependency in dependencies {
-                if !resolved.contains_key(dependency) {
+                if !raw_resources.contains_key(dependency) {
                     return Err(LifecycleError::ResourceNotFound(format!(
                         "`{dependency}` (depended on by `{name}`)"
                     )));
@@ -118,16 +140,6 @@ impl LifecyclePlan {
         }
 
         // Kahn's algorithm for topological sort.
-        let mut in_degree: HashMap<String, usize> = resolved
-            .keys()
-            .map(|name| (name.clone(), 0_usize))
-            .collect();
-        for dependencies in deps.values() {
-            for dependency in dependencies {
-                *in_degree.entry(dependency.clone()).or_insert(0) += 1;
-            }
-        }
-
         // Build reverse adjacency: dependency → resources that depend on it.
         let mut reverse: HashMap<String, Vec<String>> = HashMap::new();
         for (name, dependencies) in &deps {
@@ -147,7 +159,7 @@ impl LifecyclePlan {
         // We invert: deps come before their dependents.
         // in_degree counts how many incoming dependency edges (= how
         // many of my own dependencies) each node has.
-        let mut in_count: HashMap<String, usize> = resolved
+        let mut in_count: HashMap<String, usize> = raw_resources
             .keys()
             .map(|name| (name.clone(), deps.get(name).map_or(0, Vec::len)))
             .collect();
@@ -160,7 +172,7 @@ impl LifecyclePlan {
         // Deterministic order: sort by name.
         ready.sort();
 
-        let mut sorted: Vec<String> = Vec::with_capacity(resolved.len());
+        let mut sorted: Vec<String> = Vec::with_capacity(raw_resources.len());
         while let Some(node) = ready.pop() {
             sorted.push(node.clone());
             if let Some(dependents) = reverse.get(&node) {
@@ -177,8 +189,8 @@ impl LifecyclePlan {
             }
         }
 
-        if sorted.len() != resolved.len() {
-            let unresolved: Vec<&String> = resolved
+        if sorted.len() != raw_resources.len() {
+            let unresolved: Vec<&String> = raw_resources
                 .keys()
                 .filter(|name| !sorted.contains(name))
                 .collect();
@@ -187,27 +199,29 @@ impl LifecyclePlan {
             )));
         }
 
-        let _ = in_degree; // silence unused warning for the alternate counter
-        let _ = HashSet::<&str>::new();
-
         // Snapshot the edges before draining deps into the nodes.
         let edges = deps.clone();
 
         let nodes: Vec<PlanNode> = sorted
             .into_iter()
             .map(|name| {
-                let ResolvedResource { spec, outputs } =
-                    resolved.remove(&name).expect("spec indexed by name");
                 let dependencies = deps.remove(&name).unwrap_or_default();
                 let kind = kinds
                     .remove(&name)
                     .expect("kind indexed by name")
                     .to_owned();
+                let resource = raw_resources
+                    .remove(&name)
+                    .expect("raw resource indexed by name");
+                let image_label = image_labels
+                    .remove(&name)
+                    .expect("image label indexed by name");
                 PlanNode {
                     name,
                     kind,
-                    spec,
-                    outputs,
+                    project: project.to_owned(),
+                    image_label,
+                    resource,
                     depends_on: dependencies,
                 }
             })

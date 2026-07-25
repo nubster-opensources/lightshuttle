@@ -422,6 +422,36 @@ pub fn from_resource(
     }
 }
 
+/// Display image label for a resource, derived without lowering the full
+/// [`ContainerSpec`].
+///
+/// The runtime lowers a resource to its [`ContainerSpec`] only at start time,
+/// after interpolation, because an interpolatable field such as a volume
+/// mapping cannot be canonically parsed while it still holds a `${...}`
+/// expression. This function lets the control plane show a resource's image
+/// before it starts, mirroring the image selection [`from_resource`] performs
+/// per kind. For a `container` it returns the (possibly still unresolved) image
+/// reference verbatim; for a `dockerfile` it returns the locally built tag.
+#[must_use]
+pub fn image_label(project: &str, resource_name: &str, kind: &ResourceKind) -> String {
+    match kind {
+        ResourceKind::Container(c) => c.image.clone(),
+        ResourceKind::Dockerfile(_) => format!("lightshuttle/{project}_{resource_name}:dev"),
+        ResourceKind::Postgres(c) => c.image.clone().unwrap_or_else(|| {
+            format!(
+                "postgres:{}-alpine",
+                c.version.as_deref().unwrap_or(DEFAULT_PG_VERSION)
+            )
+        }),
+        ResourceKind::Redis(c) => c.image.clone().unwrap_or_else(|| {
+            format!(
+                "redis:{}-alpine",
+                c.version.as_deref().unwrap_or(DEFAULT_REDIS_VERSION)
+            )
+        }),
+    }
+}
+
 #[allow(clippy::needless_pass_by_value)]
 fn spec_postgres(
     name: String,

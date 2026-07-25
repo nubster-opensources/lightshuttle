@@ -122,13 +122,12 @@ impl LifecyclePlan {
 
         let mut by_name: BTreeMap<String, Aggregate> = BTreeMap::new();
         for node in self.nodes() {
-            for value in node.spec.env.values() {
-                collect_env_refs(&interpolator, value, &mut by_name);
-            }
-            if let Some(args) = &node.spec.command {
-                for arg in args {
-                    collect_env_refs(&interpolator, arg, &mut by_name);
-                }
+            // Report only references in fields that become container environment
+            // variables or command arguments. Image, volume, working directory
+            // and build inputs are resolved at start but are out of scope for
+            // secrets checking (regression guard F3).
+            for value in node.resource.environment_reference_strings() {
+                collect_env_refs(&interpolator, &value, &mut by_name);
             }
         }
 

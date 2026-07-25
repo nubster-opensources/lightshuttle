@@ -107,58 +107,156 @@ impl ResourceKind {
     /// implicit dependency derivation.
     #[must_use]
     pub fn interpolatable_strings(&self) -> Vec<String> {
-        let mut out = Vec::new();
+        // Derive the read-only scan from the one canonical field walk, so the
+        // set of scanned fields and the set of substituted fields can never
+        // drift apart (#276).
+        let mut probe = self.clone();
+        probe
+            .interpolatable_fields_mut()
+            .into_iter()
+            .map(std::mem::take)
+            .collect()
+    }
+
+    /// The single canonical enumeration of every interpolatable string field,
+    /// as mutable references.
+    ///
+    /// Both [`Self::interpolatable_strings`] (read-only scanning, which drives
+    /// reference validation and implicit dependency derivation) and
+    /// [`Self::interpolate_in_place`] (runtime and export substitution) are
+    /// defined in terms of this walk, so a field can never be scanned without
+    /// being substituted, or substituted without being scanned.
+    ///
+    /// The walk covers image and build inputs, environment and secret values,
+    /// volume mounts, entrypoint, command, working directory and healthcheck
+    /// test commands.
+    fn interpolatable_fields_mut(&mut self) -> Vec<&mut String> {
+        let mut out: Vec<&mut String> = Vec::new();
         match self {
             Self::Container(c) => {
-                out.push(c.image.clone());
-                out.extend(c.env.values().cloned());
-                out.extend(c.secrets.values().cloned());
-                out.extend(c.volumes.iter().cloned());
-                if let Some(w) = &c.working_dir {
-                    out.push(w.clone());
+                out.push(&mut c.image);
+                out.extend(c.env.values_mut());
+                out.extend(c.secrets.values_mut());
+                out.extend(c.volumes.iter_mut());
+                if let Some(entrypoint) = c.entrypoint.as_mut() {
+                    out.extend(command_fields_mut(entrypoint));
                 }
-                if let Some(cmd) = &c.command {
-                    out.extend(command_strings(cmd));
+                if let Some(command) = c.command.as_mut() {
+                    out.extend(command_fields_mut(command));
+                }
+                if let Some(working_dir) = c.working_dir.as_mut() {
+                    out.push(working_dir);
+                }
+                if let Some(healthcheck) = c.healthcheck.as_mut() {
+                    out.extend(healthcheck.test.iter_mut());
                 }
             }
             Self::Dockerfile(c) => {
-                out.push(c.context.clone());
-                out.push(c.dockerfile.clone());
-                out.extend(c.env.values().cloned());
-                out.extend(c.secrets.values().cloned());
-                out.extend(c.volumes.iter().cloned());
-                out.extend(c.build_args.values().cloned());
-                if let Some(t) = &c.target {
-                    out.push(t.clone());
+                out.push(&mut c.context);
+                out.push(&mut c.dockerfile);
+                out.extend(c.env.values_mut());
+                out.extend(c.secrets.values_mut());
+                out.extend(c.volumes.iter_mut());
+                out.extend(c.build_args.values_mut());
+                if let Some(target) = c.target.as_mut() {
+                    out.push(target);
                 }
-                if let Some(w) = &c.working_dir {
-                    out.push(w.clone());
+                if let Some(entrypoint) = c.entrypoint.as_mut() {
+                    out.extend(command_fields_mut(entrypoint));
                 }
-                if let Some(cmd) = &c.command {
-                    out.extend(command_strings(cmd));
+                if let Some(command) = c.command.as_mut() {
+                    out.extend(command_fields_mut(command));
+                }
+                if let Some(working_dir) = c.working_dir.as_mut() {
+                    out.push(working_dir);
+                }
+                if let Some(healthcheck) = c.healthcheck.as_mut() {
+                    out.extend(healthcheck.test.iter_mut());
                 }
             }
             Self::Postgres(c) => {
-                if let Some(s) = &c.password {
-                    out.push(s.clone());
+                if let Some(password) = c.password.as_mut() {
+                    out.push(password);
                 }
-                if let Some(s) = &c.database {
-                    out.push(s.clone());
+                if let Some(database) = c.database.as_mut() {
+                    out.push(database);
                 }
-                if let Some(s) = &c.user {
-                    out.push(s.clone());
+                if let Some(user) = c.user.as_mut() {
+                    out.push(user);
+                }
+                if let Some(healthcheck) = c.healthcheck.as_mut() {
+                    out.extend(healthcheck.test.iter_mut());
                 }
             }
             Self::Redis(c) => {
-                if let Some(s) = &c.password {
-                    out.push(s.clone());
+                if let Some(password) = c.password.as_mut() {
+                    out.push(password);
+                }
+                if let Some(healthcheck) = c.healthcheck.as_mut() {
+                    out.extend(healthcheck.test.iter_mut());
                 }
             }
         }
-        if let Some(hc) = self.healthcheck() {
-            out.extend(hc.test.iter().cloned());
+        out
+    }
+
+    /// Interpolatable strings that become container environment variables or
+    /// command arguments at runtime: environment and secret values, the
+    /// command, and the connection parameters of a managed resource.
+    ///
+    /// This is the narrower scope that `secrets check` and the `up` preflight
+    /// report against. Image references, volume mappings, the working directory,
+    /// build inputs and healthcheck commands are deliberately excluded: an
+    /// `${env.*}` reference there is resolved at start time but is not surfaced
+    /// as a required secret (regression guard F3).
+    #[must_use]
+    pub fn environment_reference_strings(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        match self {
+            Self::Container(c) => {
+                out.extend(c.env.values().cloned());
+                out.extend(c.secrets.values().cloned());
+                if let Some(command) = &c.command {
+                    out.extend(command_strings(command));
+                }
+            }
+            Self::Dockerfile(c) => {
+                out.extend(c.env.values().cloned());
+                out.extend(c.secrets.values().cloned());
+                if let Some(command) = &c.command {
+                    out.extend(command_strings(command));
+                }
+            }
+            Self::Postgres(c) => {
+                out.extend(c.password.clone());
+                out.extend(c.user.clone());
+                out.extend(c.database.clone());
+            }
+            Self::Redis(c) => {
+                out.extend(c.password.clone());
+            }
         }
         out
+    }
+
+    /// Resolve every interpolatable field in place, using `interpolator` to
+    /// substitute `${env.*}` and `${resources.*.*}` expressions.
+    ///
+    /// This walks the exact same fields as [`Self::interpolatable_strings`],
+    /// so substitution can never fall behind scanning. Interpolation runs
+    /// before the resource is lowered to a [`lightshuttle_spec::ContainerSpec`],
+    /// so canonical parsers (image reference, volume mapping, healthcheck)
+    /// only ever see fully resolved values (#276).
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`crate::ManifestError`] when any field references an unknown
+    /// resource, property or environment variable without a default.
+    pub fn interpolate_in_place(&mut self, interpolator: &Interpolator) -> crate::Result<()> {
+        for field in self.interpolatable_fields_mut() {
+            *field = interpolator.resolve(field)?;
+        }
+        Ok(())
     }
 
     /// Returns the names of resources this one implicitly depends on through
@@ -209,6 +307,13 @@ impl ResourceKind {
             }
         }
         dependencies
+    }
+}
+
+fn command_fields_mut(command: &mut Command) -> Vec<&mut String> {
+    match command {
+        Command::Single(s) => vec![s],
+        Command::Args(args) => args.iter_mut().collect(),
     }
 }
 
@@ -269,5 +374,171 @@ impl<'de> Deserialize<'de> for ResourceKind {
                 .map_err(|e| DeError::custom(e.to_string())),
             other => Err(DeError::custom(format!("unknown resource kind `{other}`"))),
         }
+    }
+}
+
+#[cfg(test)]
+mod interpolation_walk_tests {
+    use crate::Manifest;
+
+    const FULL_CONTAINER: &str = r#"
+project:
+  name: app
+resources:
+  app:
+    container:
+      image: "example/app:${env.TAG}"
+      env:
+        A: "${env.A_VALUE}"
+      volumes:
+        - "${env.DATA_DIR}:/data"
+      entrypoint: "${env.ENTRY}"
+      command: ["serve", "${env.PORT}"]
+      working_dir: "${env.WORKDIR}"
+      healthcheck:
+        test: ["CMD", "curl", "${env.HEALTH_URL}"]
+"#;
+
+    #[test]
+    fn interpolatable_strings_scans_every_field_including_entrypoint() {
+        let manifest = Manifest::parse(FULL_CONTAINER).expect("manifest parses");
+        let strings = manifest.resources["app"].interpolatable_strings();
+
+        for needle in [
+            "${env.TAG}",
+            "${env.A_VALUE}",
+            "${env.DATA_DIR}",
+            "${env.ENTRY}",
+            "${env.PORT}",
+            "${env.WORKDIR}",
+            "${env.HEALTH_URL}",
+        ] {
+            assert!(
+                strings.iter().any(|s| s.contains(needle)),
+                "{needle} must be scanned as interpolatable, got {strings:?}"
+            );
+        }
+    }
+
+    const FULL_DOCKERFILE: &str = r#"
+project:
+  name: app
+resources:
+  builder:
+    dockerfile:
+      context: "${env.CONTEXT}"
+      dockerfile: "${env.DOCKERFILE}"
+      build_args:
+        VERSION: "${env.VERSION}"
+      target: "${env.TARGET}"
+      env:
+        MODE: "${env.MODE}"
+      volumes:
+        - "${env.CACHE}:/cache"
+      entrypoint: "${env.ENTRY}"
+      command: ["build", "${env.FLAG}"]
+      working_dir: "${env.WORKDIR}"
+      healthcheck:
+        test: ["CMD", "${env.PROBE}"]
+"#;
+
+    #[test]
+    fn scan_and_substitution_do_not_drift_on_a_dockerfile_resource() {
+        use crate::interpolate::{InterpolationContext, Interpolator};
+
+        let manifest = Manifest::parse(FULL_DOCKERFILE).expect("manifest parses");
+
+        // Every interpolatable field, including all build inputs, must be
+        // scanned. A field added to the config but forgotten in the canonical
+        // walk would slip through this list.
+        let scanned = manifest.resources["builder"].interpolatable_strings();
+        for needle in [
+            "${env.CONTEXT}",
+            "${env.DOCKERFILE}",
+            "${env.VERSION}",
+            "${env.TARGET}",
+            "${env.MODE}",
+            "${env.CACHE}",
+            "${env.ENTRY}",
+            "${env.FLAG}",
+            "${env.WORKDIR}",
+            "${env.PROBE}",
+        ] {
+            assert!(
+                scanned.iter().any(|s| s.contains(needle)),
+                "{needle} must be scanned, got {scanned:?}"
+            );
+        }
+
+        // Substitution walks the exact same fields: after resolving, nothing
+        // scanned may still hold a reference, which is what guarantees scan and
+        // substitution cannot drift (#276).
+        let ctx = InterpolationContext::new().with_env([
+            ("CONTEXT".to_owned(), ".".to_owned()),
+            ("DOCKERFILE".to_owned(), "Dockerfile".to_owned()),
+            ("VERSION".to_owned(), "1".to_owned()),
+            ("TARGET".to_owned(), "release".to_owned()),
+            ("MODE".to_owned(), "prod".to_owned()),
+            ("CACHE".to_owned(), "/tmp/cache".to_owned()),
+            ("ENTRY".to_owned(), "/bin/build".to_owned()),
+            ("FLAG".to_owned(), "--fast".to_owned()),
+            ("WORKDIR".to_owned(), "/work".to_owned()),
+            ("PROBE".to_owned(), "true".to_owned()),
+        ]);
+        let interpolator = Interpolator::new(&ctx);
+
+        let mut kind = manifest.resources["builder"].clone();
+        kind.interpolate_in_place(&interpolator)
+            .expect("every reference resolves");
+
+        let resolved = kind.interpolatable_strings();
+        assert_eq!(
+            resolved.len(),
+            scanned.len(),
+            "substitution must walk exactly the scanned fields"
+        );
+        assert!(
+            resolved.iter().all(|s| !s.contains("${")),
+            "no scanned field may retain a reference after substitution, got {resolved:?}"
+        );
+    }
+
+    #[test]
+    fn interpolate_in_place_resolves_every_scanned_field() {
+        use crate::interpolate::{InterpolationContext, Interpolator};
+
+        let manifest = Manifest::parse(FULL_CONTAINER).expect("manifest parses");
+        let ctx = InterpolationContext::new().with_env([
+            ("TAG".to_owned(), "v1".to_owned()),
+            ("A_VALUE".to_owned(), "x".to_owned()),
+            ("DATA_DIR".to_owned(), "/srv".to_owned()),
+            ("ENTRY".to_owned(), "run".to_owned()),
+            ("PORT".to_owned(), "8080".to_owned()),
+            ("WORKDIR".to_owned(), "/app".to_owned()),
+            ("HEALTH_URL".to_owned(), "http://h".to_owned()),
+        ]);
+        let interpolator = Interpolator::new(&ctx);
+
+        let mut kind = manifest.resources["app"].clone();
+        kind.interpolate_in_place(&interpolator)
+            .expect("every reference resolves");
+
+        let resolved = kind.interpolatable_strings();
+        assert!(
+            resolved.iter().all(|s| !s.contains("${")),
+            "no field may retain an unresolved reference, got {resolved:?}"
+        );
+        assert!(
+            resolved.iter().any(|s| s == "example/app:v1"),
+            "image must be resolved, got {resolved:?}"
+        );
+        assert!(
+            resolved.iter().any(|s| s == "run"),
+            "entrypoint must be resolved, got {resolved:?}"
+        );
+        assert!(
+            resolved.iter().any(|s| s == "/srv:/data"),
+            "volume must be resolved, got {resolved:?}"
+        );
     }
 }

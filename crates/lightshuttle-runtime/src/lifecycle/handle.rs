@@ -37,7 +37,7 @@ use tokio::sync::broadcast;
 use crate::error::RuntimeError;
 use crate::lifecycle::manager::{LifecycleManager, RestartPermit};
 use crate::lifecycle::status::LifecycleEvent;
-use crate::lifecycle::view::{ResourceStatus, ResourceView, image_label, last_error_from};
+use crate::lifecycle::view::{ResourceStatus, ResourceView, last_error_from};
 use crate::runtime::{ContainerRuntime, LogChunkStream};
 
 /// Errors returned by [`LifecycleHandle`] operations.
@@ -211,7 +211,7 @@ impl<R: ContainerRuntime + 'static> LifecycleHandle for ManagerHandle<R> {
                     snapshot.status,
                     crate::lifecycle::status::NodeStatus::Healthy
                 ),
-                image: image_label(&node.spec.image),
+                image: node.image_label.clone(),
                 started_at: snapshot.started_at,
                 last_error: last_error_from(&snapshot.status),
             });
@@ -238,7 +238,7 @@ impl<R: ContainerRuntime + 'static> LifecycleHandle for ManagerHandle<R> {
                 snapshot.status,
                 crate::lifecycle::status::NodeStatus::Healthy
             ),
-            image: image_label(&node.spec.image),
+            image: node.image_label.clone(),
             started_at: snapshot.started_at,
             last_error: last_error_from(&snapshot.status),
         })
