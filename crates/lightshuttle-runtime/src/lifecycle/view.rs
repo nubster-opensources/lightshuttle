@@ -14,7 +14,6 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 
 use crate::lifecycle::status::NodeStatus;
-use lightshuttle_spec::ImageSource;
 
 /// Dashboard-friendly view of a single managed resource.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,15 +59,6 @@ impl From<&NodeStatus> for ResourceStatus {
             NodeStatus::Failed { .. } => Self::Failed,
             NodeStatus::Stopped => Self::Stopped,
         }
-    }
-}
-
-/// Render an [`ImageSource`] as the user-facing image reference: the
-/// pulled image string for `Pull`, the produced tag for `Build`.
-pub(crate) fn image_label(src: &ImageSource) -> String {
-    match src {
-        ImageSource::Pull(s) => s.clone(),
-        ImageSource::Build { tag, .. } => tag.clone(),
     }
 }
 

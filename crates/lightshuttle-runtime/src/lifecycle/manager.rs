@@ -30,7 +30,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use lightshuttle_manifest::{InterpolationContext, Interpolator};
+use lightshuttle_manifest::{InterpolationContext, Interpolator, ResourceKind};
 use tokio::sync::{broadcast, watch};
 use tracing::{Instrument, debug, info, info_span, instrument, warn};
 
@@ -44,7 +44,7 @@ use crate::lifecycle::error::LifecycleError;
 use crate::lifecycle::plan::LifecyclePlan;
 use crate::lifecycle::status::{LifecycleEvent, NodeStatus};
 use crate::runtime::{ContainerId, ContainerRuntime};
-use lightshuttle_spec::{ContainerSpec, ResourceOutputs};
+use lightshuttle_spec::{ResolvedResource, ResourceOutputs, from_resource};
 
 /// Default healthcheck timeout, applied when the manifest does not
 /// provide one of its own. Kept conservative for v0.1.
@@ -262,8 +262,8 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
             }
 
             let node_handle = self.nodes[&node.name].clone();
-            let spec = node.spec.clone();
-            let own_outputs = node.outputs.clone();
+            let resource = node.resource.clone();
+            let project = node.project.clone();
             let name = node.name.clone();
             let runtime = Arc::clone(&self.runtime);
             let event_tx = self.event_tx.clone();
@@ -272,8 +272,8 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
             let task = tokio::spawn(async move {
                 start_one(
                     name,
-                    spec,
-                    own_outputs,
+                    resource,
+                    project,
                     runtime,
                     node_handle,
                     dep_status_rxs,
@@ -376,7 +376,7 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
             let remove_span = info_span!("remove", resource = %node.name);
             if let Err(e) = self
                 .runtime
-                .remove(&node.spec.name)
+                .remove(&node.container_name())
                 .instrument(remove_span)
                 .await
             {
@@ -395,7 +395,7 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
         // to stop may still hold endpoints, causing Docker to reject the
         // request: log the failure and continue so callers always see
         // the primary stop errors, not a secondary network error.
-        if let Some(project) = self.plan.nodes().first().map(|n| n.spec.project.as_str()) {
+        if let Some(project) = self.plan.nodes().first().map(|n| n.project.as_str()) {
             if let Err(e) = self.runtime.teardown_project_network(project).await {
                 warn!(error = %e, "could not remove project network");
             }
@@ -574,8 +574,8 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
 
         start_one(
             resource.to_owned(),
-            node.spec.clone(),
-            node.outputs.clone(),
+            node.resource.clone(),
+            node.project.clone(),
             Arc::clone(&self.runtime),
             handle.clone(),
             dep_status_rxs,
@@ -629,8 +629,8 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
 #[instrument(name = "start", skip_all, fields(resource = %name))]
 async fn start_one<R: ContainerRuntime + 'static>(
     name: String,
-    spec: ContainerSpec,
-    own_outputs: ResourceOutputs,
+    resource: ResourceKind,
+    project: String,
     runtime: Arc<R>,
     handle: NodeHandle,
     dep_status_rxs: HashMap<String, watch::Receiver<NodeStatus>>,
@@ -692,9 +692,13 @@ async fn start_one<R: ContainerRuntime + 'static>(
         }
     }
 
-    // 3. Resolve interpolations and inject LSH_<DEP>_<PROP> env vars.
-    let resolved_spec = match interpolate_and_inject(spec, &dep_outputs, &extra_env) {
-        Ok(s) => s,
+    // 3. Resolve interpolations on the raw resource, lower it, then inject
+    //    the LSH_<DEP>_<PROP> env vars.
+    let ResolvedResource {
+        spec: resolved_spec,
+        outputs: resolved_outputs,
+    } = match interpolate_lower_and_inject(&resource, &project, &name, &dep_outputs, &extra_env) {
+        Ok(r) => r,
         Err(reason) => {
             let _ = handle.status_tx.send(NodeStatus::Failed {
                 reason: reason.clone(),
@@ -766,7 +770,7 @@ async fn start_one<R: ContainerRuntime + 'static>(
         .await
     {
         Ok(()) => {
-            let _ = handle.outputs_tx.send(Some(own_outputs));
+            let _ = handle.outputs_tx.send(Some(resolved_outputs));
             let _ = handle.status_tx.send(NodeStatus::Healthy);
             let _ = event_tx.send(LifecycleEvent::ResourceHealthy { name: name.clone() });
             Ok(())
@@ -801,50 +805,58 @@ async fn start_one<R: ContainerRuntime + 'static>(
     }
 }
 
-/// Apply two-pass interpolation to `spec`: resolve every
-/// `${resources.<name>.<property>}` against `dep_outputs`, then inject
-/// `LSH_<DEP>_<PROPERTY>` automatic environment variables.
+/// Resolve every interpolatable field of `resource` against `dep_outputs`
+/// and the ambient environment, lower the resolved resource to its
+/// [`ContainerSpec`] and outputs, then inject the `LSH_<DEP>_<PROPERTY>`
+/// automatic environment variables.
 ///
-/// Returns the resolved spec or a human-readable diagnostic when an
-/// interpolation references an unknown resource or property.
-fn interpolate_and_inject(
-    mut spec: ContainerSpec,
+/// Interpolation happens before lowering, so the canonical parsers for the
+/// image reference, volume mappings and healthcheck only ever see fully
+/// resolved values (#276). The same field walk drives scanning and this
+/// substitution, so the two cannot drift.
+///
+/// Returns the resolved resource or a human-readable diagnostic when an
+/// interpolation references an unknown resource, property or environment
+/// variable, or when lowering the resolved resource fails.
+fn interpolate_lower_and_inject(
+    resource: &ResourceKind,
+    project: &str,
+    name: &str,
     dep_outputs: &HashMap<String, ResourceOutputs>,
     extra_env: &HashMap<String, String>,
-) -> std::result::Result<ContainerSpec, String> {
+) -> std::result::Result<ResolvedResource, String> {
     let mut ctx = InterpolationContext::from_env()
         .with_env(extra_env.iter().map(|(k, v)| (k.clone(), v.clone())));
-    for (name, outputs) in dep_outputs {
-        ctx = ctx.with_resource(name.clone(), outputs.clone());
+    for (dep_name, outputs) in dep_outputs {
+        ctx = ctx.with_resource(dep_name.clone(), outputs.clone());
     }
     let interpolator = Interpolator::new(&ctx);
 
-    // Resolve env values.
-    let mut resolved_env = std::collections::HashMap::with_capacity(spec.env.len());
-    for (k, v) in spec.env.drain() {
-        let resolved = interpolator.resolve(&v).map_err(|e| e.to_string())?;
-        resolved_env.insert(k, resolved);
-    }
+    // Resolve every interpolatable field before lowering.
+    let mut resolved_resource = resource.clone();
+    resolved_resource
+        .interpolate_in_place(&interpolator)
+        .map_err(|e| e.to_string())?;
 
-    // Inject LSH_<DEP>_<PROPERTY> variables.
+    // Lower the fully resolved resource to its container spec and outputs.
+    let mut resolved =
+        from_resource(project, name, &resolved_resource).map_err(|e| e.to_string())?;
+
+    // Inject LSH_<DEP>_<PROPERTY> variables from dependency outputs.
     for (dep_name, outputs) in dep_outputs {
         let dep_upper = dep_name.to_uppercase().replace('-', "_");
         for (prop, value) in outputs {
             let prop_upper = prop.to_uppercase().replace('-', "_");
             let key = format!("LSH_{dep_upper}_{prop_upper}");
-            resolved_env.entry(key).or_insert_with(|| value.clone());
-        }
-    }
-    spec.env = resolved_env;
-
-    // Resolve command arguments.
-    if let Some(args) = spec.command.as_mut() {
-        for arg in args.iter_mut() {
-            *arg = interpolator.resolve(arg).map_err(|e| e.to_string())?;
+            resolved
+                .spec
+                .env
+                .entry(key)
+                .or_insert_with(|| value.clone());
         }
     }
 
-    Ok(spec)
+    Ok(resolved)
 }
 
 #[cfg(unix)]
