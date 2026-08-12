@@ -10,6 +10,14 @@ permissions:
   pull-requests: write
 
 jobs:
+  review:
+    uses: nubster-opensources/.github/.github/workflows/ai-review.yml@088cdf22f1d6366176e94b695f89758bb4d72eff # PR 35 idempotence smoke
+    with:
+      pr-number: ${{ github.event.pull_request.number }}
+      mode: review
+    secrets:
+      mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
+
   team:
     uses: nubster-opensources/.github/.github/workflows/ai-review.yml@088cdf22f1d6366176e94b695f89758bb4d72eff # PR 35 idempotence smoke
     with:
