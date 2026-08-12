@@ -10,6 +10,45 @@ permissions:
   pull-requests: write
 
 jobs:
+  seed-stale-inline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Seed a scoped stale bot comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          marker="$(python3 - <<'PY'
+          import os
+
+          def fnv(parts, line=None):
+              value = 0xcbf29ce484222325
+              for part in parts:
+                  for byte in part.encode() + b'\0':
+                      value ^= byte
+                      value = (value * 0x100000001b3) & 0xffffffffffffffff
+              if line is not None:
+                  for byte in line.to_bytes(4, 'little'):
+                      value ^= byte
+                      value = (value * 0x100000001b3) & 0xffffffffffffffff
+              return value
+
+          scope = fnv(['<!-- ai-team-bot -->', os.environ['HEAD_SHA']])
+          location = fnv(['ai-review-smoke/untrusted_handler.rs'], 8)
+          print(f'<!-- ai-review-inline:{scope:016x}:{location:016x} -->')
+          PY
+          )"
+          gh api --method POST "repos/$REPOSITORY/pulls/$PR_NUMBER/comments" \
+            -f body="stale smoke finding
+
+          $marker" \
+            -f commit_id="$HEAD_SHA" \
+            -f path='ai-review-smoke/untrusted_handler.rs' \
+            -F line=8 \
+            -f side='RIGHT'
+
   review:
     uses: nubster-opensources/.github/.github/workflows/ai-review.yml@4a55945c74571ba6414838297dd2b28af13dddfb # PR 35 idempotence smoke
     with:
@@ -19,6 +58,7 @@ jobs:
       mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
 
   team:
+    needs: seed-stale-inline
     uses: nubster-opensources/.github/.github/workflows/ai-review.yml@4a55945c74571ba6414838297dd2b28af13dddfb # PR 35 idempotence smoke
     with:
       pr-number: ${{ github.event.pull_request.number }}
