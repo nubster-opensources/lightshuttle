@@ -1,0 +1,1 @@
+This unrelated input changes the overall diff while leaving the unsafe fixture unchanged.
