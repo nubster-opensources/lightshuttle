@@ -190,12 +190,12 @@ fn unescape_value(s: &str) -> String {
     // Quoted value: return the span between the opening quote and its first
     // matching closing quote, discarding any trailing inline comment. This
     // lets a quoted value contain ` #` without being truncated.
-    if let Some(quote) = s.chars().next().filter(|c| *c == '"' || *c == '\'') {
-        if let Some(end) = s[1..].find(quote) {
-            return s[1..=end].to_owned();
-        }
-        // No closing quote: fall through and treat the value literally.
+    if let Some(quote) = s.chars().next().filter(|c| *c == '"' || *c == '\'')
+        && let Some(end) = s[1..].find(quote)
+    {
+        return s[1..=end].to_owned();
     }
+    // No closing quote: fall through and treat the value literally.
 
     // Unquoted value: strip a trailing ` #` inline comment.
     if let Some((value, _comment)) = s.split_once(" #") {

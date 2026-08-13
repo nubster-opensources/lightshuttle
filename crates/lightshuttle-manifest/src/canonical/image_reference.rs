@@ -197,10 +197,10 @@ fn validate_registry(registry: &str) -> Result<(), ImageReferenceError> {
         None => (registry, None),
     };
 
-    if let Some(port) = port {
-        if port.is_empty() || !port.bytes().all(|byte| byte.is_ascii_digit()) {
-            return Err(invalid());
-        }
+    if let Some(port) = port
+        && (port.is_empty() || !port.bytes().all(|byte| byte.is_ascii_digit()))
+    {
+        return Err(invalid());
     }
 
     if host.is_empty() {
