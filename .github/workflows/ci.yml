@@ -133,7 +133,7 @@ jobs:
       # installed here so all three targets are validated offline.
       # kubeconform replaces kubectl --dry-run, which would contact a
       # cluster API server. Tests skip any tool that is still missing.
-      - uses: azure/setup-helm@59b1c81c6280f5abebb1fb1bc585696daa7dfb42 # v5
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
         with:
           version: latest
       - name: Install kubeconform
