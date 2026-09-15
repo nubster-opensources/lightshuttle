@@ -50,6 +50,8 @@ struct State {
     list_calls: u32,
     network_teardown_calls: u32,
     always_fail_network_teardown: bool,
+    transient_network_teardown_failures: u32,
+    transient_list_failures: u32,
     failing_stops: HashSet<String>,
     spawn_rules: HashMap<String, SpawnRule>,
     next_spawned_id: u64,
@@ -89,6 +91,8 @@ impl ScriptedRuntime {
                 list_calls: 0,
                 network_teardown_calls: 0,
                 always_fail_network_teardown: false,
+                transient_network_teardown_failures: 0,
+                transient_list_failures: 0,
                 failing_stops: HashSet::new(),
                 spawn_rules: HashMap::new(),
                 next_spawned_id: 0,
@@ -126,6 +130,21 @@ impl ScriptedRuntime {
     /// unrelated to dangling containers.
     fn always_fail_network_teardown(self) -> Self {
         self.lock().always_fail_network_teardown = true;
+        self
+    }
+
+    /// Configures `teardown_project_network` to fail its first `times` calls
+    /// then behave normally, modelling a daemon that is briefly busy
+    /// releasing the last endpoint.
+    fn fail_network_teardown_times(self, times: u32) -> Self {
+        self.lock().transient_network_teardown_failures = times;
+        self
+    }
+
+    /// Configures `list_managed` to fail its first `times` calls then behave
+    /// normally, modelling a daemon that briefly stops answering.
+    fn fail_list_times(self, times: u32) -> Self {
+        self.lock().transient_list_failures = times;
         self
     }
 
@@ -174,6 +193,10 @@ impl ProjectInventory for ScriptedRuntime {
     async fn list_managed(&self, _project: &str) -> Result<Vec<ManagedContainer>> {
         let mut state = self.lock();
         state.list_calls += 1;
+        if state.transient_list_failures > 0 {
+            state.transient_list_failures -= 1;
+            return Err(scripted_error("scripted transient listing failure"));
+        }
         let mut containers: Vec<ManagedContainer> = state
             .containers
             .iter()
@@ -258,6 +281,12 @@ impl ContainerRuntime for ScriptedRuntime {
         state.network_teardown_calls += 1;
         if state.always_fail_network_teardown {
             return Err(scripted_error("scripted network teardown failure"));
+        }
+        if state.transient_network_teardown_failures > 0 {
+            state.transient_network_teardown_failures -= 1;
+            return Err(scripted_error(
+                "scripted transient network teardown failure",
+            ));
         }
         if state.containers.is_empty() {
             Ok(())
@@ -449,5 +478,55 @@ async fn sweep_reports_a_persistent_network_teardown_failure() {
     assert!(
         !report.is_clean(),
         "a persistent teardown failure is not clean: {report:?}"
+    );
+}
+
+/// The daemon rejects the network teardown twice, then accepts it: the sweep
+/// must retry on later passes and end clean, not report the transient
+/// failures it recovered from.
+#[tokio::test(start_paused = true)]
+async fn sweep_recovers_from_a_transient_network_teardown_failure() {
+    let runtime = ScriptedRuntime::new().fail_network_teardown_times(2);
+    let policy = SweepPolicy::with_grace(Duration::from_secs(1));
+
+    let report = sweep_project(&runtime, "demo", policy).await;
+
+    assert_eq!(
+        runtime.network_teardown_calls(),
+        3,
+        "two rejected attempts, then the one that succeeds"
+    );
+    assert_eq!(report.passes, 3, "one pass per attempt: {report:?}");
+    assert!(
+        report.is_clean(),
+        "recovered failures must not be reported: {report:?}"
+    );
+}
+
+/// The daemon fails to list containers once, then answers: the sweep must
+/// retry the listing, still remove the container and reclaim the network,
+/// and end clean.
+#[tokio::test(start_paused = true)]
+async fn sweep_recovers_from_a_transient_listing_failure() {
+    let runtime = ScriptedRuntime::new()
+        .with_initial_container("app")
+        .fail_list_times(1);
+    let policy = SweepPolicy::with_grace(Duration::from_secs(1));
+
+    let report = sweep_project(&runtime, "demo", policy).await;
+
+    assert_eq!(
+        report.removed_resources,
+        vec!["app".to_owned()],
+        "the container must be removed once the listing answers: {report:?}"
+    );
+    assert_eq!(
+        runtime.network_teardown_calls(),
+        1,
+        "the network is reclaimed once app is gone"
+    );
+    assert!(
+        report.is_clean(),
+        "a recovered listing failure must not be reported: {report:?}"
     );
 }
