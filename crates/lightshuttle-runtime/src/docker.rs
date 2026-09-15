@@ -59,6 +59,7 @@ use futures::stream::{Stream, StreamExt};
 use lightshuttle_manifest::{DnsName, ImageReference};
 
 use crate::error::{Result, RuntimeError};
+use crate::project_sweep::ProjectInventory;
 use crate::runtime::{
     ContainerId, ContainerRuntime, ContainerStatus, LogChunk, LogChunkStream, LogStream,
 };
@@ -321,6 +322,12 @@ fn ensure_network_ownership(
             "network `{name}` already exists and was not created by LightShuttle. Remove it, or rename the project, rather than sharing a network of unknown ownership."
         ),
     }))
+}
+
+impl ProjectInventory for DockerRuntime {
+    async fn list_managed(&self, project: &str) -> Result<Vec<ManagedContainer>> {
+        Self::list_managed(self, project).await
+    }
 }
 
 impl ContainerRuntime for DockerRuntime {
