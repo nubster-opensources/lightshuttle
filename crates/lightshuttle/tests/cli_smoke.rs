@@ -91,18 +91,34 @@ fn write_temp_manifest(content: &str) -> NamedTempFile {
     f
 }
 
-/// Poll `docker ps` until at least one container labelled with `project` is
-/// running, or until `deadline` elapses.
+/// Poll `docker ps` until the container labelled with both `project` and
+/// `resource` is running, or until `deadline` elapses.
+///
+/// Filtering on the project label alone is not enough: `up` also starts
+/// sidecar resources (the OpenTelemetry collector), which can reach
+/// `status=running` well before the resource the test actually cares about
+/// exists, letting `down` race a still-booting supervisor. Naming the
+/// resource pins the wait to the container the manifest declares.
 ///
 /// A short sleep between polls is acceptable here: this is a black-box CLI
 /// integration test where there is no event channel to drive. The poll
 /// interval (300 ms) keeps the outer timeout meaningful.
-fn wait_for_running(project: &str, deadline: Duration) {
-    let label = format!("label=lightshuttle.project={project}");
+fn wait_for_running(project: &str, resource: &str, deadline: Duration) {
+    let project_label = format!("label=lightshuttle.project={project}");
+    let resource_label = format!("label=lightshuttle.resource={resource}");
     let start = Instant::now();
     loop {
         let output = Command::new("docker")
-            .args(["ps", "-q", "--filter", &label, "--filter", "status=running"])
+            .args([
+                "ps",
+                "-q",
+                "--filter",
+                &project_label,
+                "--filter",
+                &resource_label,
+                "--filter",
+                "status=running",
+            ])
             .output()
             .expect("docker ps runs");
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -111,7 +127,7 @@ fn wait_for_running(project: &str, deadline: Duration) {
         }
         assert!(
             start.elapsed() < deadline,
-            "timed out waiting for project `{project}` containers to reach status=running",
+            "timed out waiting for project `{project}` resource `{resource}` to reach status=running",
         );
         std::thread::sleep(Duration::from_millis(300));
     }
@@ -194,8 +210,8 @@ resources:
         .spawn()
         .expect("lightshuttle up spawns");
 
-    // Wait until Docker reports at least one running container for this project.
-    wait_for_running(&project, Duration::from_secs(60));
+    // Wait for the declared resource itself, not for the collector sidecar.
+    wait_for_running(&project, "app", Duration::from_secs(60));
 
     // `down` reads the manifest and stops the stack independently.
     assert_cmd::Command::new(cargo_bin("lightshuttle"))
@@ -254,7 +270,7 @@ resources:
         .stderr(std::process::Stdio::null())
         .spawn()
         .expect("lightshuttle up spawns");
-    wait_for_running(&project, Duration::from_secs(60));
+    wait_for_running(&project, "app", Duration::from_secs(60));
 
     // Hard-kill the supervisor (no graceful teardown), then reap the
     // containers manually. The labelled network is now orphaned.

@@ -90,6 +90,9 @@ pub use crate::lifecycle::{
     LifecycleHandle, LifecycleHandleError, LifecycleManager, LifecyclePlan, ManagerHandle,
     NodeStatus, PlanNode, ResourceStatus, ResourceView, RestartPermit,
 };
+pub use crate::project_sweep::{
+    ProjectInventory, SweepFailure, SweepPolicy, SweepReport, sweep_project,
+};
 pub use crate::runtime::{
     ContainerId, ContainerRuntime, ContainerStatus, LogChunk, LogChunkStream, LogStream,
 };
@@ -101,6 +104,7 @@ pub use lightshuttle_spec::{
 mod docker;
 mod error;
 mod lifecycle;
+mod project_sweep;
 mod runtime;
 
 /// In-memory [`ContainerRuntime`] and supporting helpers for tests.
