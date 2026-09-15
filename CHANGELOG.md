@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 - `lightshuttle_export::resolve::namespace_label_for`, which resolves the export namespace as a validated DNS label. `namespace_for` is unchanged and still returns the raw value.
 - `ExportArtifacts::ensure_unique_paths`, run by every emitter before returning, so two resources can never write to the same output path.
 - Helm `values.yaml` gained a per-service `image.digest` entry, emitted only when the reference is digest pinned. A chart for an ordinary tagged image is unchanged.
+- `lightshuttle_runtime::sweep_project`, a public API that stops and removes every container of a project across as many passes as it takes to observe an empty listing, then tears the project network down. It is built from a `ProjectInventory` (project-scoped listing) and a `ContainerRuntime`, bounded and paced by `SweepPolicy`, and reports its outcome as a `SweepReport` of stopped and removed resources plus a list of `SweepFailure`.
 
 ### Changed
 - Raise the MSRV from Rust 1.88 to 1.89 for the August 2026 fleet baseline and prefer MSRV-compatible dependency versions during Cargo updates.
@@ -21,6 +22,7 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 - A manifest name that is not already a DNS label now receives a deterministic suffix when it is normalised, so distinct names stay distinct. A name that already is a label is untouched, so ordinary resources keep the identifiers they have. Resources named with an underscore, an uppercase letter or a trailing separator will be renamed on the next export or `up`: re-export the artifacts and expect the corresponding Kubernetes objects and Docker networks to be recreated under their new names.
 
 ### Fixed
+- `lightshuttle down` no longer leaves containers and the project network behind when a `lightshuttle up` is still starting the stack (#338). `down` listed the project's containers once, so a container created by the supervisor right after that listing kept an endpoint on the network and the teardown was rejected. `down` now relists after every pass that removed a container, up to a bounded number of passes, and tears the network down only once a listing comes back empty. Containers still present when the pass budget runs out are reported and make `down` exit with an error.
 - `lightshuttle up` no longer corrupts an image reference served by a registry on a custom port (#290). The reference was split on its first colon, so `registry.example.com:5000/team/api:1.2` was pulled as repository `registry.example.com` with tag `5000/team/api:1.2`, which does not exist.
 - The Helm emitter no longer corrupts a digest pinned or ported reference (#278). It split on the last colon, so `alpine@sha256:...` produced repository `alpine@sha256` with the digest payload as its tag, and `registry.example.com:5000/team/api` lost its repository path into the tag. A digest pinned image is now rendered as `repository@digest`.
 - A malformed image reference is now reported with the offending resource named, instead of being passed on to the container daemon or written into an artifact.
