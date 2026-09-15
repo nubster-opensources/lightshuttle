@@ -244,7 +244,7 @@ impl ResourceKind {
     ///
     /// This walks the exact same fields as [`Self::interpolatable_strings`],
     /// so substitution can never fall behind scanning. Interpolation runs
-    /// before the resource is lowered to a [`lightshuttle_spec::ContainerSpec`],
+    /// before the resource is lowered to a `lightshuttle_spec::ContainerSpec`,
     /// so canonical parsers (image reference, volume mapping, healthcheck)
     /// only ever see fully resolved values (#276).
     ///
