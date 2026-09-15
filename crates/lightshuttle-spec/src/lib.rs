@@ -56,5 +56,5 @@ mod spec;
 pub use crate::error::{Result, SpecError};
 pub use crate::spec::{
     ContainerSpec, HealthcheckSpec, ImageSource, PortBinding, ResolvedResource, ResourceOutputs,
-    VolumeBinding, VolumeSource, from_resource,
+    VolumeBinding, VolumeSource, from_resource, image_label,
 };

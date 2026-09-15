@@ -2,7 +2,8 @@
 //! dependent lookup. No runtime required.
 
 use lightshuttle_manifest::Manifest;
-use lightshuttle_runtime::{LifecycleError, LifecyclePlan};
+use lightshuttle_runtime::testkit::MockRuntime;
+use lightshuttle_runtime::{LifecycleError, LifecycleManager, LifecyclePlan};
 
 const TWO_TIER: &str = r"
 project:
@@ -105,10 +106,12 @@ resources:
     assert!(manifest.is_err(), "manifest parser should reject cycles");
 }
 
-#[test]
-fn surfaces_spec_build_errors() {
+#[tokio::test]
+async fn surfaces_spec_build_errors_at_start() {
     // Manifest with an invalid port string that survives manifest
-    // validation but blows up at spec build time.
+    // validation. The plan no longer lowers resources, so it builds
+    // successfully; the invalid port surfaces when the resource is
+    // started, after interpolation (#276).
     let manifest = Manifest::parse(
         r#"
 project:
@@ -122,10 +125,13 @@ resources:
     )
     .expect("manifest parses (port is a string)");
 
-    let err =
-        LifecyclePlan::from_manifest(&manifest).expect_err("plan should fail on invalid port spec");
-    assert!(
-        matches!(err, LifecycleError::SpecBuild { .. }),
-        "got: {err:?}"
-    );
+    let plan =
+        LifecyclePlan::from_manifest(&manifest).expect("plan builds without lowering resources");
+    let (manager, _events) = LifecycleManager::new(plan, MockRuntime::new());
+
+    let err = manager
+        .start_all()
+        .await
+        .expect_err("start must fail on the invalid port spec");
+    assert!(matches!(err, LifecycleError::Start { .. }), "got: {err:?}");
 }
