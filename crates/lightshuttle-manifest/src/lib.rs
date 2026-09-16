@@ -57,7 +57,7 @@ pub use crate::canonical::{
     DnsName, DnsNameError, DurationError, ImageReference, ImageReferenceError,
 };
 pub use crate::error::{ManifestError, Result};
-pub use crate::interpolate::{InterpolationContext, Interpolator, Reference};
+pub use crate::interpolate::{InterpolationContext, Interpolator, Reference, Segment, segments};
 pub use crate::model::{
     Command, ComposeExport, ComposeResourceExport, ContainerConfig, DashboardConfig,
     DockerfileConfig, ExportConfig, Healthcheck, HelmExport, HelmResourceExport, ImagePullPolicy,

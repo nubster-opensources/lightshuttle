@@ -51,6 +51,14 @@ use crate::error::{Result, SpecError};
 /// ```
 pub type ResourceOutputs = IndexMap<String, String>;
 
+/// Output properties that carry a credential and must never be exported in
+/// clear.
+///
+/// The export pipeline consults this list to decide which
+/// `${resources.<name>.<property>}` references must land on a secret
+/// environment key, and to refuse them anywhere else.
+pub const SENSITIVE_OUTPUTS: &[&str] = &["password", "url"];
+
 /// A [`ContainerSpec`] bundled with the [`ResourceOutputs`] the
 /// resource exposes to its dependents at runtime.
 ///
@@ -414,11 +422,53 @@ pub fn from_resource(
     kind: &ResourceKind,
 ) -> Result<ResolvedResource> {
     let name = format!("{project}_{resource_name}");
+    resolve(project, resource_name, kind, &name)
+}
+
+/// Resolves a resource as [`from_resource`] does, with `host` (and every
+/// output built from it, such as `url`) set to `service_host` instead of
+/// the runtime container name.
+///
+/// The export pipeline calls this instead of [`from_resource`] because the
+/// hostname a deployment target reaches a service through is never the
+/// Docker container name: Compose indexes services by their manifest name,
+/// Kubernetes and Helm by a generated DNS name.
+///
+/// # Errors
+///
+/// Returns the same [`SpecError`] as [`from_resource`] when the manifest
+/// declaration is structurally invalid.
+pub fn from_resource_on_host(
+    project: &str,
+    resource_name: &str,
+    kind: &ResourceKind,
+    service_host: &str,
+) -> Result<ResolvedResource> {
+    resolve(project, resource_name, kind, service_host)
+}
+
+/// Shared resolution body behind both [`from_resource`] and
+/// [`from_resource_on_host`].
+///
+/// `output_host` is the value surfaced in the `host` output (and folded into
+/// any output derived from it, such as `url`). The container name (used for
+/// [`ContainerSpec::name`], the actual runtime container) is always
+/// `<project>_<resource_name>` regardless of `output_host`: only the
+/// dependent-facing outputs change with the deployment target.
+fn resolve(
+    project: &str,
+    resource_name: &str,
+    kind: &ResourceKind,
+    output_host: &str,
+) -> Result<ResolvedResource> {
+    let name = format!("{project}_{resource_name}");
     match kind {
-        ResourceKind::Postgres(c) => spec_postgres(name, project, resource_name, c),
-        ResourceKind::Redis(c) => spec_redis(name, project, resource_name, c),
-        ResourceKind::Container(c) => spec_container(name, project, resource_name, c),
-        ResourceKind::Dockerfile(c) => spec_dockerfile(name, project, resource_name, c),
+        ResourceKind::Postgres(c) => spec_postgres(name, project, resource_name, c, output_host),
+        ResourceKind::Redis(c) => spec_redis(name, project, resource_name, c, output_host),
+        ResourceKind::Container(c) => spec_container(name, project, resource_name, c, output_host),
+        ResourceKind::Dockerfile(c) => {
+            spec_dockerfile(name, project, resource_name, c, output_host)
+        }
     }
 }
 
@@ -458,6 +508,7 @@ fn spec_postgres(
     project: &str,
     resource_name: &str,
     c: &PostgresConfig,
+    output_host: &str,
 ) -> Result<ResolvedResource> {
     let version = c.version.as_deref().unwrap_or(DEFAULT_PG_VERSION);
     let image = c
@@ -506,7 +557,7 @@ fn spec_postgres(
         });
 
     let spec = ContainerSpec {
-        name: name.clone(),
+        name,
         project: project.to_owned(),
         resource: resource_name.to_owned(),
         image: ImageSource::Pull(image),
@@ -521,7 +572,7 @@ fn spec_postgres(
     };
 
     let mut outputs = ResourceOutputs::new();
-    outputs.insert("host".to_owned(), name.clone());
+    outputs.insert("host".to_owned(), output_host.to_owned());
     outputs.insert("port".to_owned(), port.to_string());
     let user_out = env.get("POSTGRES_USER").cloned().unwrap_or_default();
     let pwd_out = env.get("POSTGRES_PASSWORD").cloned().unwrap_or_default();
@@ -535,7 +586,7 @@ fn spec_postgres(
     outputs.insert(
         "url".to_owned(),
         format!(
-            "postgres://{}:{}@{name}:{port}/{}",
+            "postgres://{}:{}@{output_host}:{port}/{}",
             encode_userinfo(&user_out),
             encode_userinfo(&pwd_out),
             encode_path_segment(&db_out)
@@ -551,6 +602,7 @@ fn spec_redis(
     project: &str,
     resource_name: &str,
     c: &RedisConfig,
+    output_host: &str,
 ) -> Result<ResolvedResource> {
     let version = c.version.as_deref().unwrap_or(DEFAULT_REDIS_VERSION);
     let image = c
@@ -592,7 +644,7 @@ fn spec_redis(
 
     let password_out = c.password.clone().unwrap_or_default();
     let spec = ContainerSpec {
-        name: name.clone(),
+        name,
         project: project.to_owned(),
         resource: resource_name.to_owned(),
         image: ImageSource::Pull(image),
@@ -607,13 +659,16 @@ fn spec_redis(
     };
 
     let mut outputs = ResourceOutputs::new();
-    outputs.insert("host".to_owned(), name.clone());
+    outputs.insert("host".to_owned(), output_host.to_owned());
     outputs.insert("port".to_owned(), port.to_string());
     outputs.insert("password".to_owned(), password_out.clone());
     let url = if password_out.is_empty() {
-        format!("redis://{name}:{port}")
+        format!("redis://{output_host}:{port}")
     } else {
-        format!("redis://:{}@{name}:{port}", encode_userinfo(&password_out))
+        format!(
+            "redis://:{}@{output_host}:{port}",
+            encode_userinfo(&password_out)
+        )
     };
     outputs.insert("url".to_owned(), url);
 
@@ -626,6 +681,7 @@ fn spec_container(
     project: &str,
     resource_name: &str,
     c: &ContainerConfig,
+    output_host: &str,
 ) -> Result<ResolvedResource> {
     let mut env: HashMap<String, String> =
         c.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
@@ -656,7 +712,7 @@ fn spec_container(
         .collect::<Vec<_>>()
         .join(",");
     let spec = ContainerSpec {
-        name: name.clone(),
+        name,
         project: project.to_owned(),
         resource: resource_name.to_owned(),
         image: ImageSource::Pull(c.image.clone()),
@@ -671,7 +727,7 @@ fn spec_container(
     };
 
     let mut outputs = ResourceOutputs::new();
-    outputs.insert("host".to_owned(), name);
+    outputs.insert("host".to_owned(), output_host.to_owned());
     outputs.insert("ports".to_owned(), ports_csv);
 
     Ok(ResolvedResource { spec, outputs })
@@ -683,6 +739,7 @@ fn spec_dockerfile(
     project: &str,
     resource_name: &str,
     c: &DockerfileConfig,
+    output_host: &str,
 ) -> Result<ResolvedResource> {
     let tag = format!("lightshuttle/{name}:dev");
 
@@ -721,7 +778,7 @@ fn spec_dockerfile(
         .collect::<Vec<_>>()
         .join(",");
     let spec = ContainerSpec {
-        name: name.clone(),
+        name,
         project: project.to_owned(),
         resource: resource_name.to_owned(),
         image: ImageSource::Build {
@@ -742,7 +799,7 @@ fn spec_dockerfile(
     };
 
     let mut outputs = ResourceOutputs::new();
-    outputs.insert("host".to_owned(), name);
+    outputs.insert("host".to_owned(), output_host.to_owned());
     outputs.insert("ports".to_owned(), ports_csv);
 
     Ok(ResolvedResource { spec, outputs })

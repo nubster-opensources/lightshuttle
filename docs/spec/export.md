@@ -101,6 +101,54 @@ These hold for every target.
   not embed that password; provision the corresponding environment or Secret
   value before deploying the generated artifact.
 
+## Deployment placeholders
+
+Every interpolatable field of a resource carries `${...}` references that
+`lightshuttle up` resolves against the running stack. An export has no
+running stack, so the two reference schemes are treated differently.
+
+A `${resources.<name>.<property>}` reference is **resolved at export time**.
+Its value depends on nothing but the hostname the target reaches a service
+through, and that is known: the raw service name for Compose, the
+DNS-sanitised name for Kubernetes and Helm. The reference never reaches the
+artifact.
+
+A `${env.<NAME>}` reference is **left for deployment time**, rendered in the
+syntax of each target. Its value is not known at export time, and freezing
+the export machine's environment into a deployment artifact would be a
+silent lie.
+
+| Source | Compose | Kubernetes | Helm |
+| --- | --- | --- | --- |
+| `${env.N}` | `${N}` | export refused, naming every such variable | `{{ required "variables.N is required" .Values.variables.N }}` |
+| `${env.N:-d}` | `${N:-d}` | `d`, frozen in place | `{{ .Values.variables.N \| default "d" }}` |
+| `${resources.X.host}` | `X` | `dns_name(X)` | `dns_name(X)` |
+| `${resources.X.port}`, and any other non-sensitive property | the value | the value | the value |
+| `${resources.X.password}` or `.url`, in an `env:` value | secret key: `${KEY}` | secret key: `'***'` in the `Secret` | secret key: `'***'` in `stringData` |
+| the same, anywhere else | export refused | export refused | export refused |
+| a literal `$` | `$$` | unchanged | unchanged |
+| the escape `${{ x }}` | `$${ x }` | `${ x }` | `${ x }` |
+| a literal `{{` | unchanged | unchanged | `{{ "{{" }}` |
+
+Further rules:
+
+- A variable name must match `[A-Za-z_][A-Za-z0-9_]*` for every target.
+  Compose interpolation and Helm value keys both require it, so a name that
+  does not match is refused rather than emitted in a form one target would
+  misread.
+- Kubernetes substitutes nothing at deploy time, so it refuses an export
+  whose variables have no default, and the refusal names **all** of them at
+  once: reporting only the first would turn fixing a manifest into one
+  re-export per missing variable.
+- Helm declares every referenced variable under a top-level `variables:` key
+  in `values.yaml`, with an empty value. Sprig's `default` treats an empty
+  value as absent, which reproduces the `:-` semantics of the manifest
+  exactly. Override one with `--set variables.N=value`.
+- A reference to a credential-bearing property (`password`, `url`) makes the
+  environment key receiving it a secret, whatever the key is called. A key
+  such as `DATABASE_URL` carries no marker any name heuristic would catch,
+  so only this propagation keeps it out of the artifact.
+
 ## Compose mapping
 
 One service per enabled resource, keyed by the resource name.
@@ -114,6 +162,9 @@ One service per enabled resource, keyed by the resource name.
 - Named volumes are declared in the top-level `volumes:` block.
 - Sensitive environment keys use `${KEY}` references and must be supplied to
   Compose by the caller.
+- `working_dir` is emitted. An unresolved `${env.NAME}` becomes the `${NAME}`
+  form Compose understands, and a literal `$` is escaped to `$$` so Compose's
+  own interpolation pass leaves it alone.
 - Healthchecks carry `test`, `interval`, `timeout`, `retries` and
   `start_period`.
 
@@ -146,13 +197,26 @@ the knobs surface in `values.yaml`.
 
 - `values.yaml` carries, per service, `replicas`, `image`
   (`repository`, `tag`, `pullPolicy`, and `digest` when the reference is
-  digest pinned) and the `env` and `secrets` maps.
+  digest pinned) and the `env` and `secrets` maps. It also carries a
+  top-level `variables:` map, one empty entry per `${env.NAME}` reference
+  found anywhere in the stack.
+- An image reference holding a variable is published whole, under
+  `image.reference`, instead of being split into `repository` and `tag`. No
+  analyser can tell a missing tag from a tag that is still a placeholder, and
+  the wrong guess would deploy `latest` without saying so. Such a service has
+  no separate `repository` and `tag` knob; that is the accepted price.
 - `repository` is the registry qualified repository, so a registry serving
   on a custom port keeps its `host:port` prefix intact.
 - Templates reference `{{ $svc.replicas }}` and render the image as
   `{{ $svc.image.repository }}@{{ $svc.image.digest }}` when a digest is
   present, `{{ $svc.image.repository }}:{{ $svc.image.tag }}` otherwise. The
   environment is rendered with `{{- range $k, $v := $svc.env }}`.
+- A value of `values.yaml` that holds a placeholder is rendered through
+  `tpl`, since `values.yaml` is data and Helm does not template it
+  otherwise. `tpl` is used only for a service that actually has one, so a
+  chart that gains nothing from it does not pay its injection surface
+  either. Any literal `{{` reaching a templated value is escaped to
+  `{{ "{{" }}`, which Go renders back to a literal `{{`.
 - Services are accessed with `index .Values.services "<name>"` so
   DNS-sanitised names containing a dash resolve.
 - Volumes are represented exactly as the Kubernetes target represents them: a

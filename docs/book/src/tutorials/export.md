@@ -131,6 +131,41 @@ helm lint export/helm
 - `--output <dir>` writes elsewhere than `./export/<target>`.
 - `--force` overwrites a non-empty output directory.
 
+## Keep a knob for deployment time
+
+A reference the export cannot resolve, typically an image tag, is not
+frozen: it survives into the artifact in each target's own syntax. Give
+`api` a variable tag:
+
+```yaml
+  api:
+    container:
+      image: "nginx:${env.NGINX_TAG:-1.27-alpine}"
+```
+
+Compose keeps its own interpolation, so `docker-compose.yml` now reads
+`image: nginx:${NGINX_TAG:-1.27-alpine}` and `NGINX_TAG=1.28-alpine
+docker compose up` picks the override up.
+
+Helm declares the variable in `values.yaml`:
+
+```yaml
+variables:
+  NGINX_TAG: ''
+```
+
+and renders the image through it, so the default applies unless you say
+otherwise:
+
+```sh
+helm template export/helm --set variables.NGINX_TAG=1.28-alpine
+```
+
+Plain Kubernetes substitutes nothing at deploy time, so it freezes the
+default into the manifest instead. Drop the `:-1.27-alpine` part and
+`lightshuttle export kubernetes` fails rather than emitting a reference no
+deploy step would ever resolve, naming every variable that needs a default.
+
 ## A note on secrets
 
 The manifest resolves its secrets through `${env.*}` references with

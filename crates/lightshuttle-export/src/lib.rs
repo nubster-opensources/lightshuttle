@@ -58,11 +58,13 @@
 //! # }
 //! ```
 
+mod deployment;
 mod emit;
 mod emitters;
 mod error;
 mod lower;
 mod model;
+mod placeholder;
 pub mod resolve;
 
 pub use crate::emit::Emitter;
@@ -71,4 +73,8 @@ pub use crate::error::{ExportError, Result};
 pub use crate::lower::lower;
 pub use crate::model::{
     ExportArtifacts, ExportFile, ExportModel, ExportProject, ExportService, Target,
+};
+pub use crate::placeholder::{
+    ComposeRenderer, DeploymentText, HelmRenderer, KubernetesRenderer, PlaceholderRenderer,
+    ResourceDirectory, TextField,
 };

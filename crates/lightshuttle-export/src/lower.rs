@@ -47,5 +47,6 @@ pub fn lower(manifest: &Manifest) -> Result<ExportModel> {
         project,
         services,
         export: manifest.export.clone(),
+        manifest: manifest.clone(),
     })
 }
