@@ -245,6 +245,11 @@ impl DockerRuntime {
 
 /// Build a tar archive from `context`, respecting `.dockerignore`
 /// patterns found within. Returns the raw tar bytes (uncompressed).
+///
+/// Symbolic links are archived as links with their target unchanged, never
+/// followed, exactly as `docker build` sends them. A target outside the
+/// context, absolute or missing is kept as written: the daemon resolves links
+/// within the context root, so it cannot reach host files through one.
 fn build_tar_archive(context: &Path) -> std::io::Result<Vec<u8>> {
     use ignore::WalkBuilder;
 
@@ -276,6 +281,8 @@ fn build_tar_archive(context: &Path) -> std::io::Result<Vec<u8>> {
             } else if file_type.is_file() {
                 let mut file = std::fs::File::open(path)?;
                 builder.append_file(relative, &mut file)?;
+            } else if file_type.is_symlink() {
+                builder.append_path_with_name(path, relative)?;
             }
         }
         builder.finish()?;
