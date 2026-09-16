@@ -184,9 +184,11 @@ fn resource_template(service: &RenderedService, name: &str) -> Result<String> {
     }
     let (config_env, _) = split_env(spec);
     if !config_env.is_empty() {
-        let templated = config_env
-            .keys()
-            .any(|key| service.env_with_variables.contains(key));
+        // The predicate has to be the whole service's environment, not just
+        // the keys that land in this `ConfigMap`: the pass escaped `{{` in
+        // every value of a service that has a placeholder anywhere, and an
+        // escape is only an escape once something renders it back.
+        let templated = !service.env_with_variables.is_empty();
         out.push_str("---\n");
         out.push_str(&configmap_block(name, templated));
     }

@@ -102,6 +102,7 @@ pub(crate) fn render_for_target(model: &ExportModel, target: Target) -> Result<R
         };
         let mut pass = ServicePass {
             resource: service.spec.resource.clone(),
+            target,
             directory: &directory,
             renderer,
             variables: &mut variables,
@@ -146,6 +147,8 @@ fn spliced_texts(spec: &ContainerSpec) -> Vec<String> {
 struct ServicePass<'a> {
     /// Resource being rendered, named by every refusal it raises.
     resource: String,
+    /// Target being rendered.
+    target: Target,
     /// Resource outputs addressed for the target being rendered.
     directory: &'a ResourceDirectory,
     /// Renderer of the target being rendered.
@@ -164,16 +167,43 @@ struct ServicePass<'a> {
 }
 
 impl ServicePass<'_> {
+    /// Parses one text, recording the variables it references.
+    fn parse(&mut self, raw: &str, field: TextField<'_>) -> Result<DeploymentText> {
+        let text = DeploymentText::parse(raw, field, &self.resource, self.directory)?;
+        for variable in text.variables() {
+            self.variables.insert(variable.to_owned());
+        }
+        Ok(text)
+    }
+
+    /// Renders one text that reaches its target through a serialiser,
+    /// given whether the target will run a template engine over it.
+    ///
+    /// The distinction exists for Helm alone, and it is not cosmetic. Helm
+    /// escapes a literal `{{` to `{{ "{{" }}`, and that escape is itself a
+    /// template action: it comes back as a literal `{{` only because
+    /// something renders it. A chart runs `tpl` over a value exactly when
+    /// that value has a placeholder to substitute, so escaping a value
+    /// nothing will render would not protect it, it would corrupt it. The
+    /// two decisions are therefore taken on one predicate rather than two.
+    fn render_value(&mut self, text: &DeploymentText, templated: bool) -> Result<String> {
+        if self.target == Target::Helm
+            && !templated
+            && let Some(plain) = text.as_plain_text()
+        {
+            return Ok(plain);
+        }
+        self.capture_unresolved(self.renderer.render(text))
+    }
+
     /// Parses and renders one text, recording the variables it references.
     ///
     /// Returns the rendered text and the parsed form, which carries the D4
     /// marking the caller needs for an environment value.
     fn render(&mut self, raw: &str, field: TextField<'_>) -> Result<(String, DeploymentText)> {
-        let text = DeploymentText::parse(raw, field, &self.resource, self.directory)?;
-        for variable in text.variables() {
-            self.variables.insert(variable.to_owned());
-        }
-        let rendered = self.capture_unresolved(self.renderer.render(&text))?;
+        let text = self.parse(raw, field)?;
+        let templated = !text.variables().is_empty();
+        let rendered = self.render_value(&text, templated)?;
         Ok((rendered, text))
     }
 
@@ -184,10 +214,7 @@ impl ServicePass<'_> {
     /// gets the literal shape plus a token per template action, so the
     /// emitter can settle YAML quoting before the actions go back in.
     fn render_spliced(&mut self, raw: &str, field: TextField<'_>) -> Result<String> {
-        let text = DeploymentText::parse(raw, field, &self.resource, self.directory)?;
-        for variable in text.variables() {
-            self.variables.insert(variable.to_owned());
-        }
+        let text = self.parse(raw, field)?;
         match &self.token_prefix {
             Some(prefix) => Ok(HelmRenderer::shape(
                 &text,
@@ -280,6 +307,12 @@ impl ServicePass<'_> {
     /// Renders every environment value and applies the D4 propagation.
     ///
     /// Returns the keys whose rendered value still carries a variable.
+    ///
+    /// The whole map is parsed before any of it is rendered, because a
+    /// chart templates a service's environment as a block: one key holding
+    /// a placeholder puts every value of that service through `tpl`, and
+    /// the escaping has to follow that same decision rather than be taken
+    /// key by key.
     fn render_env(&mut self, spec: &mut ContainerSpec) -> Result<BTreeSet<String>> {
         let mut with_variables = BTreeSet::new();
         let mut rendered_env = BTreeMap::new();
@@ -287,17 +320,25 @@ impl ServicePass<'_> {
 
         let mut keys: Vec<String> = spec.env.keys().cloned().collect();
         keys.sort();
+
+        let mut parsed = Vec::with_capacity(keys.len());
         for key in keys {
             let Some(raw) = spec.env.get(&key).cloned() else {
                 continue;
             };
-            let (rendered, text) = self.render(&raw, TextField::Env { key: &key })?;
+            let text = self.parse(&raw, TextField::Env { key: &key })?;
             if text.carries_sensitive_output() {
                 secret_keys.insert(key.clone());
             }
             if !text.variables().is_empty() {
                 with_variables.insert(key.clone());
             }
+            parsed.push((key, text));
+        }
+
+        let templated = !with_variables.is_empty();
+        for (key, text) in parsed {
+            let rendered = self.render_value(&text, templated)?;
             rendered_env.insert(key, rendered);
         }
 

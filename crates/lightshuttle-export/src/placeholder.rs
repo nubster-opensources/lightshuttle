@@ -321,6 +321,23 @@ impl DeploymentText {
         !self.has_resolved_reference && self.variables().is_empty()
     }
 
+    /// The text with nothing escaped, for a value the target will hand over
+    /// as-is rather than run a template engine over.
+    ///
+    /// Returns `None` when the text carries a variable: dropping one would
+    /// be a silent lie, so a text that has something to substitute has to go
+    /// through the renderer that knows how to substitute it.
+    pub(crate) fn as_plain_text(&self) -> Option<String> {
+        let mut out = String::new();
+        for part in &self.parts {
+            match part {
+                TextPart::Literal(text) => out.push_str(text),
+                TextPart::Variable { .. } => return None,
+            }
+        }
+        Some(out)
+    }
+
     /// Returns `true` when this text resolved a credential-bearing resource
     /// property, so the environment key it feeds must be exported as a
     /// secret (design decision D4).
