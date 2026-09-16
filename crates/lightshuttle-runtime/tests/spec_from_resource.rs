@@ -2,7 +2,7 @@
 //! required.
 
 use lightshuttle_manifest::Manifest;
-use lightshuttle_runtime::{ImageSource, VolumeSource, from_resource};
+use lightshuttle_runtime::{Argument, ImageSource, VolumeSource, from_resource};
 
 const MANIFEST: &str = r#"
 project:
@@ -73,8 +73,14 @@ fn postgres_exposes_outputs() {
     assert!(url.ends_with("@app_api_db:5432/api_db"));
 }
 
+/// The redis password must never sit as plain text inside the container
+/// `command`: it travels through `env` under `REDIS_PASSWORD`, and the
+/// command carries only a reference to that key
+/// ([`Argument::Secret`]). This is what keeps `lightshuttle export`
+/// (`lightshuttle-export`, which redacts `env` but previously could not see
+/// inside `command`) from leaking it into Compose, Kubernetes or Helm.
 #[test]
-fn redis_passes_password_through_command() {
+fn redis_command_references_its_password_through_env() {
     let manifest = Manifest::parse(MANIFEST).unwrap();
     let kind = manifest.resources.get("cache").unwrap();
     let resolved = from_resource("app", "cache", kind).expect("spec built");
@@ -83,9 +89,27 @@ fn redis_passes_password_through_command() {
     assert_eq!(spec.name, "app_cache");
     assert!(matches!(spec.image, ImageSource::Pull(ref s) if s == "redis:7-alpine"));
     let command = spec.command.as_ref().expect("redis carries a command");
-    assert_eq!(command[0], "redis-server");
-    assert!(command.iter().any(|s| s == "--requirepass"));
-    assert!(command.iter().any(|s| s == "s3cret"));
+    assert_eq!(command[0], Argument::literal("redis-server"));
+    assert!(
+        command
+            .iter()
+            .any(|a| *a == Argument::literal("--requirepass"))
+    );
+    assert!(
+        command
+            .iter()
+            .any(|a| *a == Argument::secret("REDIS_PASSWORD")),
+        "the command must reference the environment key, not the plain password, got {command:?}"
+    );
+    assert!(
+        !command.iter().any(|a| *a == Argument::literal("s3cret")),
+        "the plain password must never appear in the command, got {command:?}"
+    );
+    assert_eq!(
+        spec.env.get("REDIS_PASSWORD").map(String::as_str),
+        Some("s3cret")
+    );
+    assert!(spec.secret_env_keys.contains("REDIS_PASSWORD"));
     assert_eq!(spec.ports[0].container_port, 6379);
 }
 

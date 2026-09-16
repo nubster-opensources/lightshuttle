@@ -141,7 +141,13 @@ resources:
 ",
     );
     assert!(!out.contains("real-password"), "got:\n{out}");
-    assert!(out.contains("DATABASE_URL: ${DATABASE_URL}"), "got:\n{out}");
+    // The reference is scoped to its resource (`api`), not just the key: see
+    // `crates/lightshuttle-export/tests/credential_leak.rs` for why an
+    // unqualified `${DATABASE_URL}` would collide across resources.
+    assert!(
+        out.contains("DATABASE_URL: ${API_DATABASE_URL}"),
+        "got:\n{out}"
+    );
 }
 
 /// Compose names both concepts as the manifest does, so this is a

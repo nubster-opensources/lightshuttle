@@ -152,13 +152,19 @@ pub struct ContainerSpec {
     ///
     /// A `Command::Single` string is wrapped as `["sh", "-c", ...]`;
     /// a `Command::Args` list is passed through as-is. `None` leaves the
-    /// image entrypoint in place.
-    pub entrypoint: Option<Vec<String>>,
+    /// image entrypoint in place. A resolver built from a manifest
+    /// declaration only ever produces [`Argument::Literal`] elements here;
+    /// [`Argument::Secret`] is reserved for a generated command such as
+    /// redis's `--requirepass`.
+    pub entrypoint: Option<Vec<Argument>>,
     /// Optional command that overrides the image default `CMD`.
     ///
     /// A `Command::Single` string is wrapped as `["sh", "-c", ...]`;
-    /// a `Command::Args` list is passed through as-is.
-    pub command: Option<Vec<String>>,
+    /// a `Command::Args` list is passed through as-is. A resolver built
+    /// from a manifest declaration only ever produces [`Argument::Literal`]
+    /// elements here; [`Argument::Secret`] is reserved for a generated
+    /// command such as redis's `--requirepass`.
+    pub command: Option<Vec<Argument>>,
     /// Optional healthcheck. For `postgres` and `redis`, a sensible
     /// default is injected when the manifest omits one.
     pub healthcheck: Option<HealthcheckSpec>,
@@ -611,12 +617,16 @@ fn spec_redis(
         .unwrap_or_else(|| format!("redis:{version}-alpine"));
     let port = c.port.unwrap_or(DEFAULT_REDIS_PORT);
 
-    let mut command = vec!["redis-server".to_owned()];
+    let mut command = vec![Argument::literal("redis-server")];
+    let mut env = HashMap::new();
+    let mut secret_env_keys = BTreeSet::new();
     if let Some(password) = c.password.as_deref()
         && !password.is_empty()
     {
-        command.push("--requirepass".to_owned());
-        command.push(password.to_owned());
+        env.insert("REDIS_PASSWORD".to_owned(), password.to_owned());
+        secret_env_keys.insert("REDIS_PASSWORD".to_owned());
+        command.push(Argument::literal("--requirepass"));
+        command.push(Argument::secret("REDIS_PASSWORD"));
     }
 
     let ports = vec![PortBinding {
@@ -648,8 +658,8 @@ fn spec_redis(
         project: project.to_owned(),
         resource: resource_name.to_owned(),
         image: ImageSource::Pull(image),
-        env: HashMap::new(),
-        secret_env_keys: BTreeSet::new(),
+        env,
+        secret_env_keys,
         ports,
         volumes,
         entrypoint: None,
@@ -698,12 +708,13 @@ fn spec_container(
         .iter()
         .map(|s| parse_volume_string(s))
         .collect::<Result<Vec<_>>>()?;
-    let entrypoint = c.entrypoint.as_ref().map(parse_command);
+    let entrypoint = c.entrypoint.as_ref().map(parse_command).map(as_literals);
     let command = c
         .command
         .as_ref()
         .map(parse_command)
-        .filter(|cmd| !cmd.is_empty());
+        .filter(|cmd| !cmd.is_empty())
+        .map(as_literals);
     let healthcheck = c.healthcheck.as_ref().map(parse_healthcheck).transpose()?;
 
     let ports_csv: String = ports
@@ -764,12 +775,13 @@ fn spec_dockerfile(
         .iter()
         .map(|s| parse_volume_string(s))
         .collect::<Result<Vec<_>>>()?;
-    let entrypoint = c.entrypoint.as_ref().map(parse_command);
+    let entrypoint = c.entrypoint.as_ref().map(parse_command).map(as_literals);
     let command = c
         .command
         .as_ref()
         .map(parse_command)
-        .filter(|cmd| !cmd.is_empty());
+        .filter(|cmd| !cmd.is_empty())
+        .map(as_literals);
     let healthcheck = c.healthcheck.as_ref().map(parse_healthcheck).transpose()?;
 
     let ports_csv: String = ports
@@ -885,6 +897,16 @@ fn parse_command(command: &Command) -> Vec<String> {
     }
 }
 
+/// Wraps every element of a hand-written command as an [`Argument::Literal`].
+///
+/// A resource resolved directly from a manifest declaration (`container`,
+/// `dockerfile`) never carries a credential in its `entrypoint` or `command`:
+/// only a generated command such as redis's `--requirepass` references an
+/// environment key through [`Argument::Secret`].
+fn as_literals(arguments: Vec<String>) -> Vec<Argument> {
+    arguments.into_iter().map(Argument::literal).collect()
+}
+
 fn parse_healthcheck(hc: &Healthcheck) -> Result<HealthcheckSpec> {
     Ok(HealthcheckSpec {
         test: hc.test.clone(),
@@ -927,8 +949,8 @@ fn generate_random_password() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        VolumeSource, from_resource, generate_random_password, parse_command, parse_duration,
-        parse_port_string, parse_volume_string,
+        Argument, VolumeSource, from_resource, generate_random_password, parse_command,
+        parse_duration, parse_port_string, parse_volume_string,
     };
     use lightshuttle_manifest::Command;
     use std::time::Duration;
@@ -1069,11 +1091,11 @@ resources:
             from_resource("app", "svc", &manifest.resources["svc"]).expect("resolution succeeds");
         assert_eq!(
             resolved.spec.entrypoint,
-            Some(vec!["sh".to_owned(), "-c".to_owned()])
+            Some(vec![Argument::literal("sh"), Argument::literal("-c")])
         );
         assert_eq!(
             resolved.spec.command,
-            Some(vec!["echo hi".to_owned()]),
+            Some(vec![Argument::literal("echo hi")]),
             "resolving an entrypoint must not disturb the command"
         );
     }
@@ -1095,9 +1117,9 @@ resources:
         assert_eq!(
             resolved.spec.entrypoint,
             Some(vec![
-                "sh".to_owned(),
-                "-c".to_owned(),
-                "entrypoint.sh".to_owned()
+                Argument::literal("sh"),
+                Argument::literal("-c"),
+                Argument::literal("entrypoint.sh")
             ])
         );
         assert_eq!(
@@ -1151,8 +1173,59 @@ resources:
             .expect("resolution succeeds");
         assert_eq!(
             cache.spec.command,
-            Some(vec!["redis-server".to_owned()]),
+            Some(vec![Argument::literal("redis-server")]),
             "the redis command must be untouched"
         );
+    }
+}
+
+/// One element of a container's `command` or `entrypoint` list, carrying
+/// enough information for an export target to decide whether the element
+/// is safe to copy verbatim or must instead be redacted behind a
+/// reference to a declared environment key.
+///
+/// A resolver that builds a [`ContainerSpec`] from a manifest resource
+/// chooses one variant per argument: [`Argument::Literal`] for a value
+/// that carries no secret, and [`Argument::Secret`] for a value that must
+/// be looked up from the environment shared with the container instead of
+/// being written into the argument itself. This is what lets an export
+/// target keep a credential out of a command line without dropping the
+/// argument that carries it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Argument {
+    /// A value copied verbatim into the exported command line.
+    Literal(String),
+    /// A reference to an environment key. The key name is carried here,
+    /// never the value it resolves to.
+    Secret(String),
+}
+
+impl Argument {
+    /// Builds an [`Argument::Literal`] carrying `value` as-is.
+    #[must_use]
+    pub fn literal(value: impl Into<String>) -> Self {
+        Self::Literal(value.into())
+    }
+
+    /// Builds an [`Argument::Secret`] referencing the environment key
+    /// `environment_key`.
+    #[must_use]
+    pub fn secret(environment_key: impl Into<String>) -> Self {
+        Self::Secret(environment_key.into())
+    }
+
+    /// Resolves this argument against `env`.
+    ///
+    /// A [`Argument::Literal`] resolves to its own value regardless of
+    /// `env`. A [`Argument::Secret`] resolves to the value stored under
+    /// its environment key in `env`, or to `None` when that key is
+    /// absent, so a caller can treat a missing secret as an error instead
+    /// of silently emitting an empty string.
+    #[must_use]
+    pub fn resolve<'a>(&'a self, env: &'a HashMap<String, String>) -> Option<&'a str> {
+        match self {
+            Self::Literal(value) => Some(value.as_str()),
+            Self::Secret(key) => env.get(key).map(String::as_str),
+        }
     }
 }

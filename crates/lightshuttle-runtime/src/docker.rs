@@ -64,7 +64,7 @@ use crate::runtime::{
     ContainerId, ContainerRuntime, ContainerStatus, LogChunk, LogChunkStream, LogStream,
 };
 use lightshuttle_spec::{
-    ContainerSpec, HealthcheckSpec, ImageSource, PortBinding, VolumeBinding, VolumeSource,
+    Argument, ContainerSpec, HealthcheckSpec, ImageSource, PortBinding, VolumeBinding, VolumeSource,
 };
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
@@ -424,12 +424,22 @@ impl ContainerRuntime for DockerRuntime {
         let env = build_env(&spec.env);
         let healthcheck = spec.healthcheck.as_ref().map(build_healthcheck);
         let labels = build_labels(&spec.project, &spec.resource);
+        let entrypoint = spec
+            .entrypoint
+            .as_deref()
+            .map(|arguments| resolve_arguments(arguments, &spec.env))
+            .transpose()?;
+        let cmd = spec
+            .command
+            .as_deref()
+            .map(|arguments| resolve_arguments(arguments, &spec.env))
+            .transpose()?;
 
         let config = ContainerCreateBody {
             image: Some(image_ref),
             env: Some(env),
-            entrypoint: spec.entrypoint.clone(),
-            cmd: spec.command.clone(),
+            entrypoint,
+            cmd,
             working_dir: spec.working_dir.clone(),
             host_config: Some(host_config),
             exposed_ports: Some(exposed_ports),
@@ -599,6 +609,36 @@ fn build_env(env: &HashMap<String, String>) -> Vec<String> {
     env.iter().map(|(k, v)| format!("{k}={v}")).collect()
 }
 
+/// Resolves every element of an `entrypoint` or `command` list against
+/// `env`, turning a [`ContainerSpec`]'s `Vec<Argument>` into the plain
+/// `Vec<String>` the container daemon expects.
+///
+/// A [`lightshuttle_spec::Argument::Literal`] is copied as-is. A
+/// [`lightshuttle_spec::Argument::Secret`] is looked up by its environment
+/// key in `env`, the same map `docker create` is handed, so the value
+/// reaches the container exactly once: here, at the last possible moment
+/// before the daemon call, never earlier in a struct that an exporter or a
+/// log line might serialise.
+///
+/// # Errors
+///
+/// Returns [`RuntimeError::InvalidSpec`] when a `Secret` names a key absent
+/// from `env`: an orphan reference is a defect in the spec that produced it,
+/// not a container to start with a silently missing argument.
+fn resolve_arguments(arguments: &[Argument], env: &HashMap<String, String>) -> Result<Vec<String>> {
+    arguments
+        .iter()
+        .map(|argument| match argument {
+            Argument::Literal(text) => Ok(text.clone()),
+            Argument::Secret(key) => env.get(key).cloned().ok_or_else(|| {
+                RuntimeError::InvalidSpec(format!(
+                    "command references environment key `{key}` with no matching value in `env`"
+                ))
+            }),
+        })
+        .collect()
+}
+
 fn build_labels(project: &str, resource: &str) -> HashMap<String, String> {
     let mut labels = HashMap::with_capacity(2);
     labels.insert(LABEL_PROJECT.to_owned(), project.to_owned());
@@ -752,8 +792,9 @@ fn timestamp_to_system_time(ts: jiff::Timestamp) -> Option<SystemTime> {
 mod tests {
     use super::{
         LABEL_PROJECT, PortBinding, build_host_config, ensure_network_ownership, network_name,
-        split_image_ref,
+        resolve_arguments, split_image_ref,
     };
+    use lightshuttle_spec::Argument;
     use std::collections::HashMap;
 
     fn network_for(project: &str) -> String {
@@ -939,5 +980,51 @@ mod tests {
         let input = b"singletoken";
         let (_ts, payload) = super::split_docker_timestamp(input);
         assert_eq!(payload, input);
+    }
+
+    #[test]
+    fn resolve_arguments_copies_a_literal_verbatim() {
+        let env = HashMap::new();
+        let resolved = resolve_arguments(&[Argument::literal("redis-server")], &env)
+            .expect("a literal always resolves");
+        assert_eq!(resolved, vec!["redis-server".to_owned()]);
+    }
+
+    #[test]
+    fn resolve_arguments_looks_up_a_secret_by_its_environment_key() {
+        let mut env = HashMap::new();
+        env.insert("REDIS_PASSWORD".to_owned(), "s3cret".to_owned());
+        let resolved = resolve_arguments(
+            &[
+                Argument::literal("redis-server"),
+                Argument::literal("--requirepass"),
+                Argument::secret("REDIS_PASSWORD"),
+            ],
+            &env,
+        )
+        .expect("the secret key is present in env");
+        assert_eq!(
+            resolved,
+            vec![
+                "redis-server".to_owned(),
+                "--requirepass".to_owned(),
+                "s3cret".to_owned(),
+            ]
+        );
+    }
+
+    /// A `Secret` naming a key `docker create` will never be handed (the
+    /// spec that produced it is inconsistent) must be refused, not started
+    /// with the literal reference or an empty string silently standing in
+    /// for the credential.
+    #[test]
+    fn resolve_arguments_refuses_a_secret_with_no_matching_environment_key() {
+        let env = HashMap::new();
+        let error = resolve_arguments(&[Argument::secret("REDIS_PASSWORD")], &env)
+            .expect_err("an orphan secret reference must not silently resolve");
+        assert!(
+            error.to_string().contains("REDIS_PASSWORD"),
+            "the diagnostic should name the missing key, got: {error}"
+        );
     }
 }

@@ -6,18 +6,18 @@
 //! as `lightshuttle up`. Named volumes are collected into the top-level
 //! `volumes:` block so Compose can manage their lifecycle.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use indexmap::IndexMap;
 use lightshuttle_spec::{ContainerSpec, ImageSource, PortBinding, VolumeBinding, VolumeSource};
 use serde::Serialize;
 
-use crate::deployment::{RenderedService, render_for_target};
+use crate::deployment::{RenderedModel, RenderedService, render_for_target};
 use crate::emit::Emitter;
 use crate::error::{ExportError, Result};
 use crate::model::{ExportModel, Target};
-use crate::resolve::compose_env;
+use crate::resolve::{compose_arguments, compose_env, compose_variable_name, is_secret_key};
 
 /// Loopback address used when a port declares no explicit host bind, so
 /// the exported stack keeps the same not-exposed-by-default posture as
@@ -55,6 +55,7 @@ impl Emitter for ComposeEmitter {
 
     fn emit(&self, model: &ExportModel) -> Result<crate::ExportArtifacts> {
         let rendered = render_for_target(model, Target::Compose)?;
+        ensure_no_variable_collisions(&rendered)?;
         let file = build_compose(model, &rendered.services);
         let yaml = serde_norway::to_string(&file).map_err(|e| ExportError::Unsupported {
             resource: "<compose>".to_owned(),
@@ -66,6 +67,61 @@ impl Emitter for ComposeEmitter {
         artifacts.ensure_unique_paths()?;
         Ok(artifacts)
     }
+}
+
+/// Refuses an export where two distinct sources would produce the same
+/// Compose interpolation variable name.
+///
+/// [`compose_variable_name`] is not injective (a dashed and an underscored
+/// resource name can normalise alike, and so can two different `(resource,
+/// key)` splits), so the guarantee has to come from checking the names this
+/// export actually produces rather than from the normalisation itself. Every
+/// secret environment key of every service is one source; the deployment
+/// placeholder variables collected by `crate::deployment` (see #308) are
+/// another, since they interpolate through the same unqualified `${NAME}`
+/// syntax and can collide with a qualified name just as easily.
+///
+/// # Errors
+///
+/// Returns [`ExportError::Unsupported`] naming every source that produced
+/// the colliding variable. A source is a `(resource, key)` pair rather than a
+/// resource, because two secret keys of one resource (`db_password` and
+/// `DB_PASSWORD`) normalise alike just as two resources can.
+fn ensure_no_variable_collisions(rendered: &RenderedModel) -> Result<()> {
+    let mut owners: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+
+    for service in &rendered.services {
+        let spec = &service.spec;
+        for key in spec.env.keys() {
+            if is_secret_key(spec, key) {
+                let name = compose_variable_name(&spec.resource, key);
+                owners
+                    .entry(name)
+                    .or_default()
+                    .insert(format!("{} (key `{key}`)", spec.resource));
+            }
+        }
+    }
+    for variable in &rendered.variables {
+        owners
+            .entry(variable.clone())
+            .or_default()
+            .insert(format!("deployment variable `{variable}`"));
+    }
+
+    for (name, resources) in owners {
+        if resources.len() > 1 {
+            let resources: Vec<String> = resources.into_iter().collect();
+            return Err(ExportError::Unsupported {
+                resource: resources.join(", "),
+                target: "compose",
+                reason: format!(
+                    "would all reference the Compose variable `{name}`, so one would silently override another's value"
+                ),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Typed `docker-compose` document.
@@ -159,8 +215,14 @@ fn compose_service(service: &RenderedService, model: &ExportModel) -> ComposeSer
         environment: compose_env(spec),
         volumes: spec.volumes.iter().map(volume_string).collect(),
         working_dir: spec.working_dir.clone(),
-        entrypoint: spec.entrypoint.clone(),
-        command: spec.command.clone(),
+        entrypoint: spec
+            .entrypoint
+            .as_ref()
+            .map(|arguments| compose_arguments(&spec.resource, arguments)),
+        command: spec
+            .command
+            .as_ref()
+            .map(|arguments| compose_arguments(&spec.resource, arguments)),
         healthcheck: spec.healthcheck.as_ref().map(|hc| ComposeHealthcheck {
             test: hc.test.clone(),
             interval: duration_str(hc.interval),

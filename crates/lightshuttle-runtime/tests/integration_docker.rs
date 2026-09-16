@@ -9,7 +9,7 @@ use std::io::Write;
 use std::time::Duration;
 
 use lightshuttle_runtime::{
-    ContainerRuntime, ContainerSpec, ContainerStatus, DockerRuntime, ImageSource,
+    Argument, ContainerRuntime, ContainerSpec, ContainerStatus, DockerRuntime, ImageSource,
 };
 
 fn small_image_spec(name: &str) -> ContainerSpec {
@@ -19,7 +19,11 @@ fn small_image_spec(name: &str) -> ContainerSpec {
         name.to_owned(),
         ImageSource::Pull("alpine:3.20".to_owned()),
     );
-    spec.command = Some(vec!["sh".to_owned(), "-c".to_owned(), "sleep 5".to_owned()]);
+    spec.command = Some(vec![
+        Argument::literal("sh"),
+        Argument::literal("-c"),
+        Argument::literal("sleep 5"),
+    ]);
     spec
 }
 

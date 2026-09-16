@@ -97,8 +97,8 @@ pub use crate::runtime::{
     ContainerId, ContainerRuntime, ContainerStatus, LogChunk, LogChunkStream, LogStream,
 };
 pub use lightshuttle_spec::{
-    ContainerSpec, HealthcheckSpec, ImageSource, PortBinding, ResolvedResource, ResourceOutputs,
-    SpecError, VolumeBinding, VolumeSource, from_resource,
+    Argument, ContainerSpec, HealthcheckSpec, ImageSource, PortBinding, ResolvedResource,
+    ResourceOutputs, SpecError, VolumeBinding, VolumeSource, from_resource,
 };
 
 mod docker;

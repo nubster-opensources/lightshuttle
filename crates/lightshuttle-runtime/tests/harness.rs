@@ -9,7 +9,7 @@ mod common;
 use std::time::Duration;
 
 use lightshuttle_runtime::{
-    ContainerRuntime, ContainerSpec, DockerRuntime, ImageSource, LifecycleEvent,
+    Argument, ContainerRuntime, ContainerSpec, DockerRuntime, ImageSource, LifecycleEvent,
 };
 use tokio::sync::broadcast;
 
@@ -88,9 +88,9 @@ fn probe_spec(project: &str) -> ContainerSpec {
         ImageSource::Pull("alpine:3.20".to_owned()),
     );
     spec.command = Some(vec![
-        "sh".to_owned(),
-        "-c".to_owned(),
-        "sleep 30".to_owned(),
+        Argument::literal("sh"),
+        Argument::literal("-c"),
+        Argument::literal("sleep 30"),
     ]);
     spec
 }

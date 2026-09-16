@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use lightshuttle_manifest::Manifest;
 use lightshuttle_runtime::testkit::MockRuntime;
-use lightshuttle_runtime::{LifecycleManager, LifecyclePlan};
+use lightshuttle_runtime::{Argument, LifecycleManager, LifecyclePlan};
 use lightshuttle_spec::ImageSource;
 
 const MANIFEST: &str = r#"
@@ -78,13 +78,21 @@ async fn every_interpolatable_field_is_resolved_before_the_container_starts() {
     // Command arguments resolved (a `Command::Args` list passes through as-is).
     assert_eq!(
         spec.command.as_deref(),
-        Some(&["serve".to_owned(), "--port".to_owned(), "8080".to_owned()][..])
+        Some(
+            &[
+                Argument::literal("serve"),
+                Argument::literal("--port"),
+                Argument::literal("8080"),
+            ][..]
+        )
     );
 
     // Entrypoint resolved (previously omitted from substitution entirely).
     let entrypoint = spec.entrypoint.as_ref().expect("entrypoint set");
     assert!(
-        entrypoint.iter().any(|part| part == "/bin/run"),
+        entrypoint
+            .iter()
+            .any(|part| matches!(part, Argument::Literal(text) if text == "/bin/run")),
         "entrypoint must be resolved, got {entrypoint:?}"
     );
 
