@@ -51,6 +51,14 @@ use crate::error::{Result, SpecError};
 /// ```
 pub type ResourceOutputs = IndexMap<String, String>;
 
+/// Output properties that carry a credential and must never be exported in
+/// clear.
+///
+/// The export pipeline consults this list to decide which
+/// `${resources.<name>.<property>}` references must land on a secret
+/// environment key, and to refuse them anywhere else.
+pub const SENSITIVE_OUTPUTS: &[&str] = &["password", "url"];
+
 /// A [`ContainerSpec`] bundled with the [`ResourceOutputs`] the
 /// resource exposes to its dependents at runtime.
 ///
@@ -420,6 +428,28 @@ pub fn from_resource(
         ResourceKind::Container(c) => spec_container(name, project, resource_name, c),
         ResourceKind::Dockerfile(c) => spec_dockerfile(name, project, resource_name, c),
     }
+}
+
+/// Resolves a resource as [`from_resource`] does, with `host` (and every
+/// output built from it, such as `url`) set to `service_host` instead of
+/// the runtime container name.
+///
+/// The export pipeline calls this instead of [`from_resource`] because the
+/// hostname a deployment target reaches a service through is never the
+/// Docker container name: Compose indexes services by their manifest name,
+/// Kubernetes and Helm by a generated DNS name.
+///
+/// # Errors
+///
+/// Returns the same [`SpecError`] as [`from_resource`] when the manifest
+/// declaration is structurally invalid.
+pub fn from_resource_on_host(
+    project: &str,
+    resource_name: &str,
+    kind: &ResourceKind,
+    service_host: &str,
+) -> Result<ResolvedResource> {
+    todo!()
 }
 
 /// Display image label for a resource, derived without lowering the full

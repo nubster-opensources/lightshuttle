@@ -385,6 +385,51 @@ fn scan_at(input: &str, depth: usize, out: &mut Vec<Reference>) -> Result<()> {
     Ok(())
 }
 
+/// One piece of an interpolatable string: literal text or a reference.
+///
+/// Produced by [`segments`], which splits a raw manifest string into its
+/// literal and reference parts without resolving any value. This is the
+/// single decomposition that [`Interpolator::resolve`] and
+/// [`Interpolator::scan`] are rebuilt on top of.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Segment {
+    /// Literal text, with `${{ ... }}` escapes already unfolded to `${ ... }`.
+    Literal(String),
+    /// A `${resources.<name>.<property>}` reference.
+    Resource {
+        /// Name of the target resource as declared in the manifest.
+        name: String,
+        /// Property key on that resource (e.g. `"host"`, `"port"`).
+        property: String,
+    },
+    /// A `${env.<NAME>}` reference, with its default split into segments.
+    Env {
+        /// Environment variable name.
+        name: String,
+        /// Optional fallback, itself split into segments so that a
+        /// reference nested in the default surfaces as its own
+        /// [`Segment::Env`] or [`Segment::Resource`].
+        default: Option<Vec<Segment>>,
+    },
+}
+
+/// Splits `input` into literal text and references without resolving them.
+///
+/// Uses the exact grammar of [`Interpolator::resolve`] and
+/// [`Interpolator::scan`]: the `${{ ... }}` escape, a lone `$` kept as a
+/// literal character, and `env` defaults parsed recursively so that a
+/// reference nested in a default surfaces as its own segment.
+///
+/// # Errors
+///
+/// Returns a [`ManifestError`] on the same malformed input that
+/// [`Interpolator::resolve`] rejects: an unterminated `${`, an unknown
+/// reference scheme, a `${` nested outside an `env` default, or an
+/// interpolation nested deeper than [`MAX_INTERPOLATION_DEPTH`].
+pub fn segments(input: &str) -> Result<Vec<Segment>> {
+    todo!()
+}
+
 fn parse_reference(body: &str) -> Result<Reference> {
     if let Some(rest) = body.strip_prefix("resources.") {
         let (name, property) = rest.split_once('.').ok_or_else(|| {
