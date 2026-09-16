@@ -1156,3 +1156,48 @@ resources:
         );
     }
 }
+
+/// One element of a container's `command` or `entrypoint` list, carrying
+/// enough information for an export target to decide whether the element
+/// is safe to copy verbatim or must instead be redacted behind a
+/// reference to a declared environment key.
+///
+/// A resolver that builds a [`ContainerSpec`] from a manifest resource
+/// chooses one variant per argument: [`Argument::Literal`] for a value
+/// that carries no secret, and [`Argument::Secret`] for a value that must
+/// be looked up from the environment shared with the container instead of
+/// being written into the argument itself. This is what lets an export
+/// target keep a credential out of a command line without dropping the
+/// argument that carries it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Argument {
+    /// A value copied verbatim into the exported command line.
+    Literal(String),
+    /// A reference to an environment key. The key name is carried here,
+    /// never the value it resolves to.
+    Secret(String),
+}
+
+impl Argument {
+    /// Builds an [`Argument::Literal`] carrying `value` as-is.
+    pub fn literal(value: impl Into<String>) -> Self {
+        todo!()
+    }
+
+    /// Builds an [`Argument::Secret`] referencing the environment key
+    /// `environment_key`.
+    pub fn secret(environment_key: impl Into<String>) -> Self {
+        todo!()
+    }
+
+    /// Resolves this argument against `env`.
+    ///
+    /// A [`Argument::Literal`] resolves to its own value regardless of
+    /// `env`. A [`Argument::Secret`] resolves to the value stored under
+    /// its environment key in `env`, or to `None` when that key is
+    /// absent, so a caller can treat a missing secret as an error instead
+    /// of silently emitting an empty string.
+    pub fn resolve<'a>(&'a self, env: &'a std::collections::HashMap<String, String>) -> Option<&'a str> {
+        todo!()
+    }
+}
