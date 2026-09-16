@@ -16,7 +16,8 @@ use crate::emit::Emitter;
 use crate::error::Result;
 use crate::model::{ExportModel, Target};
 use crate::resolve::{
-    dns_name, image_pull_policy_for, namespace_label_for, replicas_for, split_env,
+    dns_name, env_substitution_arguments, image_pull_policy_for, namespace_label_for, replicas_for,
+    split_env,
 };
 
 /// Emits plain Kubernetes manifests from the export model.
@@ -184,8 +185,8 @@ fn deployment(
                         ports: spec.ports.iter().map(container_port).collect(),
                         env_from,
                         volume_mounts: mounts,
-                        command: spec.entrypoint.clone(),
-                        args: spec.command.clone(),
+                        command: spec.entrypoint.as_deref().map(env_substitution_arguments),
+                        args: spec.command.as_deref().map(env_substitution_arguments),
                         working_dir: spec.working_dir.clone(),
                         readiness_probe: probe.clone(),
                         liveness_probe: probe,

@@ -23,7 +23,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use lightshuttle_spec::{ContainerSpec, ImageSource};
+use lightshuttle_spec::{Argument, ContainerSpec, ImageSource};
 
 use crate::error::{ExportError, Result};
 use crate::model::{ExportModel, Target};
@@ -132,15 +132,28 @@ pub(crate) fn render_for_target(model: &ExportModel, target: Target) -> Result<R
 
 /// Every text of `spec` that an emitter splices into hand-written YAML
 /// rather than handing to a serialiser.
+///
+/// A [`Argument::Secret`] carries no manifest-written text of its own (only
+/// an environment key name), so it contributes nothing here: the token
+/// prefix this feeds only has to avoid colliding with text the manifest
+/// author actually wrote.
 fn spliced_texts(spec: &ContainerSpec) -> Vec<String> {
     let mut texts = Vec::new();
-    texts.extend(spec.entrypoint.iter().flatten().cloned());
-    texts.extend(spec.command.iter().flatten().cloned());
+    texts.extend(spec.entrypoint.iter().flatten().filter_map(literal_text));
+    texts.extend(spec.command.iter().flatten().filter_map(literal_text));
     texts.extend(spec.working_dir.iter().cloned());
     if let Some(healthcheck) = &spec.healthcheck {
         texts.extend(healthcheck.test.iter().cloned());
     }
     texts
+}
+
+/// Returns the literal text of `argument`, or `None` for a [`Argument::Secret`].
+fn literal_text(argument: &Argument) -> Option<String> {
+    match argument {
+        Argument::Literal(text) => Some(text.clone()),
+        Argument::Secret(_) => None,
+    }
 }
 
 /// The pass applied to one service, holding what every field render needs.
@@ -268,6 +281,21 @@ impl ServicePass<'_> {
         Ok(())
     }
 
+    /// Renders every spliced literal argument in place inside `arguments`.
+    ///
+    /// A [`Argument::Secret`] carries no manifest-written placeholder text:
+    /// it is a reference to an environment key, already resolved by
+    /// `lightshuttle-spec`, and is left untouched so the credential it
+    /// names never has to pass through this rendering at all.
+    fn render_arguments(&mut self, arguments: &mut [Argument], field: TextField<'_>) -> Result<()> {
+        for argument in arguments {
+            if let Argument::Literal(text) = argument {
+                *text = self.render_spliced(text, field)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Renders the image reference and every build input.
     ///
     /// Returns whether the rendered image reference carries a variable.
@@ -353,10 +381,10 @@ impl ServicePass<'_> {
     /// healthcheck command.
     fn render_argv(&mut self, spec: &mut ContainerSpec) -> Result<()> {
         if let Some(entrypoint) = &mut spec.entrypoint {
-            self.render_each(entrypoint, TextField::Entrypoint)?;
+            self.render_arguments(entrypoint, TextField::Entrypoint)?;
         }
         if let Some(command) = &mut spec.command {
-            self.render_each(command, TextField::Command)?;
+            self.render_arguments(command, TextField::Command)?;
         }
         if let Some(working_dir) = &mut spec.working_dir {
             *working_dir = self.render_spliced(working_dir, TextField::WorkingDir)?;

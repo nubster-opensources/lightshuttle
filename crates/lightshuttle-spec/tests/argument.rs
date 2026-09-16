@@ -16,7 +16,10 @@ use lightshuttle_spec::Argument;
 /// is comparable.
 #[test]
 fn literal_built_from_the_same_text_are_equal() {
-    assert_eq!(Argument::literal("redis-server"), Argument::literal("redis-server"));
+    assert_eq!(
+        Argument::literal("redis-server"),
+        Argument::literal("redis-server")
+    );
 }
 
 /// Proves that `Argument::secret` builds a value equal to another secret
@@ -33,7 +36,10 @@ fn secrets_built_from_the_same_key_are_equal() {
 /// the variant tag is part of the value's identity, not just its payload.
 #[test]
 fn a_literal_and_a_secret_with_the_same_text_are_not_equal() {
-    assert_ne!(Argument::literal("REDIS_PASSWORD"), Argument::secret("REDIS_PASSWORD"));
+    assert_ne!(
+        Argument::literal("REDIS_PASSWORD"),
+        Argument::secret("REDIS_PASSWORD")
+    );
 }
 
 /// Proves that a `Literal` resolves to its own value, unconditionally: the
@@ -42,7 +48,10 @@ fn a_literal_and_a_secret_with_the_same_text_are_not_equal() {
 #[test]
 fn a_literal_resolves_to_its_own_value_regardless_of_the_environment() {
     let mut env = HashMap::new();
-    env.insert("redis-server".to_owned(), "something-else-entirely".to_owned());
+    env.insert(
+        "redis-server".to_owned(),
+        "something-else-entirely".to_owned(),
+    );
 
     let argument = Argument::literal("redis-server");
     assert_eq!(argument.resolve(&env), Some("redis-server"));

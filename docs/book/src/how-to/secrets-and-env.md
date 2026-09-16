@@ -95,20 +95,87 @@ supplying a value at deployment time:
 
 | Target | Emitted value | How to supply the real value |
 | --- | --- | --- |
-| Compose | `${KEY}` | Exported in the shell, or set in a `.env` file next to the generated `docker-compose.yml` |
-| Kubernetes | `'***'` in the `Secret` | Replaced before `kubectl apply`, or the `Secret` is managed out of band |
-| Helm | `'***'` in `values.yaml` | Overridden with `--set` or a private values file |
+| Compose | `${RESOURCE_KEY}` | Exported in the shell, or set in a `.env` file next to the generated `docker-compose.yml` |
+| Kubernetes | `$(KEY)` in `command`/`args`, `'***'` in the `Secret` | Replaced before `kubectl apply`, or the `Secret` is managed out of band |
+| Helm | `$(KEY)` in `command`/`args`, `'***'` in `values.yaml` | Overridden with `--set` or a private values file |
 
-Because Compose emits `${KEY}` rather than the resolved value, a generated
-`docker-compose.yml` is no longer self contained: `docker compose up` needs
-those variables to be present in its environment. Compose substitutes an unset
-variable with an empty string, so supply every key the export declares rather
-than relying on the service to fail loudly.
+Because Compose emits `${RESOURCE_KEY}` rather than the resolved value, a
+generated `docker-compose.yml` is no longer self contained: `docker compose
+up` needs those variables to be present in its environment. Compose
+substitutes an unset variable with an empty string, so supply every key the
+export declares rather than relying on the service to fail loudly.
+
+### Compose variable names are scoped to their resource
+
+Compose interpolates every service from one project-wide `.env`, so a
+reference named after the environment key alone would collapse every
+resource that happens to share that key onto a single value: two `postgres`
+resources both declaring `POSTGRES_PASSWORD` would receive whichever value
+`docker compose` resolved first, silently.
+
+The export avoids this by scoping every Compose reference to the resource
+that declared it: `<RESOURCE>_<KEY>`, with the resource name normalised into
+a shell-safe identifier (uppercased, every character outside `[A-Z0-9_]`
+replaced with `_`). A resource named `db` with a `POSTGRES_PASSWORD` key
+therefore exports `${DB_POSTGRES_PASSWORD}`, and a resource named `web-cache`
+with a `REDIS_PASSWORD` key exports `${WEB_CACHE_REDIS_PASSWORD}`. The key
+written inside the container (the left-hand side in Compose's `environment:`
+block) keeps the name the image expects; only the interpolation reference is
+qualified.
+
+This normalisation cannot be proven collision free: `web-cache` and
+`web_cache` both normalise to `WEB_CACHE`. Rather than silently hand two
+resources the same reference, `lightshuttle export compose` refuses the
+export and names every resource and key sharing the colliding variable. The
+same holds within one resource: `db_password` and `DB_PASSWORD` declared side
+by side normalise alike and are refused too.
+
+**Migrating an existing `.env`.** If you already export to Compose, rename
+every secret variable in your `.env` (and in any pipeline or secret store
+that populates it) from the bare key to its resource-qualified form, for
+example `POSTGRES_PASSWORD` becomes `DB_POSTGRES_PASSWORD` for a resource
+named `db`. Re-run `lightshuttle export compose` and read the generated
+`docker-compose.yml` to confirm the exact names your stack now expects.
 
 Note that a value derived from another resource, such as
 `${resources.db.url}`, is also replaced once it is declared under `secrets:`.
 This is deliberate, since that URL carries credentials, but it does mean the
 exported stack expects the value to be provided rather than recomputed.
+
+### Redis's own password travels through `REDIS_PASSWORD`
+
+A `redis` resource with a `password` set no longer writes that password
+straight into the container's `command` as a `--requirepass <value>`
+argument. The password is written to the `REDIS_PASSWORD` environment key
+instead, marked sensitive the same way an explicit `secrets:` entry is, and
+the command references that key rather than carrying the value itself:
+
+```yaml
+resources:
+  cache:
+    redis:
+      version: "7"
+      password: ${env.DEMO_REDIS_PASSWORD}
+```
+
+Exported, the redis service's command becomes `redis-server --requirepass
+$(REDIS_PASSWORD)` on Kubernetes and Helm, and
+`redis-server --requirepass ${CACHE_REDIS_PASSWORD}` on Compose (following
+the same per-resource scoping described above). A `redis` resource with no
+password declared still gets no `--requirepass` flag and no `REDIS_PASSWORD`
+key at all.
+
+**The accepted limit.** The container still runs `redis-server
+--requirepass <value>` with the real password as a process argument. The
+value is substituted at the last moment: by `lightshuttle up` immediately
+before `docker create`, by Compose when it starts the service, by the
+kubelet when it starts the container. From then on it is readable by anyone
+who can see that process: a `ps` inside the container, a `ps` on the machine
+that runs it, `docker inspect` on that container locally, or the node itself
+on Kubernetes. What this closes is the value's presence everywhere else: the
+exported Compose file, Kubernetes manifest and Helm chart, the pod spec
+served by the cluster API, and your repository all stay free of the
+plain-text password.
 
 ### A credential travels with the value, not with the key name
 
@@ -128,8 +195,9 @@ resources:
 
 `DATABASE_URL` matches none of the name markers listed above, yet the URL it
 receives embeds the database password. The export marks the key as a secret
-because of where its value came from, so Compose writes `${DATABASE_URL}`,
-and Kubernetes and Helm write `'***'` in their `Secret`.
+because of where its value came from, so Compose writes the resource-scoped
+`${API_DATABASE_URL}` (see above), and Kubernetes and Helm write `'***'` in
+their `Secret`.
 
 The same reference **outside** an environment value is refused outright:
 

@@ -22,8 +22,8 @@ use crate::error::Result;
 use crate::model::{ExportModel, ExportProject, Target};
 use crate::placeholder::escape_template_braces;
 use crate::resolve::{
-    chart_name_for, chart_version_for, dns_name, image_pull_policy_for, namespace_label_for,
-    replicas_for, split_env,
+    chart_name_for, chart_version_for, dns_name, env_substitution_arguments, image_pull_policy_for,
+    namespace_label_for, replicas_for, split_env,
 };
 
 /// Tag assumed when a reference carries none, matching the container runtime
@@ -276,14 +276,14 @@ fn deployment_block(service: &RenderedService, name: &str) -> Result<String> {
     }
     if let Some(entrypoint) = &spec.entrypoint {
         s.push_str("        command:\n");
-        for arg in entrypoint {
-            let _ = writeln!(s, "        - {}", yaml_scalar(arg));
+        for arg in env_substitution_arguments(entrypoint) {
+            let _ = writeln!(s, "        - {}", yaml_scalar(&arg));
         }
     }
     if let Some(args) = &spec.command {
         s.push_str("        args:\n");
-        for arg in args {
-            let _ = writeln!(s, "        - {}", yaml_scalar(arg));
+        for arg in env_substitution_arguments(args) {
+            let _ = writeln!(s, "        - {}", yaml_scalar(&arg));
         }
     }
     if let Some(dir) = &spec.working_dir {

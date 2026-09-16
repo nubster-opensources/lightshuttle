@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 
 use lightshuttle_manifest::{DnsName, ExportConfig, ImagePullPolicy};
-use lightshuttle_spec::ContainerSpec;
+use lightshuttle_spec::{Argument, ContainerSpec};
 
 use crate::error::Result;
 use crate::model::Target;
@@ -66,12 +66,17 @@ pub(crate) fn split_env(
 /// Environment emitted to Compose. Sensitive values are read from the
 /// caller's environment at `docker compose` time instead of being copied from
 /// the manifest into the generated YAML.
+///
+/// The interpolation variable Compose reads from is scoped to the resource
+/// (see [`compose_variable_name`]): Compose interpolates every service from
+/// one project-wide `.env`, so a reference named after the environment key
+/// alone would collapse every resource of the same kind onto a single value.
 pub(crate) fn compose_env(spec: &ContainerSpec) -> BTreeMap<String, String> {
     spec.env
         .iter()
         .map(|(key, value)| {
             let value = if is_secret_key(spec, key) {
-                format!("${{{key}}}")
+                compose_secret_reference(&spec.resource, key)
             } else {
                 value.clone()
             };
@@ -80,11 +85,85 @@ pub(crate) fn compose_env(spec: &ContainerSpec) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn is_secret_key(spec: &ContainerSpec, key: &str) -> bool {
+/// Returns `true` when `key` is classified as a secret for `spec`, either
+/// explicitly (`spec.secret_env_keys`) or through the [`SECRET_MARKERS`]
+/// heuristic.
+pub(crate) fn is_secret_key(spec: &ContainerSpec, key: &str) -> bool {
     spec.secret_env_keys.contains(key)
         || SECRET_MARKERS
             .iter()
             .any(|marker| key.to_ascii_uppercase().contains(marker))
+}
+
+/// Builds the Compose interpolation variable name that scopes `key` to
+/// `resource`.
+///
+/// A resource name is free-form manifest text; a Compose interpolation
+/// variable is not (`[A-Za-z_][A-Za-z0-9_]*`). The whole `<resource>_<key>`
+/// text is normalised as one unit, rather than each half separately and then
+/// joined, because normalising separately and joining can still let two
+/// distinct `(resource, key)` pairs land on the same produced name (a
+/// resource `a` with key `B_C`, and a resource `a_b` with key `C`, both join
+/// to `A_B_C`); normalising the already-joined text does not change that
+/// this function alone is not injective, which is exactly why the emitter
+/// checks the produced names for a collision instead of trusting this
+/// function to avoid one.
+///
+/// Not exposed beyond the crate: callers only ever need the wrapped form
+/// from [`compose_secret_reference`], or the raw name for the emitter's
+/// collision check.
+pub(crate) fn compose_variable_name(resource: &str, key: &str) -> String {
+    format!("{resource}_{key}")
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+/// Builds the `${...}` Compose interpolation reference for `key`, scoped to
+/// `resource` by [`compose_variable_name`].
+pub(crate) fn compose_secret_reference(resource: &str, key: &str) -> String {
+    format!("${{{}}}", compose_variable_name(resource, key))
+}
+
+/// Renders `arguments` for Compose: a [`Argument::Literal`] is written
+/// verbatim (already escaped by the placeholder rendering pass, see
+/// `crate::deployment`), and a [`Argument::Secret`] becomes the
+/// resource-scoped Compose reference built by [`compose_secret_reference`].
+///
+/// This is the single point where an `Argument::Secret` on a `command` or
+/// `entrypoint` element reaches Compose's own syntax, matched exhaustively so
+/// a third `Argument` variant cannot silently fall back to a literal write.
+pub(crate) fn compose_arguments(resource: &str, arguments: &[Argument]) -> Vec<String> {
+    arguments
+        .iter()
+        .map(|argument| match argument {
+            Argument::Literal(text) => text.clone(),
+            Argument::Secret(key) => compose_secret_reference(resource, key),
+        })
+        .collect()
+}
+
+/// Renders `arguments` for a target that substitutes its own declared
+/// container environment at start time (`$(NAME)`): plain Kubernetes and
+/// Helm both use this syntax, so the two emitters share it.
+///
+/// Unlike Compose, the substitution here reads from the pod's own
+/// environment, already isolated per resource, so the plain key is
+/// unambiguous with no resource scoping needed.
+pub(crate) fn env_substitution_arguments(arguments: &[Argument]) -> Vec<String> {
+    arguments
+        .iter()
+        .map(|argument| match argument {
+            Argument::Literal(text) => text.clone(),
+            Argument::Secret(key) => format!("$({key})"),
+        })
+        .collect()
 }
 
 /// Default replica count when neither a per-resource nor a per-target
@@ -331,5 +410,34 @@ mod tests {
     #[test]
     fn an_empty_name_is_rejected_rather_than_invented() {
         assert!(dns_name("").is_err());
+    }
+
+    use super::compose_variable_name;
+
+    #[test]
+    fn compose_variable_name_uppercases_and_joins_with_an_underscore() {
+        assert_eq!(
+            compose_variable_name("cache", "REDIS_PASSWORD"),
+            "CACHE_REDIS_PASSWORD"
+        );
+    }
+
+    #[test]
+    fn compose_variable_name_normalises_a_dashed_resource_name() {
+        assert_eq!(
+            compose_variable_name("web-cache", "REDIS_PASSWORD"),
+            "WEB_CACHE_REDIS_PASSWORD"
+        );
+    }
+
+    /// Not injective by construction: a resource `a` with key `B_C` and a
+    /// resource `a_b` with key `C` both join to `A_B_C`. The emitter's
+    /// collision check, not this function, is what has to catch this.
+    #[test]
+    fn compose_variable_name_can_collide_across_different_sources() {
+        assert_eq!(
+            compose_variable_name("a", "B_C"),
+            compose_variable_name("a_b", "C")
+        );
     }
 }

@@ -14,7 +14,9 @@
 //! asserts on the *value*. A probe secret is planted in the manifest and
 //! every emitted file, across every target, is searched for it verbatim.
 
-use lightshuttle_export::{ComposeEmitter, Emitter, ExportArtifacts, HelmEmitter, KubernetesEmitter, lower};
+use lightshuttle_export::{
+    ComposeEmitter, Emitter, ExportArtifacts, HelmEmitter, KubernetesEmitter, lower,
+};
 use lightshuttle_manifest::{Manifest, ResourceKind};
 
 /// Probe value planted as the postgres password. Long and unique so a
@@ -152,8 +154,7 @@ fn expected_secret(kind: &ResourceKind) -> Option<&'static str> {
     match kind {
         ResourceKind::Postgres(_) => Some(POSTGRES_SECRET),
         ResourceKind::Redis(_) => Some(REDIS_SECRET),
-        ResourceKind::Container(_) => None,
-        ResourceKind::Dockerfile(_) => None,
+        ResourceKind::Container(_) | ResourceKind::Dockerfile(_) => None,
     }
 }
 
@@ -174,7 +175,11 @@ fn no_export_target_ever_prints_a_managed_credential_in_clear_text() {
     // probes (for example because a future edit renames or removes one of
     // those resources), the oracle below would silently check nothing:
     // catch that here instead of passing for the wrong reason.
-    let secrets: Vec<&'static str> = manifest.resources.values().filter_map(expected_secret).collect();
+    let secrets: Vec<&'static str> = manifest
+        .resources
+        .values()
+        .filter_map(expected_secret)
+        .collect();
     assert_eq!(
         secrets.len(),
         2,
@@ -184,7 +189,10 @@ fn no_export_target_ever_prints_a_managed_credential_in_clear_text() {
     let model = lower(&manifest).expect("lowering succeeds");
 
     let targets: [(&str, ExportArtifacts); 3] = [
-        ("compose", ComposeEmitter.emit(&model).expect("compose emits")),
+        (
+            "compose",
+            ComposeEmitter.emit(&model).expect("compose emits"),
+        ),
         (
             "kubernetes",
             KubernetesEmitter.emit(&model).expect("kubernetes emits"),
@@ -386,5 +394,37 @@ fn two_resource_names_that_normalise_alike_are_refused() {
     assert!(
         message.contains("web-cache") && message.contains("web_cache"),
         "the refusal must name both resources that collide, got: {message}"
+    );
+}
+
+/// Two secret keys of one resource that differ only by case.
+const CASE_COLLIDING_KEYS: &str = r"
+project:
+  name: probe
+resources:
+  api:
+    container:
+      image: alpine:3.20
+      env:
+        db_password: FIRST_VALUE
+        DB_PASSWORD: SECOND_VALUE
+";
+
+/// The collision guard must compare produced names across every
+/// `(resource, key)` source, not across resources: two keys of a single
+/// resource can normalise alike just as two resources can.
+#[test]
+fn two_secret_keys_of_one_resource_that_normalise_alike_are_refused() {
+    let manifest = Manifest::parse(CASE_COLLIDING_KEYS).expect("manifest parses");
+    let model = lower(&manifest).expect("lowering succeeds");
+
+    let failure = ComposeEmitter
+        .emit(&model)
+        .expect_err("two keys sharing one reference must be refused");
+
+    let message = failure.to_string();
+    assert!(
+        message.contains("db_password") && message.contains("DB_PASSWORD"),
+        "the refusal must name both keys that collide, got: {message}"
     );
 }
