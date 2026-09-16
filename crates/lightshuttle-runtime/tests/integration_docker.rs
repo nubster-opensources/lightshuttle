@@ -156,3 +156,56 @@ async fn builds_buildkit_only_dockerfile() {
         .await
         .expect("container stops cleanly");
 }
+
+#[cfg(unix)]
+#[tokio::test]
+#[ignore = "requires a running Docker daemon"]
+async fn builds_a_dockerfile_that_copies_symlinks() {
+    // Only this test needs symlink creation, so the import stays local
+    // rather than at module scope, which would warn as unused on Windows.
+    use std::os::unix::fs::symlink;
+
+    let context = tempfile::tempdir().expect("temp dir created");
+    std::fs::write(context.path().join("real.txt"), b"real").expect("real.txt written");
+    std::fs::create_dir(context.path().join("realdir")).expect("realdir created");
+    std::fs::write(context.path().join("realdir").join("a.txt"), b"a").expect("a.txt written");
+    symlink("real.txt", context.path().join("file_link")).expect("file_link created");
+    symlink("realdir", context.path().join("dir_link")).expect("dir_link created");
+
+    let dockerfile_path = context.path().join("Dockerfile");
+    let mut dockerfile = std::fs::File::create(&dockerfile_path).expect("Dockerfile created");
+    writeln!(dockerfile, "FROM alpine:3.20").expect("write line");
+    writeln!(dockerfile, "COPY file_link /out").expect("write line");
+    writeln!(dockerfile, "COPY dir_link /dir").expect("write line");
+    writeln!(
+        dockerfile,
+        "RUN test \"$(cat /out)\" = real && test -f /dir/a.txt"
+    )
+    .expect("write line");
+    writeln!(dockerfile, "CMD [\"sh\", \"-c\", \"sleep 5\"]").expect("write line");
+    drop(dockerfile);
+
+    let runtime = DockerRuntime::connect().expect("Docker daemon reachable");
+    let spec = ContainerSpec::new(
+        "lightshuttle_it_build_symlinks".to_owned(),
+        "lightshuttle_it".to_owned(),
+        "build_symlinks".to_owned(),
+        ImageSource::Build {
+            context: context.path().to_string_lossy().into_owned(),
+            dockerfile: "Dockerfile".to_owned(),
+            build_args: HashMap::new(),
+            target: None,
+            tag: "lightshuttle/it_build_symlinks:dev".to_owned(),
+        },
+    );
+
+    let id = runtime
+        .start(&spec)
+        .await
+        .expect("dockerfile with symlinked COPY sources builds and starts");
+
+    runtime
+        .stop(&id, Duration::from_secs(2))
+        .await
+        .expect("container stops cleanly");
+}

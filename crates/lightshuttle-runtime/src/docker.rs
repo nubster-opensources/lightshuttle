@@ -1027,4 +1027,203 @@ mod tests {
             "the diagnostic should name the missing key, got: {error}"
         );
     }
+
+    /// `build_tar_archive` walks the context with `follow_links(false)`, so a
+    /// symlink entry must be read back from the produced tar rather than
+    /// resolved from the source tree: only the archive proves what a build
+    /// actually sends to the daemon.
+    ///
+    /// Symlink creation is a Unix filesystem call; the whole module is
+    /// skipped on Windows rather than left to fail there.
+    #[cfg(unix)]
+    mod symlink_archive {
+        use super::super::build_tar_archive;
+        use std::borrow::Cow;
+        use std::collections::HashMap;
+        use std::io::Read;
+        use std::os::unix::fs::symlink;
+        use std::path::{Path, PathBuf};
+
+        /// A single entry read back from a tar archive: its type, its link
+        /// target when it is a symlink, and its raw content bytes.
+        struct ArchivedEntry {
+            entry_type: tar::EntryType,
+            link_name: Option<PathBuf>,
+            contents: Vec<u8>,
+        }
+
+        /// Parses every entry out of a tar archive built by
+        /// `build_tar_archive`, keyed by its path within the archive.
+        fn read_archive(bytes: &[u8]) -> HashMap<PathBuf, ArchivedEntry> {
+            let mut archive = tar::Archive::new(bytes);
+            let mut entries = HashMap::new();
+            for entry in archive.entries().expect("tar archive is readable") {
+                let mut entry = entry.expect("tar entry is readable");
+                let entry_type = entry.header().entry_type();
+                let link_name = entry
+                    .link_name()
+                    .expect("link name is readable")
+                    .map(Cow::into_owned);
+                let path = entry.path().expect("entry path is readable").into_owned();
+                let mut contents = Vec::new();
+                entry
+                    .read_to_end(&mut contents)
+                    .expect("entry contents are readable");
+                entries.insert(
+                    path,
+                    ArchivedEntry {
+                        entry_type,
+                        link_name,
+                        contents,
+                    },
+                );
+            }
+            entries
+        }
+
+        #[test]
+        fn file_symlink_is_archived_as_a_link_to_its_target() {
+            let context = tempfile::tempdir().expect("temp dir created");
+            std::fs::write(context.path().join("real.txt"), b"real").expect("target written");
+            symlink("real.txt", context.path().join("file_link")).expect("symlink created");
+
+            let archive = build_tar_archive(context.path()).expect("archive builds");
+            let entries = read_archive(&archive);
+
+            let link = entries
+                .get(Path::new("file_link"))
+                .expect("file_link is archived");
+            assert_eq!(link.entry_type, tar::EntryType::Symlink);
+            assert_eq!(link.link_name.as_deref(), Some(Path::new("real.txt")));
+
+            let target = entries
+                .get(Path::new("real.txt"))
+                .expect("real.txt is archived");
+            assert_eq!(target.entry_type, tar::EntryType::Regular);
+        }
+
+        #[test]
+        fn directory_symlink_is_archived_as_a_link_and_not_descended() {
+            let context = tempfile::tempdir().expect("temp dir created");
+            std::fs::create_dir(context.path().join("realdir")).expect("realdir created");
+            std::fs::write(context.path().join("realdir").join("a.txt"), b"a")
+                .expect("a.txt written");
+            symlink("realdir", context.path().join("dir_link")).expect("symlink created");
+
+            let archive = build_tar_archive(context.path()).expect("archive builds");
+            let entries = read_archive(&archive);
+
+            let link = entries
+                .get(Path::new("dir_link"))
+                .expect("dir_link is archived");
+            assert_eq!(link.entry_type, tar::EntryType::Symlink);
+            assert_eq!(link.link_name.as_deref(), Some(Path::new("realdir")));
+
+            assert!(
+                entries
+                    .keys()
+                    .all(|path| !path.to_string_lossy().starts_with("dir_link/")),
+                "no entry should descend into the linked directory"
+            );
+        }
+
+        #[test]
+        fn symlink_leaving_the_context_is_archived_verbatim() {
+            let parent = tempfile::tempdir().expect("temp dir created");
+            let context_path = parent.path().join("ctx");
+            std::fs::create_dir(&context_path).expect("context dir created");
+
+            let marker = b"outside-context-marker";
+            std::fs::write(parent.path().join("outside.txt"), marker)
+                .expect("outside file written");
+            symlink("../outside.txt", context_path.join("up_link")).expect("symlink created");
+
+            let archive = build_tar_archive(&context_path).expect("archive builds");
+            let entries = read_archive(&archive);
+
+            let link = entries
+                .get(Path::new("up_link"))
+                .expect("up_link is archived");
+            assert_eq!(link.entry_type, tar::EntryType::Symlink);
+            assert_eq!(link.link_name.as_deref(), Some(Path::new("../outside.txt")));
+
+            for entry in entries.values() {
+                assert!(
+                    !entry
+                        .contents
+                        .windows(marker.len())
+                        .any(|window| window == marker),
+                    "outside.txt content must never enter the archive"
+                );
+            }
+        }
+
+        #[test]
+        fn absolute_symlink_is_archived_verbatim() {
+            let context = tempfile::tempdir().expect("temp dir created");
+            let target = "/etc/os-release";
+            symlink(target, context.path().join("abs_link")).expect("symlink created");
+
+            let archive = build_tar_archive(context.path()).expect("archive builds");
+            let entries = read_archive(&archive);
+
+            let link = entries
+                .get(Path::new("abs_link"))
+                .expect("abs_link is archived");
+            assert_eq!(link.entry_type, tar::EntryType::Symlink);
+            assert_eq!(link.link_name.as_deref(), Some(Path::new(target)));
+        }
+
+        #[test]
+        fn broken_symlink_is_archived_verbatim() {
+            let context = tempfile::tempdir().expect("temp dir created");
+            symlink("missing.txt", context.path().join("broken_link")).expect("symlink created");
+
+            let archive = build_tar_archive(context.path()).expect("archive builds without error");
+            let entries = read_archive(&archive);
+
+            let link = entries
+                .get(Path::new("broken_link"))
+                .expect("broken_link is archived");
+            assert_eq!(link.entry_type, tar::EntryType::Symlink);
+            assert_eq!(link.link_name.as_deref(), Some(Path::new("missing.txt")));
+        }
+
+        #[test]
+        fn dockerignore_excludes_a_symlink_path() {
+            let context = tempfile::tempdir().expect("temp dir created");
+            std::fs::write(context.path().join("real.txt"), b"real").expect("target written");
+            symlink("real.txt", context.path().join("file_link")).expect("symlink created");
+            std::fs::write(context.path().join(".dockerignore"), b"file_link\n")
+                .expect("dockerignore written");
+
+            let archive = build_tar_archive(context.path()).expect("archive builds");
+            let entries = read_archive(&archive);
+
+            assert!(
+                !entries.contains_key(Path::new("file_link")),
+                "an ignored symlink must not be archived"
+            );
+            assert!(
+                entries.contains_key(Path::new("real.txt")),
+                "the ignore pattern must not remove the linked file itself"
+            );
+        }
+
+        #[test]
+        fn long_symlink_target_is_archived() {
+            let context = tempfile::tempdir().expect("temp dir created");
+            let target = "a".repeat(150);
+            symlink(&target, context.path().join("long_link")).expect("symlink created");
+
+            let archive = build_tar_archive(context.path()).expect("archive builds");
+            let entries = read_archive(&archive);
+
+            let link = entries
+                .get(Path::new("long_link"))
+                .expect("long_link is archived");
+            assert_eq!(link.entry_type, tar::EntryType::Symlink);
+            assert_eq!(link.link_name.as_deref(), Some(Path::new(target.as_str())));
+        }
+    }
 }
