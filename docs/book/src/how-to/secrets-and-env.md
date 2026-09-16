@@ -110,12 +110,75 @@ Note that a value derived from another resource, such as
 This is deliberate, since that URL carries credentials, but it does mean the
 exported stack expects the value to be provided rather than recomputed.
 
+### A credential travels with the value, not with the key name
+
+You do not have to declare such a key under `secrets:` for it to be
+redacted. A reference to a resource property that carries a credential,
+today `password` and `url`, makes the environment key receiving it a secret
+on every target:
+
+```yaml
+resources:
+  api:
+    container:
+      image: alpine:3.20
+      env:
+        DATABASE_URL: "${resources.main_db.url}"
+```
+
+`DATABASE_URL` matches none of the name markers listed above, yet the URL it
+receives embeds the database password. The export marks the key as a secret
+because of where its value came from, so Compose writes `${DATABASE_URL}`,
+and Kubernetes and Helm write `'***'` in their `Secret`.
+
+The same reference **outside** an environment value is refused outright:
+
+```yaml
+      command: ["connect", "${resources.main_db.password}"]
+```
+
+An argv array has nowhere safe to hide a value: there is no `Secret` object
+for it and no `${KEY}` indirection. Rather than emit the password in clear
+text, the export fails and names the resource, the field and the reference.
+
 Precedence still applies: a value in the `.env` file overrides the default,
 and a value in the `.env` file also overrides the same name in the process
 environment.
 
 To emit a literal `${...}` instead of interpolating it, double the braces:
 `${{not.interpolated}}` renders the string `${not.interpolated}` verbatim.
+
+### A non-secret `${env.*}` reference survives to deployment time
+
+A reference that carries no credential is not resolved at export time
+either: the value belongs to the machine that deploys, not to the machine
+that exports. Each target keeps it in its own syntax.
+
+Compose keeps its own interpolation, so `image: "example/api:${env.TAG:-1.0}"`
+is exported as `example/api:${TAG:-1.0}` and `docker compose up` resolves it.
+
+Helm publishes every referenced variable under a top-level `variables:` key
+of `values.yaml`, empty by default:
+
+```yaml
+variables:
+  TAG: ''
+```
+
+The template then reads `{{ .Values.variables.TAG | default "1.0" }}` when
+the manifest gave a default, and
+`{{ required "variables.TAG is required" .Values.variables.TAG }}` when it
+did not. Sprig treats an empty value as absent, which is exactly the `:-`
+semantics of the manifest. Override one at deploy time:
+
+```sh
+helm template ./export/helm --set variables.TAG=2.0
+```
+
+Plain Kubernetes substitutes nothing at deploy time. A reference **with** a
+default is therefore frozen to that default in the manifest, and a reference
+**without** one makes the export fail, listing every such variable at once
+rather than the first one found.
 
 ## Audit before boot with `secrets check`
 
