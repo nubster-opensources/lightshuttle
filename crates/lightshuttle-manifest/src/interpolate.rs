@@ -28,6 +28,7 @@
 //! ```
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::iter::Peekable;
 use std::str::Chars;
 
@@ -197,52 +198,36 @@ impl<'ctx> Interpolator<'ctx> {
     /// assert_eq!(out, "connect to localhost");
     /// ```
     pub fn resolve(&self, input: &str) -> Result<String> {
-        self.resolve_at(input, 1)
+        let parsed = segments(input)?;
+        self.resolve_segments(&parsed)
     }
 
-    fn resolve_at(&self, input: &str, depth: usize) -> Result<String> {
-        let mut output = String::with_capacity(input.len());
-        let mut chars = input.chars().peekable();
+    /// Walks parsed segments, substituting each `env` and `resource`
+    /// reference and concatenating literals, recursing into an `env`
+    /// default's own segments only when the variable is unset or empty.
+    fn resolve_segments(&self, segments: &[Segment]) -> Result<String> {
+        let mut output = String::new();
 
-        while let Some(c) = chars.next() {
-            if c != '$' {
-                output.push(c);
-                continue;
-            }
-
-            if chars.peek() != Some(&'{') {
-                output.push('$');
-                continue;
-            }
-            chars.next();
-
-            // Escape form `${{ ... }}`
-            if chars.peek() == Some(&'{') {
-                chars.next();
-                let body = consume_until_double_close(&mut chars, input)?;
-                output.push('$');
-                output.push('{');
-                output.push_str(&body);
-                output.push('}');
-                continue;
-            }
-
-            let body = consume_balanced_body(&mut chars, input, depth)?;
-            let reference = parse_reference(&body)?;
-            let resolved = match &reference {
-                Reference::Env {
-                    name,
-                    default: Some(raw_default),
-                } => {
+        for segment in segments {
+            match segment {
+                Segment::Literal(text) => output.push_str(text),
+                Segment::Resource { name, property } => {
+                    let value = self.lookup(&Reference::Resource {
+                        name: name.clone(),
+                        property: property.clone(),
+                    })?;
+                    output.push_str(&value);
+                }
+                Segment::Env { name, default } => {
                     if let Some(value) = self.ctx.env.get(name).filter(|v| !v.is_empty()) {
-                        value.clone()
+                        output.push_str(value);
+                    } else if let Some(default_segments) = default {
+                        output.push_str(&self.resolve_segments(default_segments)?);
                     } else {
-                        self.resolve_at(raw_default, depth + 1)?
+                        return Err(ManifestError::EnvUnset(name.clone()));
                     }
                 }
-                _ => self.lookup(&reference)?,
-            };
-            output.push_str(&resolved);
+            }
         }
 
         Ok(output)
@@ -259,8 +244,9 @@ impl<'ctx> Interpolator<'ctx> {
     /// Returns a [`ManifestError`] if the interpolation syntax is invalid
     /// (e.g. unterminated `${`).
     pub fn scan(&self, input: &str) -> Result<Vec<Reference>> {
+        let parsed = segments(input)?;
         let mut refs = Vec::new();
-        scan_at(input, 1, &mut refs)?;
+        collect_references(&parsed, &mut refs);
         Ok(refs)
     }
 
@@ -352,37 +338,63 @@ fn consume_until_double_close(chars: &mut Peekable<Chars<'_>>, full: &str) -> Re
     )))
 }
 
-/// Scan `input` for `${...}` references at nesting `depth`, appending each
-/// found [`Reference`] to `out` in order and descending into `env` defaults
-/// so nested references surface too.
-fn scan_at(input: &str, depth: usize, out: &mut Vec<Reference>) -> Result<()> {
-    let mut chars = input.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        if c != '$' || chars.peek() != Some(&'{') {
-            continue;
+/// Flattens parsed segments back into the references they hold, in the
+/// order [`segments`] produced them: an `env` reference surfaces before the
+/// references nested inside its own default, mirroring how [`segments`]
+/// nests a default's segments under the reference that carries it.
+fn collect_references(segments: &[Segment], out: &mut Vec<Reference>) {
+    for segment in segments {
+        match segment {
+            Segment::Literal(_) => {}
+            Segment::Resource { name, property } => {
+                out.push(Reference::Resource {
+                    name: name.clone(),
+                    property: property.clone(),
+                });
+            }
+            Segment::Env { name, default } => {
+                out.push(Reference::Env {
+                    name: name.clone(),
+                    default: default.as_ref().map(|segments| render_segments(segments)),
+                });
+                if let Some(default_segments) = default {
+                    collect_references(default_segments, out);
+                }
+            }
         }
-        chars.next();
+    }
+}
 
-        if chars.peek() == Some(&'{') {
-            chars.next();
-            consume_until_double_close(&mut chars, input)?;
-            continue;
-        }
+/// Renders parsed segments back to the interpolation text they were parsed
+/// from. Used only to fill [`Reference::Env::default`] for
+/// [`Interpolator::scan`]; [`Interpolator::resolve`] never needs it, since
+/// it substitutes values instead of reconstructing source text.
+fn render_segments(segments: &[Segment]) -> String {
+    let mut out = String::new();
 
-        let body = consume_balanced_body(&mut chars, input, depth)?;
-        let reference = parse_reference(&body)?;
-        if let Reference::Env {
-            default: Some(raw_default),
-            ..
-        } = &reference
-        {
-            scan_at(raw_default, depth + 1, out)?;
+    for segment in segments {
+        match segment {
+            Segment::Literal(text) => out.push_str(text),
+            Segment::Resource { name, property } => {
+                let _ = write!(out, "${{resources.{name}.{property}}}");
+            }
+            Segment::Env {
+                name,
+                default: None,
+            } => {
+                let _ = write!(out, "${{env.{name}}}");
+            }
+            Segment::Env {
+                name,
+                default: Some(default_segments),
+            } => {
+                let rendered = render_segments(default_segments);
+                let _ = write!(out, "${{env.{name}:-{rendered}}}");
+            }
         }
-        out.push(reference);
     }
 
-    Ok(())
+    out
 }
 
 /// One piece of an interpolatable string: literal text or a reference.
@@ -427,7 +439,83 @@ pub enum Segment {
 /// reference scheme, a `${` nested outside an `env` default, or an
 /// interpolation nested deeper than [`MAX_INTERPOLATION_DEPTH`].
 pub fn segments(input: &str) -> Result<Vec<Segment>> {
-    todo!()
+    segments_at(input, 1)
+}
+
+/// The single reader of the `${...}` grammar: walks `input` once, character
+/// by character, emitting literal text and references as it goes. `depth`
+/// is the nesting level of `input` itself (1 for a top-level manifest
+/// string, 2 for the text of an `env` default one level in, and so on);
+/// [`consume_balanced_body`] checks it against [`MAX_INTERPOLATION_DEPTH`].
+///
+/// An `env` default is not resolved here: its raw text is handed back to
+/// this same function, one level deeper, so the whole default becomes its
+/// own sequence of segments. `Interpolator::resolve` and
+/// `Interpolator::scan` never re-read `${...}` themselves; they only walk
+/// the [`Segment`] tree this function returns.
+fn segments_at(input: &str, depth: usize) -> Result<Vec<Segment>> {
+    let mut out = Vec::new();
+    let mut literal = String::new();
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c != '$' {
+            literal.push(c);
+            continue;
+        }
+
+        if chars.peek() != Some(&'{') {
+            literal.push('$');
+            continue;
+        }
+        chars.next();
+
+        // Escape form `${{ ... }}`: unfolds to a literal `${ ... }`, merged
+        // into the surrounding literal text.
+        if chars.peek() == Some(&'{') {
+            chars.next();
+            let body = consume_until_double_close(&mut chars, input)?;
+            literal.push('$');
+            literal.push('{');
+            literal.push_str(&body);
+            literal.push('}');
+            continue;
+        }
+
+        let body = consume_balanced_body(&mut chars, input, depth)?;
+        let reference = parse_reference(&body)?;
+
+        if !literal.is_empty() {
+            out.push(Segment::Literal(std::mem::take(&mut literal)));
+        }
+
+        out.push(match reference {
+            Reference::Resource { name, property } => Segment::Resource { name, property },
+            Reference::Env {
+                name,
+                default: None,
+            } => Segment::Env {
+                name,
+                default: None,
+            },
+            Reference::Env {
+                name,
+                default: Some(raw_default),
+            } => {
+                let default_segments = segments_at(&raw_default, depth + 1)?;
+                Segment::Env {
+                    name,
+                    default: Some(default_segments),
+                }
+            }
+        });
+    }
+
+    if !literal.is_empty() {
+        out.push(Segment::Literal(literal));
+    }
+
+    Ok(out)
 }
 
 fn parse_reference(body: &str) -> Result<Reference> {
