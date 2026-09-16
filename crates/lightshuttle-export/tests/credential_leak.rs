@@ -82,6 +82,51 @@ resources:
       password: NEVER_EXPORT_THIS_REDIS_VALUE_7f3a
 ";
 
+/// Two resources of the same managed kind, carrying deliberately
+/// different passwords: the fixture for
+/// [`two_resources_of_one_kind_do_not_share_one_compose_reference`].
+const TWO_DATABASES: &str = r"
+project:
+  name: probe
+resources:
+  main:
+    postgres:
+      version: '16'
+      password: PASSWORD_OF_MAIN_DATABASE
+  reporting:
+    postgres:
+      version: '16'
+      password: PASSWORD_OF_REPORTING_DATABASE
+";
+
+/// A resource whose name is legal in the manifest but not as an
+/// environment variable name.
+const DASHED_CACHE: &str = r"
+project:
+  name: probe
+resources:
+  web-cache:
+    redis:
+      version: '7'
+      password: NEVER_EXPORT_THIS_REDIS_VALUE_7f3a
+";
+
+/// Two resource names that differ in the manifest but normalise to the
+/// same environment variable name.
+const COLLIDING_CACHES: &str = r"
+project:
+  name: probe
+resources:
+  web-cache:
+    redis:
+      version: '7'
+      password: NEVER_EXPORT_THIS_REDIS_VALUE_7f3a
+  web_cache:
+    redis:
+      version: '7'
+      password: NEVER_EXPORT_THIS_POSTGRES_VALUE_9c21
+";
+
 fn file<'a>(artifacts: &'a ExportArtifacts, name: &str) -> &'a str {
     artifacts
         .files
@@ -199,6 +244,14 @@ fn redis_without_a_password_carries_no_requirepass_and_no_secret() {
 /// interpolation syntax, and the `$(NAME)` syntax Kubernetes and Helm
 /// both use to substitute a container's own declared environment into
 /// its command line.
+///
+/// The two are not symmetrical, and that asymmetry is deliberate.
+/// Kubernetes and Helm substitute from the pod's own environment, which
+/// is already isolated per resource, so the plain key is unambiguous
+/// there. Compose interpolates from a single project-wide `.env`, so the
+/// reference it emits carries the resource name as a prefix: see
+/// [`two_resources_of_one_kind_do_not_share_one_compose_reference`] for
+/// what that prefix prevents.
 #[test]
 fn each_target_renders_the_redis_credential_as_a_named_reference_in_its_own_syntax() {
     let manifest = Manifest::parse(REDIS_WITH_PASSWORD).expect("manifest parses");
@@ -207,8 +260,8 @@ fn each_target_renders_the_redis_credential_as_a_named_reference_in_its_own_synt
     let compose = ComposeEmitter.emit(&model).expect("compose emits");
     let compose_yaml = file(&compose, "docker-compose.yml");
     assert!(
-        compose_yaml.contains("${REDIS_PASSWORD}"),
-        "compose's command should reference the secret by name, got:\n{compose_yaml}"
+        compose_yaml.contains("${CACHE_REDIS_PASSWORD}"),
+        "compose's command should reference the secret by its resource-scoped name, got:\n{compose_yaml}"
     );
 
     let kubernetes = KubernetesEmitter.emit(&model).expect("kubernetes emits");
@@ -242,11 +295,96 @@ fn compose_dollar_escaping_does_not_swallow_the_redis_credential_reference() {
     let compose_yaml = file(&compose, "docker-compose.yml");
 
     assert!(
-        compose_yaml.contains("${REDIS_PASSWORD}"),
+        compose_yaml.contains("${CACHE_REDIS_PASSWORD}"),
         "the reference must be present in Compose's own syntax, got:\n{compose_yaml}"
     );
     assert!(
-        !compose_yaml.contains("$${REDIS_PASSWORD}"),
+        !compose_yaml.contains("$${CACHE_REDIS_PASSWORD}"),
         "the reference must not come back escaped as if it were literal text, got:\n{compose_yaml}"
+    );
+}
+
+/// Compose interpolates from one project-wide `.env`, so a reference
+/// named after the kind alone collapses every instance of that kind onto
+/// a single value.
+///
+/// Measured on `main` before this change: two postgres resources holding
+/// deliberately different passwords both emitted
+/// `POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}`, so Compose handed both
+/// databases the same value and the distinction the manifest declared was
+/// lost with no diagnostic. The key inside the container keeps the name
+/// the image requires; only the reference is scoped to the resource.
+#[test]
+fn two_resources_of_one_kind_do_not_share_one_compose_reference() {
+    let manifest = Manifest::parse(TWO_DATABASES).expect("manifest parses");
+    let model = lower(&manifest).expect("lowering succeeds");
+
+    let compose = ComposeEmitter.emit(&model).expect("compose emits");
+    let compose_yaml = file(&compose, "docker-compose.yml");
+
+    assert!(
+        compose_yaml.contains("${MAIN_POSTGRES_PASSWORD}"),
+        "the first database must own its reference, got:\n{compose_yaml}"
+    );
+    assert!(
+        compose_yaml.contains("${REPORTING_POSTGRES_PASSWORD}"),
+        "the second database must own its reference, got:\n{compose_yaml}"
+    );
+    assert!(
+        !compose_yaml.contains("${POSTGRES_PASSWORD}"),
+        "no reference may stay scoped to the kind alone, got:\n{compose_yaml}"
+    );
+
+    // The key the image reads is imposed by the image and must not move.
+    assert_eq!(
+        compose_yaml.matches("POSTGRES_PASSWORD:").count(),
+        2,
+        "each service keeps the environment key its image requires, got:\n{compose_yaml}"
+    );
+}
+
+/// A resource name is free-form, an environment variable name is not: a
+/// name carrying a character no shell would accept must be normalised
+/// before it can be referenced.
+///
+/// Normalisation cannot be proven injective, so the guarantee has to come
+/// from a uniqueness check at the point of emission rather than from the
+/// function: `web-cache` and `web_cache` both normalise to
+/// `WEB_CACHE_REDIS_PASSWORD`, and an export that silently handed both
+/// resources the same reference would reintroduce, by another route,
+/// exactly the collision this file is about.
+#[test]
+fn a_resource_name_that_is_not_a_valid_variable_name_is_normalised_or_refused() {
+    let manifest = Manifest::parse(DASHED_CACHE).expect("manifest parses");
+    let model = lower(&manifest).expect("lowering succeeds");
+
+    let compose = ComposeEmitter.emit(&model).expect("compose emits");
+    let compose_yaml = file(&compose, "docker-compose.yml");
+
+    assert!(
+        compose_yaml.contains("${WEB_CACHE_REDIS_PASSWORD}"),
+        "a dashed resource name must be normalised into a usable variable name, got:\n{compose_yaml}"
+    );
+    assert!(
+        !compose_yaml.contains("${web-cache"),
+        "a reference must never carry a character the shell cannot read, got:\n{compose_yaml}"
+    );
+}
+
+/// Two resource names that normalise to the same variable must be
+/// refused rather than silently collapsed onto one reference.
+#[test]
+fn two_resource_names_that_normalise_alike_are_refused() {
+    let manifest = Manifest::parse(COLLIDING_CACHES).expect("manifest parses");
+    let model = lower(&manifest).expect("lowering succeeds");
+
+    let failure = ComposeEmitter
+        .emit(&model)
+        .expect_err("two resources sharing one reference must be refused");
+
+    let message = failure.to_string();
+    assert!(
+        message.contains("web-cache") && message.contains("web_cache"),
+        "the refusal must name both resources that collide, got: {message}"
     );
 }
