@@ -13,10 +13,11 @@ use indexmap::IndexMap;
 use lightshuttle_spec::{ContainerSpec, ImageSource, PortBinding, VolumeBinding, VolumeSource};
 use serde::Serialize;
 
+use crate::deployment::{RenderedService, render_for_target};
 use crate::emit::Emitter;
 use crate::error::{ExportError, Result};
-use crate::model::{ExportModel, ExportService, Target};
-use crate::resolve::{compose_env, enabled_for};
+use crate::model::{ExportModel, Target};
+use crate::resolve::compose_env;
 
 /// Loopback address used when a port declares no explicit host bind, so
 /// the exported stack keeps the same not-exposed-by-default posture as
@@ -53,7 +54,8 @@ impl Emitter for ComposeEmitter {
     }
 
     fn emit(&self, model: &ExportModel) -> Result<crate::ExportArtifacts> {
-        let file = build_compose(model);
+        let rendered = render_for_target(model, Target::Compose)?;
+        let file = build_compose(model, &rendered.services);
         let yaml = serde_norway::to_string(&file).map_err(|e| ExportError::Unsupported {
             resource: "<compose>".to_owned(),
             target: "compose",
@@ -86,6 +88,8 @@ struct ComposeService {
     environment: BTreeMap<String, String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     volumes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    working_dir: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     entrypoint: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -129,18 +133,11 @@ struct ComposeVolumeDef {
     driver: Option<String>,
 }
 
-fn build_compose(model: &ExportModel) -> ComposeFile {
+fn build_compose(model: &ExportModel, rendered: &[RenderedService]) -> ComposeFile {
     let mut services = IndexMap::new();
     let mut volumes: BTreeMap<String, ComposeVolumeDef> = BTreeMap::new();
 
-    for service in &model.services {
-        if !enabled_for(
-            Target::Compose,
-            &service.spec.resource,
-            model.export.as_ref(),
-        ) {
-            continue;
-        }
+    for service in rendered {
         collect_named_volumes(&service.spec.volumes, &mut volumes);
         services.insert(
             service.spec.resource.clone(),
@@ -151,7 +148,7 @@ fn build_compose(model: &ExportModel) -> ComposeFile {
     ComposeFile { services, volumes }
 }
 
-fn compose_service(service: &ExportService, model: &ExportModel) -> ComposeService {
+fn compose_service(service: &RenderedService, model: &ExportModel) -> ComposeService {
     let spec = &service.spec;
     let (image, build) = image_or_build(spec);
 
@@ -161,6 +158,7 @@ fn compose_service(service: &ExportService, model: &ExportModel) -> ComposeServi
         ports: spec.ports.iter().map(port_string).collect(),
         environment: compose_env(spec),
         volumes: spec.volumes.iter().map(volume_string).collect(),
+        working_dir: spec.working_dir.clone(),
         entrypoint: spec.entrypoint.clone(),
         command: spec.command.clone(),
         healthcheck: spec.healthcheck.as_ref().map(|hc| ComposeHealthcheck {

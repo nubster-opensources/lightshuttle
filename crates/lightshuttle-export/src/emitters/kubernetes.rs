@@ -11,11 +11,12 @@ use lightshuttle_spec::{
 };
 use serde::Serialize;
 
+use crate::deployment::{RenderedService, render_for_target};
 use crate::emit::Emitter;
 use crate::error::Result;
-use crate::model::{ExportModel, ExportService, Target};
+use crate::model::{ExportModel, Target};
 use crate::resolve::{
-    dns_name, enabled_for, image_pull_policy_for, namespace_label_for, replicas_for, split_env,
+    dns_name, image_pull_policy_for, namespace_label_for, replicas_for, split_env,
 };
 
 /// Emits plain Kubernetes manifests from the export model.
@@ -58,17 +59,11 @@ impl Emitter for KubernetesEmitter {
 
     fn emit(&self, model: &ExportModel) -> Result<crate::ExportArtifacts> {
         let namespace = namespace_label_for(&model.project.name, model.export.as_ref())?;
+        let rendered = render_for_target(model, Target::Kubernetes)?;
         let mut artifacts = crate::ExportArtifacts::new();
         artifacts.push("namespace.yaml", namespace_doc(&namespace)?);
 
-        for service in &model.services {
-            if !enabled_for(
-                Target::Kubernetes,
-                &service.spec.resource,
-                model.export.as_ref(),
-            ) {
-                continue;
-            }
+        for service in &rendered.services {
             let docs = resource_docs(service, model, &namespace)?;
             artifacts.push(format!("{}.yaml", dns_name(&service.spec.resource)?), docs);
         }
@@ -89,7 +84,11 @@ fn namespace_doc(namespace: &str) -> Result<String> {
     to_yaml(&ns)
 }
 
-fn resource_docs(service: &ExportService, model: &ExportModel, namespace: &str) -> Result<String> {
+fn resource_docs(
+    service: &RenderedService,
+    model: &ExportModel,
+    namespace: &str,
+) -> Result<String> {
     let spec = &service.spec;
     let name = dns_name(&spec.resource)?;
     let labels = labels(&name);

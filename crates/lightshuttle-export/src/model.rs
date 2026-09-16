@@ -10,7 +10,7 @@
 
 use std::path::PathBuf;
 
-use lightshuttle_manifest::ExportConfig;
+use lightshuttle_manifest::{ExportConfig, Manifest};
 use lightshuttle_spec::ContainerSpec;
 
 /// Target-agnostic model of a stack ready to be emitted.
@@ -22,6 +22,16 @@ pub struct ExportModel {
     pub services: Vec<ExportService>,
     /// Raw `export:` section, resolved per target by each emitter.
     pub export: Option<ExportConfig>,
+    /// The manifest this model was lowered from.
+    ///
+    /// Lowering resolves every resource against the runtime container name,
+    /// but the hostname a deployment target reaches a service through is
+    /// target specific (see [`crate::ResourceDirectory`]). A
+    /// `${resources.<name>.<property>}` reference can therefore only be
+    /// resolved once the target is known, which is after lowering, so the
+    /// source declarations travel with the IR instead of being resolved
+    /// once and for all inside it.
+    pub manifest: Manifest,
 }
 
 /// Project metadata relevant to an export.

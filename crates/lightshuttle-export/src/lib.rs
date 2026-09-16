@@ -58,6 +58,7 @@
 //! # }
 //! ```
 
+mod deployment;
 mod emit;
 mod emitters;
 mod error;

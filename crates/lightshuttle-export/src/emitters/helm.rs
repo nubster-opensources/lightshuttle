@@ -16,12 +16,14 @@ use lightshuttle_manifest::{ImagePullPolicy, ImageReference};
 use lightshuttle_spec::{ContainerSpec, HealthcheckSpec, ImageSource, VolumeSource};
 use serde::Serialize;
 
+use crate::deployment::{RenderedModel, RenderedService, render_for_target};
 use crate::emit::Emitter;
 use crate::error::Result;
 use crate::model::{ExportModel, ExportProject, Target};
+use crate::placeholder::escape_template_braces;
 use crate::resolve::{
-    chart_name_for, chart_version_for, dns_name, enabled_for, image_pull_policy_for,
-    namespace_label_for, replicas_for, split_env,
+    chart_name_for, chart_version_for, dns_name, image_pull_policy_for, namespace_label_for,
+    replicas_for, split_env,
 };
 
 /// Tag assumed when a reference carries none, matching the container runtime
@@ -68,19 +70,17 @@ impl Emitter for HelmEmitter {
 
     fn emit(&self, model: &ExportModel) -> Result<crate::ExportArtifacts> {
         let export = model.export.as_ref();
+        let rendered = render_for_target(model, Target::Helm)?;
         let mut artifacts = crate::ExportArtifacts::new();
 
         artifacts.push("Chart.yaml", chart_yaml(&model.project, export)?);
-        artifacts.push("values.yaml", values_yaml(model)?);
+        artifacts.push("values.yaml", values_yaml(model, &rendered)?);
 
-        for service in &model.services {
-            if !enabled_for(Target::Helm, &service.spec.resource, export) {
-                continue;
-            }
+        for service in &rendered.services {
             let name = dns_name(&service.spec.resource)?;
             artifacts.push(
                 format!("templates/{name}.yaml"),
-                resource_template(&service.spec, &name)?,
+                resource_template(service, &name)?,
             );
         }
 
@@ -102,56 +102,93 @@ fn chart_yaml(
     to_yaml(&chart)
 }
 
-fn values_yaml(model: &ExportModel) -> Result<String> {
+fn values_yaml(model: &ExportModel, rendered: &RenderedModel) -> Result<String> {
     let export = model.export.as_ref();
     let namespace = namespace_label_for(&model.project.name, export)?;
 
     let mut services: BTreeMap<String, ServiceValues> = BTreeMap::new();
-    for service in &model.services {
-        if !enabled_for(Target::Helm, &service.spec.resource, export) {
-            continue;
-        }
+    for service in &rendered.services {
         let name = dns_name(&service.spec.resource)?;
         let (env, secrets) = split_env(&service.spec);
-        let image = parse_image(&service.spec.image, &service.spec.resource)?;
+        let pull_policy =
+            pull_policy_str(image_pull_policy_for(&service.spec.resource, export)).to_owned();
         services.insert(
             name,
             ServiceValues {
                 replicas: replicas_for(Target::Helm, &service.spec.resource, export),
-                image: ImageValues {
-                    repository: image.qualified_repository(),
-                    tag: image.tag().unwrap_or(DEFAULT_TAG).to_owned(),
-                    digest: image.digest().map(str::to_owned),
-                    pull_policy: pull_policy_str(image_pull_policy_for(
-                        &service.spec.resource,
-                        export,
-                    ))
-                    .to_owned(),
-                },
+                image: image_values(service, pull_policy)?,
                 env,
                 secrets,
             },
         );
     }
 
+    let variables = rendered
+        .variables
+        .iter()
+        .map(|name| (name.clone(), String::new()))
+        .collect();
+
     to_yaml(&Values {
         namespace,
+        variables,
         services,
     })
 }
 
+/// Builds the image coordinates a chart publishes for one service.
+///
+/// A reference free of deployment variables is split into `repository`,
+/// `tag` and `digest`, which is what makes a chart's image overridable the
+/// way Helm users expect. A reference that still holds a variable is
+/// published whole, under a single key: splitting it would mean deciding
+/// whether `${env.IMAGE}` carries a tag, and the wrong answer there is an
+/// image silently deployed at `latest` rather than an error.
+fn image_values(service: &RenderedService, pull_policy: String) -> Result<ImageValues> {
+    if service.image_has_variables {
+        return Ok(ImageValues {
+            repository: None,
+            tag: None,
+            digest: None,
+            reference: Some(image_reference_text(&service.spec.image)),
+            pull_policy,
+        });
+    }
+    let image = parse_image(&service.spec.image, &service.spec.resource)?;
+    Ok(ImageValues {
+        repository: Some(image.qualified_repository()),
+        tag: Some(image.tag().unwrap_or(DEFAULT_TAG).to_owned()),
+        digest: image.digest().map(str::to_owned),
+        reference: None,
+        pull_policy,
+    })
+}
+
+/// The image reference of a source, whether it is pulled or built locally.
+fn image_reference_text(image: &ImageSource) -> String {
+    match image {
+        ImageSource::Pull(reference) => reference.clone(),
+        ImageSource::Build { tag, .. } => tag.clone(),
+    }
+}
+
 /// Build the multi-document template for one resource.
-fn resource_template(spec: &ContainerSpec, name: &str) -> Result<String> {
+fn resource_template(service: &RenderedService, name: &str) -> Result<String> {
+    let spec = &service.spec;
     let mut out = String::new();
     let _ = writeln!(out, "{{{{- $svc := index .Values.services {name:?} -}}}}");
-    out.push_str(&deployment_block(spec, name)?);
+    out.push_str(&deployment_block(service, name)?);
     if !spec.ports.is_empty() {
         out.push_str("---\n");
         out.push_str(&service_block(spec, name));
     }
-    if !split_env(spec).0.is_empty() {
+    let (config_env, _) = split_env(spec);
+    if !config_env.is_empty() {
+        let templated = config_env
+            .keys()
+            .any(|key| service.env_with_variables.contains(key));
         out.push_str("---\n");
-        out.push_str(&configmap_block(name));
+        out.push_str(&configmap_block(name, templated));
     }
     if !split_env(spec).1.is_empty() {
         out.push_str("---\n");
@@ -163,10 +200,17 @@ fn resource_template(spec: &ContainerSpec, name: &str) -> Result<String> {
             out.push_str(&pvc_block(name, &dns_name(vol)?));
         }
     }
+    // Quoting and brace escaping are settled, so the template actions the
+    // spliced fields held back can go back in. Tokens are built to appear
+    // nowhere in the manifest's own text, so this rewrites nothing else.
+    for (token, action) in &service.template_actions {
+        out = out.replace(token.as_str(), action);
+    }
     Ok(out)
 }
 
-fn deployment_block(spec: &ContainerSpec, name: &str) -> Result<String> {
+fn deployment_block(service: &RenderedService, name: &str) -> Result<String> {
+    let spec = &service.spec;
     let mut s = String::new();
     let (has_config, has_secret) = {
         let (config_env, secret_env) = split_env(spec);
@@ -194,8 +238,9 @@ fn deployment_block(spec: &ContainerSpec, name: &str) -> Result<String> {
          \x20\x20\x20 spec:\n\
          \x20\x20\x20\x20\x20 containers:\n\
          \x20\x20\x20\x20\x20 - name: {name}\n\
-         \x20\x20\x20\x20\x20\x20\x20 image: \"{{{{ $svc.image.repository }}}}{{{{ if $svc.image.digest }}}}@{{{{ $svc.image.digest }}}}{{{{ else }}}}:{{{{ $svc.image.tag }}}}{{{{ end }}}}\"\n\
-         \x20\x20\x20\x20\x20\x20\x20 imagePullPolicy: {{{{ $svc.image.pullPolicy }}}}\n"
+         \x20\x20\x20\x20\x20\x20\x20 image: {image}\n\
+         \x20\x20\x20\x20\x20\x20\x20 imagePullPolicy: {{{{ $svc.image.pullPolicy }}}}\n",
+        image = image_expression(service.image_has_variables)
     );
 
     if !spec.ports.is_empty() {
@@ -240,7 +285,7 @@ fn deployment_block(spec: &ContainerSpec, name: &str) -> Result<String> {
         }
     }
     if let Some(dir) = &spec.working_dir {
-        let _ = writeln!(s, "        workingDir: {dir}");
+        let _ = writeln!(s, "        workingDir: {}", yaml_scalar(dir));
     }
     if let Some(hc) = &spec.healthcheck {
         let probe = probe_block(hc);
@@ -295,7 +340,33 @@ fn service_block(spec: &ContainerSpec, name: &str) -> String {
     s
 }
 
-fn configmap_block(name: &str) -> String {
+/// The `image:` scalar of a deployment template.
+///
+/// A reference free of deployment variables is rebuilt from the split
+/// coordinates the chart publishes. A reference published whole is passed
+/// through `tpl`, because the variable it holds is a Go template action that
+/// a plain value lookup would emit verbatim: `values.yaml` is data, and only
+/// `tpl` makes Helm render it.
+fn image_expression(has_variables: bool) -> &'static str {
+    if has_variables {
+        "\"{{ tpl $svc.image.reference $ }}\""
+    } else {
+        "\"{{ $svc.image.repository }}{{ if $svc.image.digest }}@{{ $svc.image.digest }}{{ else }}:{{ $svc.image.tag }}{{ end }}\""
+    }
+}
+
+/// The `ConfigMap` template of one resource.
+///
+/// `templated` renders the values through `tpl` so that a `${env.NAME}` the
+/// manifest left for deployment time resolves against `.Values.variables`.
+/// It is off when no value of this service carries a variable, so a chart
+/// that gains nothing from `tpl` does not pay its injection surface either.
+fn configmap_block(name: &str, templated: bool) -> String {
+    let value = if templated {
+        "{{ tpl $v $ | quote }}"
+    } else {
+        "{{ $v | quote }}"
+    };
     format!(
         "apiVersion: v1\n\
          kind: ConfigMap\n\
@@ -306,7 +377,7 @@ fn configmap_block(name: &str) -> String {
          \x20\x20\x20 app: {name}\n\
          data:\n\
          {{{{- range $k, $v := $svc.env }}}}\n\
-         \x20 {{{{ $k }}}}: {{{{ $v | quote }}}}\n\
+         \x20 {{{{ $k }}}}: {value}\n\
          {{{{- end }}}}\n"
     )
 }
@@ -506,6 +577,15 @@ const ARGV_SCALAR_COLUMN: usize = 10;
 ///    what the Kubernetes emitter emits for the same value: the two
 ///    agree again only after Helm renders.
 ///
+/// The escape has to come after serialisation, not before: it
+/// introduces `"` characters, and a value carrying a `"` pushes
+/// `serde_norway` into a double-quoted scalar where the escape's own
+/// quotes come back backslashed and Go no longer reads them. That is
+/// also why a deployment variable reaches here as an opaque token
+/// rather than as its `{{ ... }}` action: the action is spliced back by
+/// the caller once this function has settled the quoting (see
+/// [`crate::HelmRenderer::shape`]).
+///
 /// A multi-line value also needs its block scalar body re-indented:
 /// `serde_norway` indents a block scalar's body two columns from the
 /// document root, but the result here is spliced after a `        - `
@@ -518,7 +598,7 @@ fn yaml_scalar(value: &str) -> String {
         |_| value.to_owned(),
         |s| s.strip_suffix('\n').unwrap_or(&s).to_owned(),
     );
-    let escaped = serialised.replace("{{", r#"{{ "{{" }}"#);
+    let escaped = escape_template_braces(&serialised);
     reindent_block_scalar(&escaped, ARGV_SCALAR_COLUMN)
 }
 
@@ -557,6 +637,11 @@ struct Chart {
 #[derive(Serialize)]
 struct Values {
     namespace: String,
+    /// Deployment-time variables left by `${env.NAME}` references, one empty
+    /// entry per referenced name. Sprig's `default` treats an empty value as
+    /// absent, which reproduces the `:-` semantics of the manifest exactly.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    variables: BTreeMap<String, String>,
     services: BTreeMap<String, ServiceValues>,
 }
 
@@ -572,12 +657,21 @@ struct ServiceValues {
 
 #[derive(Serialize)]
 struct ImageValues {
-    repository: String,
-    tag: String,
+    /// Absent when the reference carries a deployment variable and is
+    /// published whole under `reference` instead.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repository: Option<String>,
+    /// Absent for the same reason as `repository`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tag: Option<String>,
     /// Present only when the reference is digest pinned, so a chart for an
     /// ordinary tagged image keeps the values file it had before.
     #[serde(skip_serializing_if = "Option::is_none")]
     digest: Option<String>,
+    /// The whole reference, published when it carries a deployment variable
+    /// and therefore cannot be split into coordinates.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reference: Option<String>,
     #[serde(rename = "pullPolicy")]
     pull_policy: String,
 }
