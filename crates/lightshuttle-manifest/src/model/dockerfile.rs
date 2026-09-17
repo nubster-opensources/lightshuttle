@@ -23,6 +23,12 @@ pub struct DockerfileConfig {
     /// Resolved to an absolute path by
     /// [`crate::Manifest::resolve_host_volume_paths`] before it is handed to the
     /// runtime.
+    ///
+    /// Symbolic links are sent as links, never followed, as `docker build`
+    /// sends them. The daemon resolves a link within the context, so a link
+    /// whose target is outside it, absolute or missing is copied as a link
+    /// but cannot be used as a `COPY` source. `COPY .` keeps each link, and
+    /// so the target path it names, in the image.
     pub context: String,
 
     /// Path to the Dockerfile within `context`. Defaults to `"Dockerfile"`.

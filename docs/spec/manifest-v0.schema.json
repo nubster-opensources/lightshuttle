@@ -239,7 +239,7 @@
           ]
         },
         "context": {
-          "description": "Build context path, relative to the manifest file.\n\nResolved to an absolute path by\n[`crate::Manifest::resolve_host_volume_paths`] before it is handed to the\nruntime.",
+          "description": "Build context path, relative to the manifest file.\n\nResolved to an absolute path by\n[`crate::Manifest::resolve_host_volume_paths`] before it is handed to the\nruntime.\n\nSymbolic links are sent as links, never followed, as `docker build`\nsends them. The daemon resolves a link within the context, so a link\nwhose target is outside it, absolute or missing is copied as a link\nbut cannot be used as a `COPY` source. `COPY .` keeps each link, and\nso the target path it names, in the image.",
           "type": "string"
         },
         "depends_on": {
