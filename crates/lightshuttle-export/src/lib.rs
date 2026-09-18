@@ -69,7 +69,7 @@ pub mod resolve;
 
 pub use crate::emit::Emitter;
 pub use crate::emitters::{ComposeEmitter, HelmEmitter, KubernetesEmitter};
-pub use crate::error::{ExportError, Result};
+pub use crate::error::{DisabledDependency, ExportError, Result};
 pub use crate::lower::lower;
 pub use crate::model::{
     ExportArtifacts, ExportFile, ExportModel, ExportProject, ExportService, Target,

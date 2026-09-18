@@ -55,6 +55,7 @@ impl Emitter for ComposeEmitter {
 
     fn emit(&self, model: &ExportModel) -> Result<crate::ExportArtifacts> {
         let rendered = render_for_target(model, Target::Compose)?;
+        ensure_no_disabled_dependencies(model, &rendered)?;
         ensure_no_variable_collisions(&rendered)?;
         let file = build_compose(model, &rendered.services);
         let yaml = serde_norway::to_string(&file).map_err(|e| ExportError::Unsupported {
@@ -67,6 +68,30 @@ impl Emitter for ComposeEmitter {
         artifacts.ensure_unique_paths()?;
         Ok(artifacts)
     }
+}
+
+/// Refuses an export where a service Compose emits depends on a resource
+/// this export excludes.
+///
+/// Compose is the only target that emits `depends_on`, so it is the only
+/// one where excluding a resource can leave a reference to a service the
+/// file never defines, which `docker compose config` rejects. Whether a
+/// dependency is excluded is asked of [`crate::resolve::enabled_for`] rather than deduced
+/// from its absence among the rendered services: a dependency that names no
+/// manifest resource at all is not disabled, it is unknown, and
+/// `lightshuttle_manifest::Manifest::validate` is what reports that.
+///
+/// # Errors
+///
+/// Returns [`ExportError::DisabledDependencies`] carrying every dangling
+/// edge, sorted by service then dependency, so one export reports them all.
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "inert skeleton: the refusal itself lands in the next commit"
+)]
+fn ensure_no_disabled_dependencies(model: &ExportModel, rendered: &RenderedModel) -> Result<()> {
+    let _ = (model, rendered);
+    Ok(())
 }
 
 /// Refuses an export where two distinct sources would produce the same
