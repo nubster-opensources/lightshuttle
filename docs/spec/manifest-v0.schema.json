@@ -101,7 +101,7 @@
       "type": "object",
       "properties": {
         "enabled": {
-          "description": "Whether this resource is included in the export.\n\n`None` or `Some(true)` includes the resource. `Some(false)` omits it.",
+          "description": "Whether this resource is included in the export.\n\n`None` or `Some(true)` includes the resource. `Some(false)` omits it.\n\nCompose is the only target that emits `depends_on`, so omitting a\nresource that an exported service still depends on is refused: the\ngenerated file would name a service it never defines. Disable the\nservices depending on it as well, or drop the dependency from the\nmanifest.",
           "type": [
             "boolean",
             "null"

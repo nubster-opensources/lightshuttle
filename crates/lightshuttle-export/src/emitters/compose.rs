@@ -15,9 +15,11 @@ use serde::Serialize;
 
 use crate::deployment::{RenderedModel, RenderedService, render_for_target};
 use crate::emit::Emitter;
-use crate::error::{ExportError, Result};
+use crate::error::{DisabledDependency, ExportError, Result};
 use crate::model::{ExportModel, Target};
-use crate::resolve::{compose_arguments, compose_env, compose_variable_name, is_secret_key};
+use crate::resolve::{
+    compose_arguments, compose_env, compose_variable_name, enabled_for, is_secret_key,
+};
 
 /// Loopback address used when a port declares no explicit host bind, so
 /// the exported stack keeps the same not-exposed-by-default posture as
@@ -55,6 +57,7 @@ impl Emitter for ComposeEmitter {
 
     fn emit(&self, model: &ExportModel) -> Result<crate::ExportArtifacts> {
         let rendered = render_for_target(model, Target::Compose)?;
+        ensure_no_disabled_dependencies(model, &rendered)?;
         ensure_no_variable_collisions(&rendered)?;
         let file = build_compose(model, &rendered.services);
         let yaml = serde_norway::to_string(&file).map_err(|e| ExportError::Unsupported {
@@ -67,6 +70,44 @@ impl Emitter for ComposeEmitter {
         artifacts.ensure_unique_paths()?;
         Ok(artifacts)
     }
+}
+
+/// Refuses an export where a service Compose emits depends on a resource
+/// this export excludes.
+///
+/// Compose is the only target that emits `depends_on`, so it is the only
+/// one where excluding a resource can leave a reference to a service the
+/// file never defines, which `docker compose config` rejects. Whether a
+/// dependency is excluded is asked of [`crate::resolve::enabled_for`] rather than deduced
+/// from its absence among the rendered services: a dependency that names no
+/// manifest resource at all is not disabled, it is unknown, and
+/// `lightshuttle_manifest::Manifest::validate` is what reports that.
+///
+/// # Errors
+///
+/// Returns [`ExportError::DisabledDependencies`] carrying every dangling
+/// edge, sorted by service then dependency, so one export reports them all.
+fn ensure_no_disabled_dependencies(model: &ExportModel, rendered: &RenderedModel) -> Result<()> {
+    let mut dependencies: BTreeSet<DisabledDependency> = BTreeSet::new();
+
+    for service in &rendered.services {
+        for dependency in &service.depends_on {
+            if !enabled_for(Target::Compose, dependency, model.export.as_ref()) {
+                dependencies.insert(DisabledDependency::new(
+                    service.spec.resource.as_str(),
+                    dependency.as_str(),
+                ));
+            }
+        }
+    }
+
+    if dependencies.is_empty() {
+        return Ok(());
+    }
+    Err(ExportError::DisabledDependencies {
+        target: "compose",
+        dependencies: dependencies.into_iter().collect(),
+    })
 }
 
 /// Refuses an export where two distinct sources would produce the same

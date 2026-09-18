@@ -7,6 +7,45 @@ use lightshuttle_spec::SpecError;
 /// Used as the return type of [`crate::lower`] and [`crate::Emitter::emit`].
 pub type Result<T> = std::result::Result<T, ExportError>;
 
+/// One edge from an exported service to a dependency the same export
+/// excludes, as reported by [`ExportError::DisabledDependencies`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[non_exhaustive]
+pub struct DisabledDependency {
+    /// Exported service whose `depends_on` names the dependency.
+    pub resource: String,
+    /// Dependency disabled for the target.
+    pub dependency: String,
+}
+
+impl DisabledDependency {
+    /// Builds one dangling edge from the exported service and the
+    /// dependency it names.
+    #[must_use]
+    pub fn new(resource: impl Into<String>, dependency: impl Into<String>) -> Self {
+        Self {
+            resource: resource.into(),
+            dependency: dependency.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for DisabledDependency {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "`{}` depends on `{}`", self.resource, self.dependency)
+    }
+}
+
+/// Joins dangling edges for the [`ExportError::DisabledDependencies`]
+/// message, in the order the refusal collected them.
+fn join_dependencies(dependencies: &[DisabledDependency]) -> String {
+    dependencies
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<String>>()
+        .join(", ")
+}
+
 /// Errors raised while lowering a manifest or emitting artifacts.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -76,5 +115,19 @@ pub enum ExportError {
         resource: String,
         /// The offending variable name.
         name: String,
+    },
+
+    /// One or more exported services depend on a resource disabled for the
+    /// same target, so the output would reference a service it does not
+    /// define.
+    #[error(
+        "{target} export would reference disabled resources: {}",
+        join_dependencies(dependencies)
+    )]
+    DisabledDependencies {
+        /// Target that refuses the export.
+        target: &'static str,
+        /// Every dangling edge, sorted by resource then dependency.
+        dependencies: Vec<DisabledDependency>,
     },
 }

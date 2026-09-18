@@ -60,6 +60,12 @@ pub struct ComposeResourceExport {
     /// Whether this resource is included in the export.
     ///
     /// `None` or `Some(true)` includes the resource. `Some(false)` omits it.
+    ///
+    /// Compose is the only target that emits `depends_on`, so omitting a
+    /// resource that an exported service still depends on is refused: the
+    /// generated file would name a service it never defines. Disable the
+    /// services depending on it as well, or drop the dependency from the
+    /// manifest.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
 }
