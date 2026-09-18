@@ -241,6 +241,36 @@ resources:
         .expect("helm emit succeeds even though db is disabled for helm");
 }
 
+/// Exclusions are per target, so one target's exclusion says nothing about
+/// what another target emits: a dependency dropped from the Kubernetes
+/// export is still part of the Compose one, and refusing there would reject
+/// a manifest that exports perfectly well.
+#[test]
+fn a_dependency_disabled_only_on_another_target_does_not_refuse_compose() {
+    let out = compose_output(
+        r"
+project:
+  name: shop
+export:
+  kubernetes:
+    resources:
+      db:
+        enabled: false
+resources:
+  db:
+    container:
+      image: postgres:16
+  api:
+    container:
+      image: alpine:3.20
+      depends_on: [db]
+",
+    );
+
+    assert!(out.contains("depends_on"), "got:\n{out}");
+    assert!(out.contains("db"), "got:\n{out}");
+}
+
 /// [`DEPENDENT_DISABLED_STACK`] excludes `api`, the only service that named
 /// a dependency, so the accepted export carries no `depends_on` entry at
 /// all: parsing it back is what proves the emitted YAML stays internally
