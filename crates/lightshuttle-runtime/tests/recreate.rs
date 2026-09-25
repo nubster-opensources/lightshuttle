@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use lightshuttle_runtime::testkit::MockRuntime;
-use lightshuttle_runtime::{ContainerRuntime, ContainerSpec, ImageSource};
+use lightshuttle_runtime::{ContainerSpec, ImageSource, ResourceRuntime};
 
 fn spec(name: &str) -> ContainerSpec {
     ContainerSpec::new(

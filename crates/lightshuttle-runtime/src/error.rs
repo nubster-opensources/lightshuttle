@@ -11,7 +11,7 @@ use std::time::Duration;
 /// error type on every return position.
 pub type Result<T> = std::result::Result<T, RuntimeError>;
 
-/// Errors raised by a [`crate::ContainerRuntime`] implementation.
+/// Errors raised by a [`crate::ResourceRuntime`] implementation.
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {
     /// The runtime could not establish a connection to the underlying

@@ -9,7 +9,7 @@ use std::io::Write;
 use std::time::Duration;
 
 use lightshuttle_runtime::{
-    Argument, ContainerRuntime, ContainerSpec, ContainerStatus, DockerRuntime, ImageSource,
+    Argument, ContainerSpec, ContainerStatus, DockerRuntime, ImageSource, ResourceRuntime,
 };
 
 fn small_image_spec(name: &str) -> ContainerSpec {

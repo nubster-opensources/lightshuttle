@@ -4,7 +4,7 @@ use std::path::Path;
 
 use anyhow::{Result, anyhow};
 use futures::StreamExt;
-use lightshuttle_runtime::{ContainerRuntime, DockerRuntime};
+use lightshuttle_runtime::{DockerRuntime, ResourceRuntime};
 
 use super::{ExitOutcome, load_manifest};
 use crate::output::write_log_chunk;

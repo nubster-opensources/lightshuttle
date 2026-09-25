@@ -136,7 +136,7 @@ pub(crate) async fn run(
 /// Prometheus histogram.
 fn spawn_metrics_pump<R>(manager: &Arc<LifecycleManager<R>>)
 where
-    R: lightshuttle_runtime::ContainerRuntime + 'static,
+    R: lightshuttle_runtime::ResourceRuntime + 'static,
 {
     let mut events = manager.subscribe_events();
     tokio::spawn(async move {

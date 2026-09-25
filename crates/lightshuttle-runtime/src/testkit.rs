@@ -1,6 +1,6 @@
 //! Test helpers for downstream crates and integration tests.
 //!
-//! Provides [`MockRuntime`](crate::testkit::MockRuntime), an in-memory [`crate::ContainerRuntime`] that
+//! Provides [`MockRuntime`](crate::testkit::MockRuntime), an in-memory [`crate::ResourceRuntime`] that
 //! requires no Docker daemon. Use it to test lifecycle logic, control-plane
 //! handlers, and any code that depends on [`crate::LifecycleManager`] without
 //! involving real containers.
@@ -46,10 +46,10 @@ use std::time::{Duration, Instant};
 use futures::stream::{Stream, StreamExt};
 
 use crate::error::RuntimeError;
-use crate::runtime::{ContainerId, ContainerRuntime, ContainerStatus, LogChunk, LogChunkStream};
+use crate::runtime::{ContainerStatus, LogChunk, LogChunkStream, ResourceId, ResourceRuntime};
 use lightshuttle_spec::ContainerSpec;
 
-/// In-memory [`ContainerRuntime`] for tests.
+/// In-memory [`ResourceRuntime`] for tests.
 ///
 /// Every container becomes [`ContainerStatus::Healthy`] 30 ms after
 /// `start`, unless its name is configured as a failure target via
@@ -112,7 +112,7 @@ impl MockRuntime {
             .clone()
     }
 
-    /// Names passed to [`ContainerRuntime::remove`] that matched a live
+    /// Names passed to [`ResourceRuntime::remove`] that matched a live
     /// container, in call order.
     ///
     /// Only effective removals are recorded: the pre-start cleanup that
@@ -142,8 +142,8 @@ impl Default for MockRuntime {
     }
 }
 
-impl ContainerRuntime for MockRuntime {
-    async fn start(&self, spec: &ContainerSpec) -> Result<ContainerId, RuntimeError> {
+impl ResourceRuntime for MockRuntime {
+    async fn start(&self, spec: &ContainerSpec) -> Result<ResourceId, RuntimeError> {
         if self
             .fail_on
             .lock()
@@ -156,7 +156,7 @@ impl ContainerRuntime for MockRuntime {
                 spec.name
             )));
         }
-        let id = ContainerId::new(format!("mock-{}", spec.name));
+        let id = ResourceId::new(format!("mock-{}", spec.name));
         if self
             .state
             .lock()
@@ -188,7 +188,7 @@ impl ContainerRuntime for MockRuntime {
         Ok(id)
     }
 
-    async fn stop(&self, id: &ContainerId, _grace: Duration) -> Result<(), RuntimeError> {
+    async fn stop(&self, id: &ResourceId, _grace: Duration) -> Result<(), RuntimeError> {
         let mut state = self.state.lock().expect("state mutex poisoned");
         if let Some(c) = state.get_mut(id.as_str()) {
             c.status = ContainerStatus::Stopped { exit_code: Some(0) };
@@ -216,7 +216,7 @@ impl ContainerRuntime for MockRuntime {
         Ok(())
     }
 
-    async fn inspect(&self, id: &ContainerId) -> Result<ContainerStatus, RuntimeError> {
+    async fn inspect(&self, id: &ResourceId) -> Result<ContainerStatus, RuntimeError> {
         let state = self.state.lock().expect("state mutex poisoned");
         let c = state
             .get(id.as_str())
@@ -224,7 +224,7 @@ impl ContainerRuntime for MockRuntime {
         Ok(c.status.clone())
     }
 
-    async fn wait_healthy(&self, id: &ContainerId, timeout: Duration) -> Result<(), RuntimeError> {
+    async fn wait_healthy(&self, id: &ResourceId, timeout: Duration) -> Result<(), RuntimeError> {
         let start = Instant::now();
         while start.elapsed() < timeout {
             {
@@ -244,7 +244,7 @@ impl ContainerRuntime for MockRuntime {
         })
     }
 
-    async fn logs(&self, _id: &ContainerId, _follow: bool) -> Result<LogChunkStream, RuntimeError> {
+    async fn logs(&self, _id: &ResourceId, _follow: bool) -> Result<LogChunkStream, RuntimeError> {
         let empty: Pin<Box<dyn Stream<Item = Result<LogChunk, RuntimeError>> + Send>> =
             Box::pin(futures::stream::empty::<Result<LogChunk, RuntimeError>>().map(|x| x));
         Ok(empty)

@@ -1,7 +1,7 @@
 //! Docker container runtime backed by the `bollard` crate.
 //!
 //! Exposes [`DockerRuntime`], the first concrete implementation of
-//! [`crate::ContainerRuntime`]. All Docker I/O is async and goes through a
+//! [`crate::ResourceRuntime`]. All Docker I/O is async and goes through a
 //! single `bollard::Docker` client stored in the struct.
 //!
 //! ## Network model
@@ -61,7 +61,7 @@ use lightshuttle_manifest::{DnsName, ImageReference};
 use crate::error::{Result, RuntimeError};
 use crate::project_sweep::ProjectInventory;
 use crate::runtime::{
-    ContainerId, ContainerRuntime, ContainerStatus, LogChunk, LogChunkStream, LogStream,
+    ContainerStatus, LogChunk, LogChunkStream, LogStream, ResourceId, ResourceRuntime,
 };
 use lightshuttle_spec::{
     Argument, ContainerSpec, HealthcheckSpec, ImageSource, PortBinding, VolumeBinding, VolumeSource,
@@ -79,7 +79,7 @@ const NETWORK_PREFIX: &str = "lightshuttle-";
 ///
 /// Connects to the local Docker daemon using the platform default transport
 /// (Unix socket on Linux and macOS, named pipe on Windows). Implements
-/// [`crate::ContainerRuntime`] so it can be passed to [`crate::LifecycleManager`].
+/// [`crate::ResourceRuntime`] so it can be passed to [`crate::LifecycleManager`].
 ///
 /// # Example
 ///
@@ -178,7 +178,7 @@ impl DockerRuntime {
                 .unwrap_or_else(|| "<unknown>".to_owned());
             let status = parse_summary_state(summary.state.as_ref());
             out.push(ManagedContainer {
-                id: ContainerId::new(id),
+                id: ResourceId::new(id),
                 resource,
                 status,
             });
@@ -337,7 +337,7 @@ impl ProjectInventory for DockerRuntime {
     }
 }
 
-impl ContainerRuntime for DockerRuntime {
+impl ResourceRuntime for DockerRuntime {
     async fn ensure_project_network(&self, project: &str) -> Result<()> {
         let name = network_name(project)?;
 
@@ -392,7 +392,7 @@ impl ContainerRuntime for DockerRuntime {
         }
     }
 
-    async fn start(&self, spec: &ContainerSpec) -> Result<ContainerId> {
+    async fn start(&self, spec: &ContainerSpec) -> Result<ResourceId> {
         let image_ref = match &spec.image {
             ImageSource::Pull(image) => {
                 self.ensure_image(image).await?;
@@ -471,10 +471,10 @@ impl ContainerRuntime for DockerRuntime {
             .await
             .map_err(RuntimeError::Start)?;
 
-        Ok(ContainerId::new(created.id))
+        Ok(ResourceId::new(created.id))
     }
 
-    async fn stop(&self, id: &ContainerId, grace: Duration) -> Result<()> {
+    async fn stop(&self, id: &ResourceId, grace: Duration) -> Result<()> {
         #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
         let options = StopContainerOptionsBuilder::default()
             .t(grace.as_secs() as i32)
@@ -506,7 +506,7 @@ impl ContainerRuntime for DockerRuntime {
         }
     }
 
-    async fn inspect(&self, id: &ContainerId) -> Result<ContainerStatus> {
+    async fn inspect(&self, id: &ResourceId) -> Result<ContainerStatus> {
         let info = self
             .client
             .inspect_container(id.as_str(), None)
@@ -550,7 +550,7 @@ impl ContainerRuntime for DockerRuntime {
         Ok(ContainerStatus::Starting)
     }
 
-    async fn wait_healthy(&self, id: &ContainerId, timeout: Duration) -> Result<()> {
+    async fn wait_healthy(&self, id: &ResourceId, timeout: Duration) -> Result<()> {
         let deadline = Instant::now() + timeout;
         loop {
             match self.inspect(id).await? {
@@ -580,7 +580,7 @@ impl ContainerRuntime for DockerRuntime {
         }
     }
 
-    async fn logs(&self, id: &ContainerId, follow: bool) -> Result<LogChunkStream> {
+    async fn logs(&self, id: &ResourceId, follow: bool) -> Result<LogChunkStream> {
         let options = LogsOptionsBuilder::default()
             .follow(follow)
             .stdout(true)
@@ -665,7 +665,7 @@ pub const LABEL_RESOURCE: &str = "lightshuttle.resource";
 #[derive(Debug, Clone)]
 pub struct ManagedContainer {
     /// Container identifier.
-    pub id: ContainerId,
+    pub id: ResourceId,
     /// Resource name as declared in the manifest.
     pub resource: String,
     /// Current lifecycle status.

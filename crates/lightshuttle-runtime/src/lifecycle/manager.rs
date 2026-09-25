@@ -2,7 +2,7 @@
 //! [`crate::LifecyclePlan`].
 //!
 //! The main type, [`LifecycleManager`], is generic over any
-//! [`crate::ContainerRuntime`] implementation. It spawns one `tokio` task per
+//! [`crate::ResourceRuntime`] implementation. It spawns one `tokio` task per
 //! resource; each task waits for its dependencies to reach a ready state before
 //! calling `start` on the runtime. Status transitions are published on a
 //! `tokio::sync::watch` channel (consumed by peer tasks for ordering) and on a
@@ -16,8 +16,8 @@
 //! 2. Collect dependency outputs and resolve `${resources.*}` interpolations.
 //! 3. Inject `LSH_<DEP>_<PROPERTY>` environment variables automatically.
 //! 4. Remove any stale container with the same name.
-//! 5. Call [`crate::ContainerRuntime::start`].
-//! 6. Poll [`crate::ContainerRuntime::wait_healthy`] until healthy or timeout.
+//! 5. Call [`crate::ResourceRuntime::start`].
+//! 6. Poll [`crate::ResourceRuntime::wait_healthy`] until healthy or timeout.
 //!
 //! ## Teardown
 //!
@@ -43,7 +43,7 @@ use crate::error::RuntimeError;
 use crate::lifecycle::error::LifecycleError;
 use crate::lifecycle::plan::LifecyclePlan;
 use crate::lifecycle::status::{LifecycleEvent, NodeStatus};
-use crate::runtime::{ContainerId, ContainerRuntime};
+use crate::runtime::{ResourceId, ResourceRuntime};
 use lightshuttle_spec::{ResolvedResource, ResourceOutputs, from_resource};
 
 /// Default healthcheck timeout, applied when the manifest does not
@@ -57,7 +57,7 @@ struct NodeHandle {
     status_rx: watch::Receiver<NodeStatus>,
     outputs_tx: Arc<watch::Sender<Option<ResourceOutputs>>>,
     outputs_rx: watch::Receiver<Option<ResourceOutputs>>,
-    container_id: Arc<Mutex<Option<ContainerId>>>,
+    container_id: Arc<Mutex<Option<ResourceId>>>,
     started_at: Arc<Mutex<Option<SystemTime>>>,
     /// Held for the full duration of a restart so concurrent restarts of
     /// the same resource are serialized. Distinct resources own distinct
@@ -110,7 +110,7 @@ pub(super) struct NodeSnapshot {
     /// Wall-clock time at which the runtime accepted the start request.
     pub(super) started_at: Option<SystemTime>,
     /// Container identifier returned by the runtime, when known.
-    pub(super) container_id: Option<ContainerId>,
+    pub(super) container_id: Option<ResourceId>,
 }
 
 /// Coordinates the startup, supervision, and shutdown of every resource
@@ -146,7 +146,7 @@ pub(super) struct NodeSnapshot {
 /// # Ok(())
 /// # }
 /// ```
-pub struct LifecycleManager<R: ContainerRuntime + 'static> {
+pub struct LifecycleManager<R: ResourceRuntime + 'static> {
     plan: Arc<LifecyclePlan>,
     runtime: Arc<R>,
     nodes: HashMap<String, NodeHandle>,
@@ -154,7 +154,7 @@ pub struct LifecycleManager<R: ContainerRuntime + 'static> {
     extra_env: Arc<HashMap<String, String>>,
 }
 
-impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
+impl<R: ResourceRuntime + 'static> LifecycleManager<R> {
     /// Build a manager bound to `plan` and `runtime`. Returns a fresh
     /// event subscriber alongside; further subscribers can be obtained
     /// from [`Self::subscribe_events`].
@@ -232,7 +232,7 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
     ///
     /// Each resource waits for its dependencies to become ready (i.e. reach
     /// [`crate::NodeStatus::Running`] or [`crate::NodeStatus::Healthy`]) before
-    /// calling [`crate::ContainerRuntime::start`]. Readiness is gate-kept by the
+    /// calling [`crate::ResourceRuntime::start`]. Readiness is gate-kept by the
     /// healthcheck: a container with a declared healthcheck must report
     /// [`crate::ContainerStatus::Healthy`] before its dependents may proceed.
     ///
@@ -627,7 +627,7 @@ impl<R: ContainerRuntime + 'static> LifecycleManager<R> {
 
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 #[instrument(name = "start", skip_all, fields(resource = %name))]
-async fn start_one<R: ContainerRuntime + 'static>(
+async fn start_one<R: ResourceRuntime + 'static>(
     name: String,
     resource: ResourceKind,
     project: String,

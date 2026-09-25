@@ -9,7 +9,7 @@ mod common;
 use std::time::Duration;
 
 use lightshuttle_runtime::{
-    Argument, ContainerRuntime, ContainerSpec, DockerRuntime, ImageSource, LifecycleEvent,
+    Argument, ContainerSpec, DockerRuntime, ImageSource, LifecycleEvent, ResourceRuntime,
 };
 use tokio::sync::broadcast;
 

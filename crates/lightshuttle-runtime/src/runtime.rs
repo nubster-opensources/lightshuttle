@@ -1,7 +1,7 @@
 //! Container runtime abstraction and its supporting domain types.
 //!
-//! Defines the [`ContainerRuntime`] trait and the value types it operates on:
-//! [`ContainerId`], [`ContainerStatus`], [`LogChunk`], [`LogStream`], and the
+//! Defines the [`ResourceRuntime`] trait and the value types it operates on:
+//! [`ResourceId`], [`ContainerStatus`], [`LogChunk`], [`LogStream`], and the
 //! [`LogChunkStream`] type alias. Concrete implementations (e.g.
 //! [`crate::DockerRuntime`]) live in sibling modules.
 
@@ -19,10 +19,10 @@ use lightshuttle_spec::ContainerSpec;
 /// uses (Docker returns 64-character hexadecimal hashes); callers must
 /// not depend on the format.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ContainerId(String);
+pub struct ResourceId(String);
 
-impl ContainerId {
-    /// Build a [`ContainerId`] from a daemon-supplied string.
+impl ResourceId {
+    /// Build a [`ResourceId`] from a daemon-supplied string.
     #[must_use]
     pub fn new(id: impl Into<String>) -> Self {
         Self(id.into())
@@ -35,7 +35,7 @@ impl ContainerId {
     }
 }
 
-impl std::fmt::Display for ContainerId {
+impl std::fmt::Display for ResourceId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
     }
@@ -87,7 +87,7 @@ pub struct LogChunk {
 
 /// Boxed, pinned stream of [`LogChunk`] items for a single container.
 ///
-/// Returned by [`ContainerRuntime::logs`]. The stream is `Send` so it can be
+/// Returned by [`ResourceRuntime::logs`]. The stream is `Send` so it can be
 /// forwarded across async task boundaries (e.g. from a worker task to an HTTP
 /// response body or a WebSocket session).
 pub type LogChunkStream = Pin<Box<dyn Stream<Item = Result<LogChunk>> + Send>>;
@@ -100,20 +100,20 @@ pub type LogChunkStream = Pin<Box<dyn Stream<Item = Result<LogChunk>> + Send>>;
 /// implementation.
 ///
 /// Implementations live in submodules such as [`crate::DockerRuntime`].
-pub trait ContainerRuntime: Send + Sync {
+pub trait ResourceRuntime: Send + Sync {
     /// Start a container according to `spec`. Pulls the image if not
     /// already present locally.
     fn start(
         &self,
         spec: &ContainerSpec,
-    ) -> impl std::future::Future<Output = Result<ContainerId>> + Send;
+    ) -> impl std::future::Future<Output = Result<ResourceId>> + Send;
 
     /// Stop a container, sending `SIGTERM` and then `SIGKILL` after
     /// `grace`. Idempotent: stopping an already stopped container is a
     /// no-op.
     fn stop(
         &self,
-        id: &ContainerId,
+        id: &ResourceId,
         grace: Duration,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
@@ -129,7 +129,7 @@ pub trait ContainerRuntime: Send + Sync {
     /// Report the current status of a container.
     fn inspect(
         &self,
-        id: &ContainerId,
+        id: &ResourceId,
     ) -> impl std::future::Future<Output = Result<ContainerStatus>> + Send;
 
     /// Block until the container reports a healthy status or `timeout`
@@ -137,7 +137,7 @@ pub trait ContainerRuntime: Send + Sync {
     /// case.
     fn wait_healthy(
         &self,
-        id: &ContainerId,
+        id: &ResourceId,
         timeout: Duration,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
@@ -146,7 +146,7 @@ pub trait ContainerRuntime: Send + Sync {
     /// stream completes after the existing logs are drained.
     fn logs(
         &self,
-        id: &ContainerId,
+        id: &ResourceId,
         follow: bool,
     ) -> impl std::future::Future<Output = Result<LogChunkStream>> + Send;
 

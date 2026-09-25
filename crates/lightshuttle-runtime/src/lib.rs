@@ -20,7 +20,7 @@
 //!
 //! # Core abstractions
 //!
-//! ## [`ContainerRuntime`] trait
+//! ## [`ResourceRuntime`] trait
 //!
 //! The narrow abstraction that hides every daemon-specific detail.
 //! The lifecycle manager calls only the methods declared by this trait.
@@ -94,7 +94,7 @@ pub use crate::project_sweep::{
     ProjectInventory, SweepFailure, SweepPolicy, SweepReport, sweep_project,
 };
 pub use crate::runtime::{
-    ContainerId, ContainerRuntime, ContainerStatus, LogChunk, LogChunkStream, LogStream,
+    ContainerStatus, LogChunk, LogChunkStream, LogStream, ResourceId, ResourceRuntime,
 };
 pub use lightshuttle_spec::{
     Argument, ContainerSpec, HealthcheckSpec, ImageSource, PortBinding, ResolvedResource,
@@ -107,7 +107,7 @@ mod lifecycle;
 mod project_sweep;
 mod runtime;
 
-/// In-memory [`ContainerRuntime`] and supporting helpers for tests.
+/// In-memory [`ResourceRuntime`] and supporting helpers for tests.
 ///
 /// See [`testkit::MockRuntime`] for the main type.
 pub mod testkit;
