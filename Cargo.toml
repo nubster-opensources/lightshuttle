@@ -52,11 +52,11 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 tokio-tungstenite = "0.29"
 askama = "0.16"
 humantime-serde = "1"
-opentelemetry = "0.32"
-opentelemetry_sdk = { version = "0.32", features = ["trace"] }
-opentelemetry-otlp = { version = "0.32", default-features = false, features = ["grpc-tonic", "trace"] }
-opentelemetry-semantic-conventions = "0.32"
-tracing-opentelemetry = "0.33"
+opentelemetry = "0.33"
+opentelemetry_sdk = { version = "0.33", features = ["trace"] }
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["grpc-tonic", "trace"] }
+opentelemetry-semantic-conventions = "0.33"
+tracing-opentelemetry = "0.34"
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
 
