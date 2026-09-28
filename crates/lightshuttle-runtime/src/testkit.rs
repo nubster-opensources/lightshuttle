@@ -64,6 +64,7 @@ pub struct MockRuntime {
     remove_order: Arc<Mutex<Vec<String>>>,
     started_specs: Arc<Mutex<Vec<ContainerSpec>>>,
     started_processes: Arc<Mutex<Vec<ProcessSpec>>>,
+    ensured_networks: Arc<Mutex<Vec<String>>>,
     daemon: Arc<Mutex<DaemonKind>>,
 }
 
@@ -104,6 +105,7 @@ impl MockRuntime {
             remove_order: Arc::new(Mutex::new(Vec::new())),
             started_specs: Arc::new(Mutex::new(Vec::new())),
             started_processes: Arc::new(Mutex::new(Vec::new())),
+            ensured_networks: Arc::new(Mutex::new(Vec::new())),
             daemon: Arc::new(Mutex::new(DaemonKind::DockerDesktop)),
         }
     }
@@ -169,6 +171,20 @@ impl MockRuntime {
         self.started_specs
             .lock()
             .expect("started_specs mutex poisoned")
+            .clone()
+    }
+
+    /// Projects this runtime was asked to create a bridge network for.
+    ///
+    /// Observed rather than merely accepted, because the interesting assertion
+    /// is the negative one: a project made only of `process` resources must
+    /// never ask, and a mock that silently answered yes would let that stay
+    /// true in the code and false in the product without a test noticing.
+    #[must_use]
+    pub fn ensured_networks(&self) -> Vec<String> {
+        self.ensured_networks
+            .lock()
+            .expect("ensured_networks mutex poisoned")
             .clone()
     }
 
@@ -346,7 +362,11 @@ impl ResourceRuntime for MockRuntime {
         Ok(empty)
     }
 
-    async fn ensure_project_network(&self, _project: &str) -> Result<(), RuntimeError> {
+    async fn ensure_project_network(&self, project: &str) -> Result<(), RuntimeError> {
+        self.ensured_networks
+            .lock()
+            .expect("ensured_networks mutex poisoned")
+            .push(project.to_owned());
         Ok(())
     }
 

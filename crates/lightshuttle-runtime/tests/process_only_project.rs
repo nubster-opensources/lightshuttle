@@ -22,6 +22,7 @@
 //! ordinary test job for want of a daemon those runners never had.
 
 use std::process::Command;
+use std::time::Duration;
 
 use lightshuttle_runtime::{HostRuntime, ResourceRuntime};
 use lightshuttle_spec::{Argument, ContainerSpec, ImageSource, ProcessSpec, ResourceSpec};
@@ -187,7 +188,7 @@ async fn connect_does_not_contact_the_daemon_when_poisoned() {
 
     let runtime =
         HostRuntime::connect(tmp.path()).expect("connect must not itself contact the daemon");
-    runtime
+    let id = runtime
         .start(&ResourceSpec::Process(a_process(&project)))
         .await
         .expect(
@@ -195,6 +196,15 @@ async fn connect_does_not_contact_the_daemon_when_poisoned() {
              configured Docker daemon is unreachable: nothing in that path \
              may lazily reach for it",
         );
+
+    // Stopped rather than left to run itself out. A supervised process that
+    // outlives the test that started it keeps this binary waiting on its
+    // pipes, which made this file a thirty-second suite, and it leaves a stray
+    // process on the machine that ran it.
+    runtime
+        .stop(&id, Duration::from_millis(200))
+        .await
+        .expect("the process this test started stops");
 }
 
 /// The contrast to `a_process_only_project_creates_no_project_network`: a
@@ -218,5 +228,76 @@ async fn a_project_with_a_container_creates_the_project_network() {
     assert!(
         network_exists(&project),
         "a project holding a container must create `lightshuttle-{project}`"
+    );
+}
+
+/// The same guarantee as the two `#[ignore]` tests above, proved at the level
+/// the decision is actually taken, and without a daemon.
+///
+/// The network is created once, before anything starts, and only when the plan
+/// holds a resource that needs one. Reading "this project holds a container"
+/// off whether a container had *already* started would make the answer depend
+/// on the order the plan happens to start things in: a process scheduled first
+/// would be told to bind the loopback, and under a bare Linux engine no
+/// container could then reach it.
+#[tokio::test]
+async fn a_process_only_plan_never_asks_for_a_project_network() {
+    let manifest = lightshuttle_manifest::Manifest::parse(
+        r#"
+project:
+  name: bare
+resources:
+  worker:
+    process:
+      command: ["node", "worker.js"]
+"#,
+    )
+    .expect("a process-only manifest parses");
+
+    let plan = lightshuttle_runtime::LifecyclePlan::from_manifest(&manifest).expect("plan builds");
+    let runtime = lightshuttle_runtime::testkit::MockRuntime::new();
+    let observer = runtime.clone();
+
+    let (manager, _events) = lightshuttle_runtime::LifecycleManager::new(plan, runtime);
+    manager.start_all().await.expect("the stack starts");
+
+    assert!(
+        observer.ensured_networks().is_empty(),
+        "a project made only of process resources must never ask for a bridge \
+         network; asked for: {:?}",
+        observer.ensured_networks()
+    );
+}
+
+/// The contrast, at the same level: a plan that does hold a container asks for
+/// its network exactly once, before anything starts.
+#[tokio::test]
+async fn a_plan_holding_a_container_asks_for_its_network_once() {
+    let manifest = lightshuttle_manifest::Manifest::parse(
+        r#"
+project:
+  name: mixed
+resources:
+  api:
+    container:
+      image: alpine
+  worker:
+    process:
+      command: ["node", "worker.js"]
+"#,
+    )
+    .expect("a mixed manifest parses");
+
+    let plan = lightshuttle_runtime::LifecyclePlan::from_manifest(&manifest).expect("plan builds");
+    let runtime = lightshuttle_runtime::testkit::MockRuntime::new();
+    let observer = runtime.clone();
+
+    let (manager, _events) = lightshuttle_runtime::LifecycleManager::new(plan, runtime);
+    manager.start_all().await.expect("the stack starts");
+
+    assert_eq!(
+        observer.ensured_networks(),
+        vec!["mixed".to_owned()],
+        "a project holding a container must ask for its network, once"
     );
 }
