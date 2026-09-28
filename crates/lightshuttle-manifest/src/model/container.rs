@@ -49,7 +49,7 @@ pub struct ContainerConfig {
     /// Volume mappings in `"host:container"` or `"named:container"` form.
     ///
     /// Relative host paths (starting with `.`) are resolved against the
-    /// manifest directory by [`crate::Manifest::resolve_host_volume_paths`] before
+    /// manifest directory by [`crate::Manifest::resolve_host_paths`] before
     /// they reach the runtime.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub volumes: Vec<String>,

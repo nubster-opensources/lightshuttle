@@ -11,6 +11,7 @@ use std::time::Duration;
 use lightshuttle_runtime::{
     Argument, ContainerSpec, ContainerStatus, DockerRuntime, ImageSource, ResourceRuntime,
 };
+use lightshuttle_spec::ResourceSpec;
 
 fn small_image_spec(name: &str) -> ContainerSpec {
     let mut spec = ContainerSpec::new(
@@ -31,7 +32,7 @@ fn small_image_spec(name: &str) -> ContainerSpec {
 #[ignore = "requires a running Docker daemon"]
 async fn start_inspect_stop_alpine() {
     let runtime = DockerRuntime::connect().expect("Docker daemon reachable");
-    let spec = small_image_spec("lightshuttle_it_start_inspect_stop");
+    let spec = ResourceSpec::Container(small_image_spec("lightshuttle_it_start_inspect_stop"));
 
     let id = runtime.start(&spec).await.expect("container starts");
 
@@ -65,7 +66,7 @@ async fn builds_and_runs_a_dockerfile_resource() {
     std::fs::write(context.path().join(".dockerignore"), b"*.tmp\n").expect("ignore written");
 
     let runtime = DockerRuntime::connect().expect("Docker daemon reachable");
-    let spec = ContainerSpec::new(
+    let spec = ResourceSpec::Container(ContainerSpec::new(
         "lightshuttle_it_build_run".to_owned(),
         "lightshuttle_it".to_owned(),
         "build_run".to_owned(),
@@ -76,7 +77,7 @@ async fn builds_and_runs_a_dockerfile_resource() {
             target: None,
             tag: "lightshuttle/it_build_run:dev".to_owned(),
         },
-    );
+    ));
 
     let id = runtime
         .start(&spec)
@@ -133,7 +134,7 @@ async fn builds_buildkit_only_dockerfile() {
     drop(dockerfile);
 
     let runtime = DockerRuntime::connect().expect("Docker daemon reachable");
-    let spec = ContainerSpec::new(
+    let spec = ResourceSpec::Container(ContainerSpec::new(
         "lightshuttle_it_buildkit".to_owned(),
         "lightshuttle_it".to_owned(),
         "buildkit".to_owned(),
@@ -144,7 +145,7 @@ async fn builds_buildkit_only_dockerfile() {
             target: None,
             tag: "lightshuttle/it_buildkit:dev".to_owned(),
         },
-    );
+    ));
 
     let id = runtime
         .start(&spec)
@@ -186,7 +187,7 @@ async fn builds_a_dockerfile_that_copies_symlinks() {
     drop(dockerfile);
 
     let runtime = DockerRuntime::connect().expect("Docker daemon reachable");
-    let spec = ContainerSpec::new(
+    let spec = ResourceSpec::Container(ContainerSpec::new(
         "lightshuttle_it_build_symlinks".to_owned(),
         "lightshuttle_it".to_owned(),
         "build_symlinks".to_owned(),
@@ -197,7 +198,7 @@ async fn builds_a_dockerfile_that_copies_symlinks() {
             target: None,
             tag: "lightshuttle/it_build_symlinks:dev".to_owned(),
         },
-    );
+    ));
 
     let id = runtime
         .start(&spec)

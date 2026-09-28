@@ -50,10 +50,18 @@
 
 #![deny(missing_docs)]
 
+mod consumer;
 mod error;
+mod process_spec;
+mod resource_spec;
 mod spec;
 
+pub use crate::consumer::{
+    ConsumerKind, HOST_GATEWAY_NAME, LOOPBACK_ADDRESS, outputs_for_consumer,
+};
 pub use crate::error::{Result, SpecError};
+pub use crate::process_spec::ProcessSpec;
+pub use crate::resource_spec::ResourceSpec;
 pub use crate::spec::{
     Argument, ContainerSpec, HealthcheckSpec, ImageSource, PortBinding, ResolvedResource,
     ResourceOutputs, SENSITIVE_OUTPUTS, VolumeBinding, VolumeSource, from_resource,

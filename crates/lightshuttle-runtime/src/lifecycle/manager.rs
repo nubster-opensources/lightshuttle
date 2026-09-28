@@ -44,19 +44,43 @@ use crate::lifecycle::error::LifecycleError;
 use crate::lifecycle::plan::LifecyclePlan;
 use crate::lifecycle::status::{LifecycleEvent, NodeStatus};
 use crate::runtime::{ResourceId, ResourceRuntime};
-use lightshuttle_spec::{ResolvedResource, ResourceOutputs, from_resource};
+use lightshuttle_spec::{
+    ConsumerKind, ResolvedResource, ResourceOutputs, from_resource, outputs_for_consumer,
+};
 
 /// Default healthcheck timeout, applied when the manifest does not
 /// provide one of its own. Kept conservative for v0.1.
 const DEFAULT_HEALTHCHECK_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// What a dependency publishes once it is ready, for its dependents to render
+/// their references from.
+///
+/// The resolved resource travels, never one rendering of it. A
+/// `${resources.<name>.host}` reference stopped having a single value: a
+/// container reaches a service across the project network, a native process
+/// reaches it on the host loopback. Publishing a rendered value would mean the
+/// producer choosing an address on behalf of consumers whose nature it does not
+/// know, and a process depending on a database would receive a Docker DNS name
+/// it cannot resolve, with no error to show for it.
+///
+/// The resource carried here is the one that survived its own interpolation, so
+/// rendering it again for each consumer cannot lose a value resolved from the
+/// environment.
+#[derive(Debug, Clone)]
+struct ResolvedDependency {
+    /// The dependency as it stands after its own interpolation ran.
+    kind: ResourceKind,
+    /// Project the dependency belongs to.
+    project: String,
+}
 
 /// Per-resource shared state.
 #[derive(Clone)]
 struct NodeHandle {
     status_tx: Arc<watch::Sender<NodeStatus>>,
     status_rx: watch::Receiver<NodeStatus>,
-    outputs_tx: Arc<watch::Sender<Option<ResourceOutputs>>>,
-    outputs_rx: watch::Receiver<Option<ResourceOutputs>>,
+    outputs_tx: Arc<watch::Sender<Option<ResolvedDependency>>>,
+    outputs_rx: watch::Receiver<Option<ResolvedDependency>>,
     container_id: Arc<Mutex<Option<ResourceId>>>,
     started_at: Arc<Mutex<Option<SystemTime>>>,
     /// Held for the full duration of a restart so concurrent restarts of
@@ -227,6 +251,36 @@ impl<R: ResourceRuntime + 'static> LifecycleManager<R> {
         }
     }
 
+    /// Creates the per-project bridge network once, before anything starts, and
+    /// only when the plan holds a resource that needs one.
+    ///
+    /// A project made only of `process` resources never gets a network, and
+    /// therefore never needs a container daemon at all.
+    ///
+    /// Doing this up front rather than letting the first container start create
+    /// it is what makes the address a process binds to independent of start
+    /// order. That address is the project gateway under a bare Linux engine,
+    /// and the runtime reads "this project holds a container" off the
+    /// network's existence: deciding it from whether a container had *already*
+    /// started would give a process that the plan happens to start first the
+    /// loopback, and no container could then reach it.
+    async fn ensure_network_if_the_project_holds_a_container(&self) -> Result<(), LifecycleError> {
+        let Some(project) = self.plan.nodes().first().map(|node| node.project.as_str()) else {
+            return Ok(());
+        };
+        if self.plan.nodes().iter().all(|node| node.kind == "process") {
+            return Ok(());
+        }
+
+        self.runtime
+            .ensure_project_network(project)
+            .await
+            .map_err(|source| LifecycleError::Start {
+                resource: project.to_owned(),
+                source,
+            })
+    }
+
     /// Start every resource in topological order, with independent branches
     /// starting in parallel.
     ///
@@ -245,12 +299,15 @@ impl<R: ResourceRuntime + 'static> LifecycleManager<R> {
     /// Returns the first [`crate::LifecycleError`] encountered. Secondary
     /// failures from the automatic rollback are logged but not returned.
     pub async fn start_all(&self) -> Result<(), LifecycleError> {
+        self.ensure_network_if_the_project_holds_a_container()
+            .await?;
+
         let mut handles: Vec<tokio::task::JoinHandle<Result<(), LifecycleError>>> =
             Vec::with_capacity(self.plan.nodes().len());
 
         for node in self.plan.nodes() {
             let mut dep_status_rxs: HashMap<String, watch::Receiver<NodeStatus>> = HashMap::new();
-            let mut dep_outputs_rxs: HashMap<String, watch::Receiver<Option<ResourceOutputs>>> =
+            let mut dep_outputs_rxs: HashMap<String, watch::Receiver<Option<ResolvedDependency>>> =
                 HashMap::new();
             for dep in &node.depends_on {
                 let handle = self
@@ -561,7 +618,7 @@ impl<R: ResourceRuntime + 'static> LifecycleManager<R> {
         // Collect dependency watch receivers. Deps are already Healthy,
         // so start_one's wait loop returns instantly.
         let mut dep_status_rxs: HashMap<String, watch::Receiver<NodeStatus>> = HashMap::new();
-        let mut dep_outputs_rxs: HashMap<String, watch::Receiver<Option<ResourceOutputs>>> =
+        let mut dep_outputs_rxs: HashMap<String, watch::Receiver<Option<ResolvedDependency>>> =
             HashMap::new();
         for dep in &node.depends_on {
             let dep_handle = self
@@ -634,7 +691,7 @@ async fn start_one<R: ResourceRuntime + 'static>(
     runtime: Arc<R>,
     handle: NodeHandle,
     dep_status_rxs: HashMap<String, watch::Receiver<NodeStatus>>,
-    mut dep_outputs_rxs: HashMap<String, watch::Receiver<Option<ResourceOutputs>>>,
+    mut dep_outputs_rxs: HashMap<String, watch::Receiver<Option<ResolvedDependency>>>,
     event_tx: broadcast::Sender<LifecycleEvent>,
     extra_env: Arc<HashMap<String, String>>,
 ) -> Result<(), LifecycleError> {
@@ -670,12 +727,13 @@ async fn start_one<R: ResourceRuntime + 'static>(
         }
     }
 
-    // 2. Collect dependency outputs.
-    let mut dep_outputs: HashMap<String, ResourceOutputs> = HashMap::new();
+    // 2. Collect the resolved dependencies. Rendering happens later, once,
+    //    from the point of view of the resource being started.
+    let mut dep_resources: HashMap<String, ResolvedDependency> = HashMap::new();
     for (dep_name, rx) in &mut dep_outputs_rxs {
         loop {
             if let Some(out) = rx.borrow_and_update().clone() {
-                dep_outputs.insert(dep_name.clone(), out);
+                dep_resources.insert(dep_name.clone(), out);
                 break;
             }
             if rx.changed().await.is_err() {
@@ -694,10 +752,13 @@ async fn start_one<R: ResourceRuntime + 'static>(
 
     // 3. Resolve interpolations on the raw resource, lower it, then inject
     //    the LSH_<DEP>_<PROP> env vars.
-    let ResolvedResource {
-        spec: resolved_spec,
-        outputs: resolved_outputs,
-    } = match interpolate_lower_and_inject(&resource, &project, &name, &dep_outputs, &extra_env) {
+    let (
+        ResolvedResource {
+            spec: resolved_spec,
+            outputs: _,
+        },
+        resolved_kind,
+    ) = match interpolate_lower_and_inject(&resource, &project, &name, &dep_resources, &extra_env) {
         Ok(r) => r,
         Err(reason) => {
             let _ = handle.status_tx.send(NodeStatus::Failed {
@@ -713,7 +774,7 @@ async fn start_one<R: ResourceRuntime + 'static>(
     // 4. Remove any container left over from a previous run so the
     //    create call below never collides with a stale name.
     let _ = handle.status_tx.send(NodeStatus::Starting);
-    if let Err(source) = runtime.remove(&resolved_spec.name).await {
+    if let Err(source) = runtime.remove(resolved_spec.name()).await {
         let _ = handle.status_tx.send(NodeStatus::Failed {
             reason: source.to_string(),
         });
@@ -770,7 +831,10 @@ async fn start_one<R: ResourceRuntime + 'static>(
         .await
     {
         Ok(()) => {
-            let _ = handle.outputs_tx.send(Some(resolved_outputs));
+            let _ = handle.outputs_tx.send(Some(ResolvedDependency {
+                kind: resolved_kind,
+                project: project.clone(),
+            }));
             let _ = handle.status_tx.send(NodeStatus::Healthy);
             let _ = event_tx.send(LifecycleEvent::ResourceHealthy { name: name.clone() });
             Ok(())
@@ -822,12 +886,29 @@ fn interpolate_lower_and_inject(
     resource: &ResourceKind,
     project: &str,
     name: &str,
-    dep_outputs: &HashMap<String, ResourceOutputs>,
+    dep_resources: &HashMap<String, ResolvedDependency>,
     extra_env: &HashMap<String, String>,
-) -> std::result::Result<ResolvedResource, String> {
+) -> std::result::Result<(ResolvedResource, ResourceKind), String> {
+    // Which side is asking. This is the whole reason the rendering happens
+    // here, in the consumer, rather than once in each producer: the same
+    // reference on the same dependency renders to two different addresses
+    // depending on the nature of the resource that reads it.
+    let consumer = match resource {
+        ResourceKind::Process(_) => ConsumerKind::Process,
+        _ => ConsumerKind::Container,
+    };
+
+    let mut dep_outputs: HashMap<String, ResourceOutputs> = HashMap::new();
+    for (dep_name, dependency) in dep_resources {
+        let outputs =
+            outputs_for_consumer(&dependency.project, dep_name, &dependency.kind, consumer)
+                .map_err(|error| format!("`{name}` cannot reach `{dep_name}`: {error}"))?;
+        dep_outputs.insert(dep_name.clone(), outputs);
+    }
+
     let mut ctx = InterpolationContext::from_env()
         .with_env(extra_env.iter().map(|(k, v)| (k.clone(), v.clone())));
-    for (dep_name, outputs) in dep_outputs {
+    for (dep_name, outputs) in &dep_outputs {
         ctx = ctx.with_resource(dep_name.clone(), outputs.clone());
     }
     let interpolator = Interpolator::new(&ctx);
@@ -838,25 +919,27 @@ fn interpolate_lower_and_inject(
         .interpolate_in_place(&interpolator)
         .map_err(|e| e.to_string())?;
 
-    // Lower the fully resolved resource to its container spec and outputs.
+    // Lower the fully resolved resource to its spec and outputs.
     let mut resolved =
         from_resource(project, name, &resolved_resource).map_err(|e| e.to_string())?;
 
-    // Inject LSH_<DEP>_<PROPERTY> variables from dependency outputs.
-    for (dep_name, outputs) in dep_outputs {
+    // Inject LSH_<DEP>_<PROPERTY> variables from the same rendering the
+    // interpolations used, so a reference and its automatic variable can never
+    // hand the same service two different addresses.
+    for (dep_name, outputs) in &dep_outputs {
         let dep_upper = dep_name.to_uppercase().replace('-', "_");
         for (prop, value) in outputs {
             let prop_upper = prop.to_uppercase().replace('-', "_");
             let key = format!("LSH_{dep_upper}_{prop_upper}");
             resolved
                 .spec
-                .env
+                .env_mut()
                 .entry(key)
                 .or_insert_with(|| value.clone());
         }
     }
 
-    Ok(resolved)
+    Ok((resolved, resolved_resource))
 }
 
 #[cfg(unix)]

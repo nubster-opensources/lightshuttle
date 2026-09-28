@@ -12,7 +12,12 @@ use std::time::Duration;
 pub type Result<T> = std::result::Result<T, RuntimeError>;
 
 /// Errors raised by a [`crate::ResourceRuntime`] implementation.
+///
+/// The enum is `#[non_exhaustive]`: it now covers native processes as well as
+/// containers, so new variants will keep arriving, and callers must carry a
+/// wildcard arm rather than be broken by each one.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum RuntimeError {
     /// The runtime could not establish a connection to the underlying
     /// container daemon (Docker socket, Podman API, ...).
@@ -111,4 +116,56 @@ pub enum RuntimeError {
     /// The provided [`crate::ContainerSpec`] is structurally invalid.
     #[error("invalid container spec: {0}")]
     InvalidSpec(String),
+
+    /// The program named by a `process` resource could not be found.
+    ///
+    /// Reported with the program as written in the manifest, never the
+    /// expanded search path: the manifest is what the developer can fix.
+    #[error("no executable named `{program}` was found on PATH")]
+    ExecutableNotFound {
+        /// Program as the manifest names it.
+        program: String,
+    },
+
+    /// A `process` resource could not be started.
+    #[error("failed to start process `{resource}` running `{program}`")]
+    ProcessStart {
+        /// Resource name as declared in the manifest.
+        resource: String,
+        /// Program that could not be started.
+        program: String,
+        /// Underlying operating system error.
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// A process group could not be signalled, or did not end.
+    #[error("failed to stop the process group led by {pid}")]
+    ProcessStop {
+        /// Process number of the group leader.
+        pid: u32,
+        /// What went wrong, as the platform reported it.
+        reason: String,
+    },
+
+    /// An operation named a `process` this runtime does not supervise.
+    ///
+    /// Distinct from [`Self::NotFound`], which names a container the daemon
+    /// does not hold: this one means the identifier does not belong to this
+    /// supervisor at all, which is what a `logs` or `inspect` on a process
+    /// started by a different `up` looks like.
+    #[error("process `{name}` is not supervised by this runtime")]
+    ProcessNotSupervised {
+        /// Identifier the caller passed.
+        name: String,
+    },
+
+    /// The on-disk process registry of a project could not be read or written.
+    #[error("failed to access the process registry at `{path}`")]
+    ProcessRegistry {
+        /// Path of the registry file.
+        path: String,
+        /// Underlying error.
+        reason: String,
+    },
 }

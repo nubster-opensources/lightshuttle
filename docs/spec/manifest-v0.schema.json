@@ -180,7 +180,7 @@
           }
         },
         "volumes": {
-          "description": "Volume mappings in `\"host:container\"` or `\"named:container\"` form.\n\nRelative host paths (starting with `.`) are resolved against the\nmanifest directory by [`crate::Manifest::resolve_host_volume_paths`] before\nthey reach the runtime.",
+          "description": "Volume mappings in `\"host:container\"` or `\"named:container\"` form.\n\nRelative host paths (starting with `.`) are resolved against the\nmanifest directory by [`crate::Manifest::resolve_host_paths`] before\nthey reach the runtime.",
           "type": "array",
           "items": {
             "type": "string"
@@ -239,7 +239,7 @@
           ]
         },
         "context": {
-          "description": "Build context path, relative to the manifest file.\n\nResolved to an absolute path by\n[`crate::Manifest::resolve_host_volume_paths`] before it is handed to the\nruntime.\n\nSymbolic links are sent as links, never followed, as `docker build`\nsends them. The daemon resolves a link within the context, so a link\nwhose target is outside it, absolute or missing is copied as a link\nbut cannot be used as a `COPY` source. `COPY .` keeps each link, and\nso the target path it names, in the image.",
+          "description": "Build context path, relative to the manifest file.\n\nResolved to an absolute path by\n[`crate::Manifest::resolve_host_paths`] before it is handed to the\nruntime.\n\nSymbolic links are sent as links, never followed, as `docker build`\nsends them. The daemon resolves a link within the context, so a link\nwhose target is outside it, absolute or missing is copied as a link\nbut cannot be used as a `COPY` source. `COPY .` keeps each link, and\nso the target path it names, in the image.",
           "type": "string"
         },
         "depends_on": {
@@ -305,7 +305,7 @@
           ]
         },
         "volumes": {
-          "description": "Volume mappings in `\"host:container\"` or `\"named:container\"` form.\n\nRelative host paths are resolved by\n[`crate::Manifest::resolve_host_volume_paths`].",
+          "description": "Volume mappings in `\"host:container\"` or `\"named:container\"` form.\n\nRelative host paths are resolved by\n[`crate::Manifest::resolve_host_paths`].",
           "type": "array",
           "items": {
             "type": "string"
@@ -687,6 +687,54 @@
       },
       "additionalProperties": false
     },
+    "ProcessConfig": {
+      "description": "Configuration of a `process` resource executed natively on the host.\n\nCorresponds to the `process:` key in a resource entry. The runtime\nresolves the executable, starts it in its own process group, injects the\ndeclared environment on top of what it provides itself, and supervises it\nfor as long as the stack is up.\n\nA `process` is a long-running service. Any exit, whatever the status code,\nis a failure: a dependent does not wait for its antecedent to finish, it\nwaits for it to stand up.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "description": "Program to run, followed by its arguments.\n\nAlways a list, never a single string, and never interpreted by a\nshell: a manifest must read the same way on every machine, and a\nshell would make quoting and word splitting depend on the host.\n\nThe first element names the program. The runtime resolves it against\n`PATH`, honouring `PATHEXT` on Windows so that `npm` finds `npm.cmd`\nwithout the manifest having to say so.\n\nAn empty list is rejected by [`crate::Manifest::validate`].",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "depends_on": {
+          "description": "Names of other resources this process must wait for before starting.\nValidated by [`crate::Manifest::validate`].",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "description": "Environment variables injected into the process on top of those the\nruntime provides itself.\n\nValues are interpolated: `${env.NAME}` and\n`${resources.name.property}` expressions are resolved before the\nprocess starts. A value resolved from another resource is rendered\nfrom the point of view of a host process, which is not the value a\ncontainer would receive for the same reference.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "port": {
+          "description": "Port the process is expected to listen on.\n\nOptional, because a companion that listens on nothing is a legitimate\nresource. Omitting it costs one thing only: another resource cannot\nreference this one through `${resources.<name>.host}`, `.url` or\n`.port`, and such a reference is refused by\n[`crate::Manifest::validate`] rather than guessed at runtime.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "working_dir": {
+          "description": "Working directory the process starts in.\n\nA relative path is resolved against the manifest directory, not\nagainst the directory the command was invoked from, so the same\nmanifest behaves identically wherever it is run from.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ]
+    },
     "Project": {
       "description": "Project metadata, corresponding to the `project:` section of the manifest.\n\nThe `name` field must match the pattern `^[a-z][a-z0-9_-]{0,31}$` and is\nvalidated by [`Manifest::validate`]. It is used by the runtime as a prefix\nfor container and network names, and by `lightshuttle-export` as the\ndefault Helm chart name and Kubernetes namespace.",
       "type": "object",
@@ -835,6 +883,19 @@
           "additionalProperties": false,
           "required": [
             "dockerfile"
+          ]
+        },
+        {
+          "description": "Native command executed on the host. Configuration carried by [`ProcessConfig`].",
+          "type": "object",
+          "properties": {
+            "process": {
+              "$ref": "#/$defs/ProcessConfig"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "process"
           ]
         }
       ]

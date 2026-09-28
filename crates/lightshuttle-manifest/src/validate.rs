@@ -42,9 +42,12 @@ impl Manifest {
     /// - Project name and every resource name match `^[a-z][a-z0-9_-]{0,31}$`.
     /// - Kind-specific constraints: non-empty `image` for `container`,
     ///   non-empty `context` for `dockerfile`, valid `database` pattern for
-    ///   `postgres`, syntactically valid healthcheck durations for all kinds.
+    ///   `postgres`, non-empty `command` for `process`, syntactically valid
+    ///   healthcheck durations for all kinds.
     /// - No cycles in the `depends_on` graph.
-    /// - All `${resources.name.*}` interpolations reference existing resources.
+    /// - No `process` depends on a container that publishes no port.
+    /// - All `${resources.name.*}` interpolations reference existing resources,
+    ///   and none asks an address of a `process` that declares no `port`.
     /// - `dashboard.port` is not `0`.
     /// - All resource keys inside `export.*.resources` exist in the manifest.
     ///
@@ -58,6 +61,7 @@ impl Manifest {
         }
 
         validate_dependency_graph(&self.resources)?;
+        validate_process_dependencies(&self.resources)?;
         validate_references(self)?;
         validate_dashboard(self)?;
         validate_export_targets(self)?;
@@ -176,6 +180,13 @@ fn validate_resource_kind(name: &str, kind: &ResourceKind) -> Result<()> {
             validate_secret_keys(name, &c.env, &c.secrets)?;
         }
         ResourceKind::Redis(_) => {}
+        ResourceKind::Process(c) => {
+            if c.command.is_empty() {
+                return Err(ManifestError::EmptyProcessCommand {
+                    resource: name.to_owned(),
+                });
+            }
+        }
     }
 
     if let Some(hc) = kind.healthcheck() {
@@ -322,6 +333,15 @@ fn visit<'a>(
     Ok(())
 }
 
+/// Properties of a resource whose value is an address, and which therefore
+/// cannot be rendered for a `process` that declares no `port`.
+///
+/// Listed rather than treated as "any property" so that a property added
+/// later gets a deliberate decision instead of silently inheriting this
+/// refusal. Today a portless process exposes none of the three, so the list
+/// happens to cover everything a reference could ask of it.
+const ADDRESS_PROPERTIES: [&str; 3] = ["host", "url", "port"];
+
 fn validate_references(manifest: &Manifest) -> Result<()> {
     let ctx = InterpolationContext::new();
     let interpolator = Interpolator::new(&ctx);
@@ -330,13 +350,70 @@ fn validate_references(manifest: &Manifest) -> Result<()> {
     for (name, kind) in &manifest.resources {
         for value in kind.interpolatable_strings() {
             for reference in interpolator.scan(&value)? {
-                if let Reference::Resource { name: target, .. } = reference
-                    && !known_resources.contains(target.as_str())
-                {
+                let Reference::Resource {
+                    name: target,
+                    property,
+                } = reference
+                else {
+                    continue;
+                };
+                if !known_resources.contains(target.as_str()) {
                     return Err(ManifestError::UnknownResource(format!(
                         "`{target}` (referenced from `{name}`)"
                     )));
                 }
+                if is_portless_process(manifest, &target)
+                    && ADDRESS_PROPERTIES.contains(&property.as_str())
+                {
+                    return Err(ManifestError::ProcessReferenceWithoutPort {
+                        consumer: name.clone(),
+                        target,
+                        property,
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Whether `name` designates a `process` resource that declares no `port`.
+fn is_portless_process(manifest: &Manifest, name: &str) -> bool {
+    matches!(
+        manifest.resources.get(name),
+        Some(ResourceKind::Process(c)) if c.port.is_none()
+    )
+}
+
+/// Refuse a `process` that depends on a container publishing no port.
+///
+/// A process reaches a container through a port published on the host
+/// loopback, never through the project network: it is not attached to it.
+/// A container that publishes nothing therefore offers the process no address
+/// at all, so the dependency could only ever be a wait for something
+/// unreachable.
+///
+/// Only `container` and `dockerfile` can publish nothing. `postgres` and
+/// `redis` always publish, on their declared port or on the default for the
+/// engine, and another `process` is covered by
+/// [`ManifestError::ProcessReferenceWithoutPort`] instead.
+fn validate_process_dependencies(resources: &IndexMap<String, ResourceKind>) -> Result<()> {
+    for (name, kind) in resources {
+        if !matches!(kind, ResourceKind::Process(_)) {
+            continue;
+        }
+        for dependency in kind.depends_on() {
+            let published_ports = match resources.get(dependency) {
+                Some(ResourceKind::Container(c)) => &c.ports,
+                Some(ResourceKind::Dockerfile(c)) => &c.ports,
+                _ => continue,
+            };
+            if published_ports.is_empty() {
+                return Err(ManifestError::ProcessDependencyWithoutPublishedPort {
+                    process: name.clone(),
+                    container: dependency.clone(),
+                });
             }
         }
     }

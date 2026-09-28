@@ -5,13 +5,14 @@
 //! [`LogChunkStream`] type alias. Concrete implementations (e.g.
 //! [`crate::DockerRuntime`]) live in sibling modules.
 
+use std::net::IpAddr;
 use std::pin::Pin;
 use std::time::{Duration, SystemTime};
 
 use futures::stream::Stream;
 
 use crate::error::Result;
-use lightshuttle_spec::ContainerSpec;
+use lightshuttle_spec::ResourceSpec;
 
 /// Opaque identifier for a container managed by the runtime.
 ///
@@ -92,20 +93,25 @@ pub struct LogChunk {
 /// response body or a WebSocket session).
 pub type LogChunkStream = Pin<Box<dyn Stream<Item = Result<LogChunk>> + Send>>;
 
-/// Container runtime abstraction.
+/// Resource runtime abstraction.
 ///
 /// The trait is intentionally narrow: it exposes only the operations
 /// that the lifecycle manager needs. Daemon-specific capabilities
 /// (network inspection, image management) stay private to each
 /// implementation.
 ///
+/// It returns `impl Future` rather than boxed futures, so it is not
+/// object safe. Two runtimes therefore never coexist behind a `dyn`: a
+/// build that drives both containers and native processes does so through
+/// one type that routes on [`ResourceSpec`], not through dynamic dispatch.
+///
 /// Implementations live in submodules such as [`crate::DockerRuntime`].
 pub trait ResourceRuntime: Send + Sync {
-    /// Start a container according to `spec`. Pulls the image if not
-    /// already present locally.
+    /// Start a resource according to `spec`. For a container, pulls the
+    /// image if it is not already present locally.
     fn start(
         &self,
-        spec: &ContainerSpec,
+        spec: &ResourceSpec,
     ) -> impl std::future::Future<Output = Result<ResourceId>> + Send;
 
     /// Stop a container, sending `SIGTERM` and then `SIGKILL` after
@@ -169,4 +175,21 @@ pub trait ResourceRuntime: Send + Sync {
         &self,
         project: &str,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    /// Address a native process of `project` must bind to, so that the
+    /// containers of that project can reach it.
+    ///
+    /// Only the runtime can answer: the value depends on the daemon and on
+    /// what the project holds, never on the manifest. Under a Docker Desktop
+    /// daemon it is the loopback address, which containers reach through the
+    /// host alias; under a Linux engine it is the project network gateway,
+    /// because a process bound to loopback is unreachable from a container
+    /// there. When the project holds no container at all, no network exists
+    /// and no container is asking, so it is the loopback address again:
+    /// binding wider would publish a development service to the local
+    /// network for nobody.
+    fn process_bind_address(
+        &self,
+        project: &str,
+    ) -> impl std::future::Future<Output = Result<IpAddr>> + Send;
 }

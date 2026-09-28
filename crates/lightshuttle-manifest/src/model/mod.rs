@@ -24,6 +24,8 @@ pub mod observability;
 pub mod port;
 /// PostgreSQL resource configuration.
 pub mod postgres;
+/// Native host process resource configuration.
+pub mod process;
 /// Redis resource configuration.
 pub mod redis;
 /// Resource kind enumeration.
@@ -44,6 +46,7 @@ pub use manifest::{Manifest, Project, Version};
 pub use observability::{ObservabilityConfig, OtelConfig};
 pub use port::PortMapping;
 pub use postgres::PostgresConfig;
+pub use process::ProcessConfig;
 pub use redis::RedisConfig;
 pub use resource::ResourceKind;
 pub use volume::Volume;

@@ -12,14 +12,16 @@
 #![allow(clippy::must_use_candidate)]
 
 use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
 use std::num::NonZeroU32;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 use lightshuttle_runtime::{
-    ContainerSpec, ContainerStatus, LogChunkStream, ManagedContainer, ProjectInventory, ResourceId,
+    ContainerStatus, LogChunkStream, ManagedContainer, ProjectInventory, ResourceId,
     ResourceRuntime, Result, RuntimeError, SweepFailure, SweepPolicy, sweep_project,
 };
+use lightshuttle_spec::ResourceSpec;
 use tokio::time::Instant;
 
 /// One container tracked by [`ScriptedRuntime`]: its identifier and the
@@ -211,7 +213,7 @@ impl ProjectInventory for ScriptedRuntime {
 }
 
 impl ResourceRuntime for ScriptedRuntime {
-    async fn start(&self, _spec: &ContainerSpec) -> Result<ResourceId> {
+    async fn start(&self, _spec: &ResourceSpec) -> Result<ResourceId> {
         Err(scripted_error("start is not used by sweep_project"))
     }
 
@@ -294,6 +296,10 @@ impl ResourceRuntime for ScriptedRuntime {
                 "network teardown fails while a container is still attached",
             ))
         }
+    }
+
+    async fn process_bind_address(&self, _project: &str) -> Result<IpAddr> {
+        unimplemented!("not used by this test")
     }
 }
 

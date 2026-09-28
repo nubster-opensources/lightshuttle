@@ -172,7 +172,7 @@ jobs:
       # directly; every test runs under a unique project name and tears its
       # own containers and network down through an RAII guard.
       # Run locally with: cargo test -p lightshuttle-runtime -- --ignored
-      - run: cargo test -p lightshuttle-runtime --test harness --test integration_docker --test lifecycle_integration --test lifecycle_scenarios --test networking --test secrets_scenarios -- --ignored --nocapture
+      - run: cargo test -p lightshuttle-runtime --test container_host_alias --test harness --test integration_docker --test lifecycle_integration --test lifecycle_scenarios --test networking --test process_only_project --test secrets_scenarios -- --ignored --nocapture
 
   bench:
     name: Cold-start benchmark
@@ -217,6 +217,11 @@ jobs:
       # Docker-free CLI smoke: parse, strict-validate and export. Runs on
       # every OS, including the Tier 2 targets that have no Docker daemon.
       - run: cargo test -p lightshuttle --test cli_offline -- --ignored --nocapture
+      # Native process lifecycle: no daemon needed, but the file is
+      # `#![cfg(unix)]` and compiles to an empty binary on Windows, which
+      # would report green without running anything.
+      - if: matrix.os != 'windows-latest'
+        run: cargo test -p lightshuttle --test process_lifecycle -- --ignored --nocapture
       # Real container boot: Linux is the only runner with a Docker daemon.
       - if: matrix.os == 'ubuntu-latest'
         run: cargo test -p lightshuttle --test cli_smoke -- --ignored --nocapture
