@@ -367,15 +367,39 @@ pub(crate) async fn stop_group(pid: u32, grace: Duration) -> Result<()> {
             reason: "process number does not fit in a process identifier".to_owned(),
         })?);
 
-        match killpg(group, Signal::SIGTERM) {
-            Ok(()) => {}
-            // Already gone: the outcome asked for is the outcome observed.
-            Err(nix::errno::Errno::ESRCH) => return Ok(()),
-            Err(error) => {
-                return Err(RuntimeError::ProcessStop {
-                    pid,
-                    reason: error.to_string(),
-                });
+        // A process group that does not exist *yet* is indistinguishable from
+        // one that does not exist any more, and both are reported as `ESRCH`
+        // or, on BSD-derived systems, as `EPERM`.
+        //
+        // The window is real: `spawn` returns once the fork has happened, but
+        // the child joins its own group from inside the child, just before it
+        // execs. Signalling in that instant names a group nobody has created,
+        // and the difference between the two readings is whether the process
+        // number is still live. So the signal is retried while it is, and only
+        // then is the group taken to be gone.
+        let signal_deadline = tokio::time::Instant::now() + grace;
+        loop {
+            match killpg(group, Signal::SIGTERM) {
+                Ok(()) => break,
+                Err(nix::errno::Errno::ESRCH | nix::errno::Errno::EPERM)
+                    if started_at_epoch_seconds(pid).is_none() =>
+                {
+                    // The process itself is gone, so the outcome asked for is
+                    // the outcome already observed.
+                    return Ok(());
+                }
+                Err(_) if tokio::time::Instant::now() < signal_deadline => {
+                    tokio::time::sleep(STOP_POLL_INTERVAL).await;
+                }
+                Err(error) => {
+                    return Err(RuntimeError::ProcessStop {
+                        pid,
+                        reason: format!(
+                            "{error} while the process number is still live, so its group \
+                             could not be reached"
+                        ),
+                    });
+                }
             }
         }
 

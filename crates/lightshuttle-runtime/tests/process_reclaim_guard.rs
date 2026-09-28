@@ -29,7 +29,11 @@ use lightshuttle_runtime::{ProcessRecord, ProcessRegistry, ProcessRuntime};
 use lightshuttle_spec::ProcessSpec;
 
 const PROJECT: &str = "reclaim-guard";
-const GRACE: Duration = Duration::from_millis(50);
+/// Wide enough to cover the window in which a freshly forked child has not
+/// yet joined its own process group, which a loaded machine can stretch to
+/// tens of milliseconds. The tests below never wait it out: a group that is
+/// reachable is signalled at once.
+const GRACE: Duration = Duration::from_secs(2);
 
 /// An instant far enough in the past that no live process can claim it: the
 /// second after the epoch.
