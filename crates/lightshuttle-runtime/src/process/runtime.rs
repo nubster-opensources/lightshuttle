@@ -259,7 +259,25 @@ impl ProcessRuntime {
         let mut skipped = Vec::new();
 
         for record in registry.records()? {
-            if still_the_recorded_process(&record) {
+            // Owned first. A record this supervisor still holds a handle for
+            // is not a stranger's group, and treating it as one loses the only
+            // operation that takes a dead child out of the process table: the
+            // wait. Signalled by number, the child becomes a zombie, which
+            // every later check reads as alive, so the grace window is spent
+            // in full and the forced kill then reports whatever the platform
+            // makes of a group holding nothing but zombies.
+            if let Some(supervised) = self.take_supervised(project, &record.resource) {
+                match Arc::try_unwrap(supervised.process) {
+                    Ok(owned) => owned.stop(grace).await?,
+                    // Another caller still holds a handle, which only a live
+                    // `logs` stream does, so the wait is not ours to make.
+                    // Signalling the group by number reaches the same
+                    // processes without sole ownership.
+                    Err(shared) => launcher::stop_group(shared.pid(), grace).await?,
+                }
+            } else if still_the_recorded_process(&record) {
+                // Nothing of ours holds this one: the inter-terminal case the
+                // registry exists for, where the number is all there is.
                 launcher::stop_group(record.pid, grace).await?;
             } else {
                 // Gone, recycled, or an instant the system would not report:
@@ -315,6 +333,22 @@ impl ProcessRuntime {
             .lock()
             .expect("supervised mutex poisoned")
             .contains_key(id.as_str())
+    }
+
+    /// Removes and returns the process this supervisor started for `resource`
+    /// of `project`, when it still holds it.
+    ///
+    /// Found by the pair rather than by the map key. The key is the identity a
+    /// process was started under, and `<project>_<resource>` is not a decodable
+    /// form, so rebuilding a key from a registry record would be a guess that
+    /// is wrong whenever a resource name contains an underscore.
+    fn take_supervised(&self, project: &str, resource: &str) -> Option<Supervised> {
+        let mut supervised = self.supervised.lock().expect("supervised mutex poisoned");
+        let key = supervised
+            .iter()
+            .find(|(_, entry)| entry.project == project && entry.resource == resource)
+            .map(|(key, _)| key.clone())?;
+        supervised.remove(&key)
     }
 
     /// Registry of `project`, rooted under this runtime's state root.

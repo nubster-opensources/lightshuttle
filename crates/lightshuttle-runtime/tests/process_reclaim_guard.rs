@@ -170,6 +170,7 @@ async fn a_process_started_here_is_reclaimed_rather_than_skipped() {
         "a process this runtime started moments ago must be reclaimed, not \
          reported as stale; skipped: {skipped:?}"
     );
+    assert_not_left_zombie(pid);
     assert!(
         !process_is_alive(pid),
         "the reclaimed process must actually be gone"
@@ -211,4 +212,36 @@ fn process_is_alive(pid: u32) -> bool {
             .map(|output| String::from_utf8_lossy(&output.stdout).contains(&pid.to_string()))
             .unwrap_or(false)
     }
+}
+
+/// Fails when the operating system still holds `pid` as a zombie.
+///
+/// Nothing built on signalling can tell a zombie from a live process: a
+/// process that has exited but that nobody has waited for stays in the process
+/// table, so `kill -0` succeeds on it and `killpg` never answers `ESRCH`. A
+/// reclaim that signals by number instead of waiting on the child it owns
+/// therefore leaves the group looking alive for the whole grace window, and
+/// then reports whatever the final `SIGKILL` happens to return on that
+/// platform. Asserting the state directly names the cause once, rather than
+/// leaving the next reader to rediscover it from an `EPERM`.
+#[cfg(unix)]
+fn assert_not_left_zombie(pid: u32) {
+    let state = std::process::Command::new("ps")
+        .args(["-o", "stat=", "-p", &pid.to_string()])
+        .output()
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        .unwrap_or_default();
+
+    assert!(
+        !state.starts_with('Z'),
+        "the reclaimed process must be waited for, not left as a zombie; `ps` \
+         reports state {state:?} for process {pid}"
+    );
+}
+
+/// Windows keeps no zombie state: a terminated process leaves no entry a
+/// parent has to reap, so there is nothing to assert here.
+#[cfg(windows)]
+fn assert_not_left_zombie(pid: u32) {
+    let _ = pid;
 }
