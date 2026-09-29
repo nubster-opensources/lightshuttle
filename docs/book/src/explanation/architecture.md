@@ -59,7 +59,7 @@ to Compose or Helm, how telemetry is collected, all sit above it and depend on
 it, never the reverse.
 
 This is what lets the project stay testable and swappable. The runtime targets
-a narrow `ContainerRuntime` trait rather than Docker directly, so the lifecycle
+a narrow `ResourceRuntime` trait rather than Docker directly, so the lifecycle
 logic can be exercised against a mock with no daemon in sight. A second backend
 could be added without touching the manifest model. The rule is the reason a
 change to "how we talk to Docker" cannot ripple down into "what a manifest
@@ -80,7 +80,7 @@ exposes to its dependents (its `host`, `port`, `url`, and so on). This is where
 a declarative `postgres:` block becomes concrete defaults like image `16`, user
 `postgres`, port `5432`.
 
-**Execution and rendering.** `lightshuttle-runtime` owns the `ContainerRuntime`
+**Execution and rendering.** `lightshuttle-runtime` owns the `ResourceRuntime`
 trait, its `DockerRuntime` implementation, and the `LifecycleManager` that
 coordinates startup, supervision and shutdown of a whole stack. The same
 resolved model is reused by `lightshuttle-export`, which follows a compiler

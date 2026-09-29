@@ -20,7 +20,7 @@
 //!
 //! # Core abstractions
 //!
-//! ## [`ContainerRuntime`] trait
+//! ## [`ResourceRuntime`] trait
 //!
 //! The narrow abstraction that hides every daemon-specific detail.
 //! The lifecycle manager calls only the methods declared by this trait.
@@ -85,29 +85,37 @@
 
 pub use crate::docker::{DockerRuntime, LABEL_PROJECT, LABEL_RESOURCE, ManagedContainer};
 pub use crate::error::{Result, RuntimeError};
+pub use crate::host_runtime::HostRuntime;
 pub use crate::lifecycle::{
     EnvReport, EnvSource, EnvVarReport, EnvVarStatus, LifecycleError, LifecycleEvent,
     LifecycleHandle, LifecycleHandleError, LifecycleManager, LifecyclePlan, ManagerHandle,
     NodeStatus, PlanNode, ResourceStatus, ResourceView, RestartPermit,
 };
+pub use crate::process::{
+    BIND_ADDRESS_VARIABLE, ProcessExit, ProcessLogBuffer, ProcessRecord, ProcessRegistry,
+    ProcessRuntime, RecordedProcess, RunningProcess,
+};
 pub use crate::project_sweep::{
     ProjectInventory, SweepFailure, SweepPolicy, SweepReport, sweep_project,
 };
 pub use crate::runtime::{
-    ContainerId, ContainerRuntime, ContainerStatus, LogChunk, LogChunkStream, LogStream,
+    ContainerStatus, LogChunk, LogChunkStream, LogStream, ResourceId, ResourceRuntime,
 };
 pub use lightshuttle_spec::{
-    Argument, ContainerSpec, HealthcheckSpec, ImageSource, PortBinding, ResolvedResource,
-    ResourceOutputs, SpecError, VolumeBinding, VolumeSource, from_resource,
+    Argument, ConsumerKind, ContainerSpec, HOST_GATEWAY_NAME, HealthcheckSpec, ImageSource,
+    LOOPBACK_ADDRESS, PortBinding, ProcessSpec, ResolvedResource, ResourceOutputs, ResourceSpec,
+    SpecError, VolumeBinding, VolumeSource, from_resource, outputs_for_consumer,
 };
 
 mod docker;
 mod error;
+mod host_runtime;
 mod lifecycle;
+mod process;
 mod project_sweep;
 mod runtime;
 
-/// In-memory [`ContainerRuntime`] and supporting helpers for tests.
+/// In-memory [`ResourceRuntime`] and supporting helpers for tests.
 ///
 /// See [`testkit::MockRuntime`] for the main type.
 pub mod testkit;

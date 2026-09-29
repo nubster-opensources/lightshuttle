@@ -20,6 +20,6 @@ See [`crate::DockerfileConfig`] for the locally-built equivalent.
 | `image` | string | yes |  | Full image reference including the tag, e.g. `"nginx:1.25-alpine"`. |
 | `ports` | array of [PortMapping](common-types.md#portmapping) | no |  | Port mappings between the host and the container. Each element is a [`PortMapping`]: either a bare container port (mirrored on the host) or a full `"host:container"` string. |
 | `secrets` | map of string | no |  | Sensitive environment variables injected at runtime. These values behave like `env` during local execution, but production exporters replace them with placeholders instead of writing their contents to Compose, Kubernetes or Helm artifacts. |
-| `volumes` | array of string | no |  | Volume mappings in `"host:container"` or `"named:container"` form. Relative host paths (starting with `.`) are resolved against the manifest directory by [`crate::Manifest::resolve_host_volume_paths`] before they reach the runtime. |
+| `volumes` | array of string | no |  | Volume mappings in `"host:container"` or `"named:container"` form. Relative host paths (starting with `.`) are resolved against the manifest directory by [`crate::Manifest::resolve_host_paths`] before they reach the runtime. |
 | `working_dir` | string | no |  | Optional working directory override inside the container. |
 

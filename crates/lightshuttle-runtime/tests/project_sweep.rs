@@ -12,22 +12,23 @@
 #![allow(clippy::must_use_candidate)]
 
 use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
 use std::num::NonZeroU32;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 use lightshuttle_runtime::{
-    ContainerId, ContainerRuntime, ContainerSpec, ContainerStatus, LogChunkStream,
-    ManagedContainer, ProjectInventory, Result, RuntimeError, SweepFailure, SweepPolicy,
-    sweep_project,
+    ContainerStatus, LogChunkStream, ManagedContainer, ProjectInventory, ResourceId,
+    ResourceRuntime, Result, RuntimeError, SweepFailure, SweepPolicy, sweep_project,
 };
+use lightshuttle_spec::ResourceSpec;
 use tokio::time::Instant;
 
 /// One container tracked by [`ScriptedRuntime`]: its identifier and the
 /// resource it belongs to.
 #[derive(Clone)]
 struct Container {
-    id: ContainerId,
+    id: ResourceId,
     resource: String,
 }
 
@@ -59,7 +60,7 @@ struct State {
 
 /// In-memory double standing in for a Docker daemon plus a still-booting
 /// `lightshuttle up` supervisor. `sweep_project` only ever reaches this type
-/// through the narrow [`ContainerRuntime`] and [`ProjectInventory`] traits,
+/// through the narrow [`ResourceRuntime`] and [`ProjectInventory`] traits,
 /// exactly like the real `DockerRuntime`.
 ///
 /// Faithfulness: a single-pass implementation of `sweep_project` (list once,
@@ -109,7 +110,7 @@ impl ScriptedRuntime {
     /// Seeds the daemon with a container for `resource`, present before the
     /// sweep's first listing.
     fn with_initial_container(self, resource: &str) -> Self {
-        let id = ContainerId::new(format!("seed-{resource}"));
+        let id = ResourceId::new(format!("seed-{resource}"));
         self.lock().containers.push(Container {
             id,
             resource: resource.to_owned(),
@@ -211,12 +212,12 @@ impl ProjectInventory for ScriptedRuntime {
     }
 }
 
-impl ContainerRuntime for ScriptedRuntime {
-    async fn start(&self, _spec: &ContainerSpec) -> Result<ContainerId> {
+impl ResourceRuntime for ScriptedRuntime {
+    async fn start(&self, _spec: &ResourceSpec) -> Result<ResourceId> {
         Err(scripted_error("start is not used by sweep_project"))
     }
 
-    async fn stop(&self, id: &ContainerId, _grace: Duration) -> Result<()> {
+    async fn stop(&self, id: &ResourceId, _grace: Duration) -> Result<()> {
         let state = self.lock();
         let Some(resource) = state
             .containers
@@ -246,7 +247,7 @@ impl ContainerRuntime for ScriptedRuntime {
         if let Some(rule) = state.spawn_rules.get(&removed.resource).cloned() {
             state.next_spawned_id += 1;
             let spawned_id =
-                ContainerId::new(format!("spawned-{}-{}", rule.spawns, state.next_spawned_id));
+                ResourceId::new(format!("spawned-{}-{}", rule.spawns, state.next_spawned_id));
             state.containers.push(Container {
                 id: spawned_id,
                 resource: rule.spawns.clone(),
@@ -258,15 +259,15 @@ impl ContainerRuntime for ScriptedRuntime {
         Ok(())
     }
 
-    async fn inspect(&self, _id: &ContainerId) -> Result<ContainerStatus> {
+    async fn inspect(&self, _id: &ResourceId) -> Result<ContainerStatus> {
         Err(scripted_error("inspect is not used by sweep_project"))
     }
 
-    async fn wait_healthy(&self, _id: &ContainerId, _timeout: Duration) -> Result<()> {
+    async fn wait_healthy(&self, _id: &ResourceId, _timeout: Duration) -> Result<()> {
         Err(scripted_error("wait_healthy is not used by sweep_project"))
     }
 
-    async fn logs(&self, _id: &ContainerId, _follow: bool) -> Result<LogChunkStream> {
+    async fn logs(&self, _id: &ResourceId, _follow: bool) -> Result<LogChunkStream> {
         Err(scripted_error("logs is not used by sweep_project"))
     }
 
@@ -295,6 +296,10 @@ impl ContainerRuntime for ScriptedRuntime {
                 "network teardown fails while a container is still attached",
             ))
         }
+    }
+
+    async fn process_bind_address(&self, _project: &str) -> Result<IpAddr> {
+        unimplemented!("not used by this test")
     }
 }
 

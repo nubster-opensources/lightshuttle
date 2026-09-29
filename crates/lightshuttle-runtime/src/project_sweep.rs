@@ -17,7 +17,7 @@ use tracing::{debug, info, warn};
 
 use crate::docker::ManagedContainer;
 use crate::error::{Result, RuntimeError};
-use crate::runtime::ContainerRuntime;
+use crate::runtime::ResourceRuntime;
 
 /// Default upper bound on the number of sweep passes.
 const DEFAULT_MAX_PASSES: NonZeroU32 = NonZeroU32::MIN.saturating_add(4);
@@ -28,7 +28,7 @@ const DEFAULT_SETTLE_DELAY: Duration = Duration::from_millis(500);
 
 /// Lists every container a project owns, running or stopped.
 ///
-/// Kept apart from [`ContainerRuntime`], which only exposes what the
+/// Kept apart from [`ResourceRuntime`], which only exposes what the
 /// lifecycle manager needs: listing by project is a teardown concern.
 pub trait ProjectInventory: Send + Sync {
     /// Every container labelled as belonging to `project`.
@@ -135,7 +135,7 @@ pub enum SweepFailure {
 /// [`SweepReport`].
 pub async fn sweep_project<R>(runtime: &R, project: &str, policy: SweepPolicy) -> SweepReport
 where
-    R: ContainerRuntime + ProjectInventory,
+    R: ResourceRuntime + ProjectInventory,
 {
     let max_passes = policy.max_passes.get();
     let mut report = SweepReport::default();
@@ -199,7 +199,7 @@ async fn stop_and_remove_pass<R>(
     grace: Duration,
     report: &mut SweepReport,
 ) where
-    R: ContainerRuntime,
+    R: ResourceRuntime,
 {
     for container in listing {
         match runtime.stop(&container.id, grace).await {
@@ -225,7 +225,7 @@ async fn stop_and_remove_pass<R>(
 /// network can still be reclaimed.
 async fn report_remaining_state<R>(runtime: &R, project: &str, report: &mut SweepReport)
 where
-    R: ContainerRuntime + ProjectInventory,
+    R: ResourceRuntime + ProjectInventory,
 {
     match runtime.list_managed(project).await {
         Ok(remaining) if remaining.is_empty() => {

@@ -25,7 +25,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use lightshuttle_manifest::Manifest;
-use lightshuttle_runtime::{ContainerRuntime, DockerRuntime, LifecycleManager, LifecyclePlan};
+use lightshuttle_runtime::{DockerRuntime, LifecycleManager, LifecyclePlan, ResourceRuntime};
 use serde::Serialize;
 
 /// Fixture manifest: a managed Postgres instance plus one dependent
@@ -110,7 +110,7 @@ pub(crate) fn summarize(samples: &[Duration]) -> ColdStartStats {
 /// built by `make_runtime`, returning the wall-clock duration of each
 /// `start_all` call.
 ///
-/// Generic over [`ContainerRuntime`] so the mechanics (parse, plan, start,
+/// Generic over [`ResourceRuntime`] so the mechanics (parse, plan, start,
 /// stop) can be exercised in tests against
 /// [`lightshuttle_runtime::testkit::MockRuntime`] without a Docker daemon.
 pub(crate) async fn run_iterations<R, F>(
@@ -120,7 +120,7 @@ pub(crate) async fn run_iterations<R, F>(
     mut make_runtime: F,
 ) -> Result<Vec<Duration>>
 where
-    R: ContainerRuntime + 'static,
+    R: ResourceRuntime + 'static,
     F: FnMut() -> Result<R>,
 {
     let manifest = Manifest::parse(manifest_yaml).context("fixture manifest failed to parse")?;

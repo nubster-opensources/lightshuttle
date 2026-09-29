@@ -45,6 +45,22 @@ humantime = "2"
 rand = "0.9"
 url = "2"
 jiff = { version = "0.2", default-features = false, features = ["std"] }
+# Reading back the start instant the operating system reports for a process
+# number. `system` alone drops the disk, network, component, GPU and user
+# probes that ship in the default feature set and that nothing here uses.
+sysinfo = { version = "0.37", default-features = false, features = ["system"] }
+# Starting a native process in its own group and stopping that whole group.
+# Confines the `unsafe` a Windows Job Object needs, which this workspace
+# denies outright.
+process-wrap = { version = "10.0.1", features = [
+    "tokio1",
+    "process-group",
+    "job-object",
+] }
+# Sending a signal to a whole process group by number, for a group this
+# supervisor did not spawn. `killpg` is a safe wrapper here, which is what
+# keeps the workspace free of the FFI that reclaiming would otherwise need.
+nix = { version = "0.31", default-features = false, features = ["signal"] }
 axum = "0.8"
 tower = "0.5"
 owo-colors = "4"

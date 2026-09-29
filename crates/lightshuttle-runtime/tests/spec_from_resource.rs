@@ -32,7 +32,10 @@ fn postgres_resolves_defaults() {
     let manifest = Manifest::parse(MANIFEST).expect("parses");
     let kind = manifest.resources.get("api_db").expect("api_db exists");
     let resolved = from_resource("app", "api_db", kind).expect("spec built");
-    let spec = &resolved.spec;
+    let spec = resolved
+        .spec
+        .as_container()
+        .expect("resolved to a container");
 
     assert_eq!(spec.name, "app_api_db");
     assert!(matches!(spec.image, ImageSource::Pull(ref s) if s == "postgres:16-alpine"));
@@ -84,7 +87,10 @@ fn redis_command_references_its_password_through_env() {
     let manifest = Manifest::parse(MANIFEST).unwrap();
     let kind = manifest.resources.get("cache").unwrap();
     let resolved = from_resource("app", "cache", kind).expect("spec built");
-    let spec = &resolved.spec;
+    let spec = resolved
+        .spec
+        .as_container()
+        .expect("resolved to a container");
 
     assert_eq!(spec.name, "app_cache");
     assert!(matches!(spec.image, ImageSource::Pull(ref s) if s == "redis:7-alpine"));
@@ -134,7 +140,10 @@ fn container_keeps_explicit_image_and_ports() {
     let manifest = Manifest::parse(MANIFEST).unwrap();
     let kind = manifest.resources.get("api").unwrap();
     let resolved = from_resource("app", "api", kind).expect("spec built");
-    let spec = &resolved.spec;
+    let spec = resolved
+        .spec
+        .as_container()
+        .expect("resolved to a container");
 
     assert_eq!(spec.name, "app_api");
     assert!(matches!(spec.image, ImageSource::Pull(ref s) if s == "my-org/api:1.0"));
@@ -185,7 +194,10 @@ resources:
     .unwrap();
     let kind = manifest.resources.get("frontend").unwrap();
     let resolved = from_resource("app", "frontend", kind).expect("spec built");
-    let spec = &resolved.spec;
+    let spec = resolved
+        .spec
+        .as_container()
+        .expect("resolved to a container");
 
     assert_eq!(spec.name, "app_frontend");
     match &spec.image {

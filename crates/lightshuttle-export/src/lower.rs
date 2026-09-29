@@ -3,7 +3,7 @@
 //! This is the first stage of the export pipeline. The IR produced here is
 //! consumed by every emitter without further resolution of manifest details.
 
-use lightshuttle_manifest::Manifest;
+use lightshuttle_manifest::{Manifest, ResourceKind};
 use lightshuttle_spec::from_resource;
 
 use crate::error::{ExportError, Result};
@@ -29,6 +29,24 @@ pub fn lower(manifest: &Manifest) -> Result<ExportModel> {
         version: manifest.project.version.clone(),
     };
 
+    // A manifest holding `process` resources is refused naming all of them at
+    // once, sorted, before anything is lowered, so it is fixed in one pass
+    // (#283). Refusing inside the loop below would name only the first one
+    // reached, and the order resources happen to be declared in would decide
+    // how many passes the developer needs.
+    let mut process_resources: Vec<String> = manifest
+        .resources
+        .iter()
+        .filter(|(_, kind)| matches!(kind, ResourceKind::Process(_)))
+        .map(|(name, _)| name.clone())
+        .collect();
+    if !process_resources.is_empty() {
+        process_resources.sort();
+        return Err(ExportError::ProcessNotExportable {
+            resources: process_resources,
+        });
+    }
+
     let mut services = Vec::with_capacity(manifest.resources.len());
     for (name, kind) in &manifest.resources {
         let resolved = from_resource(&manifest.project.name, name, kind).map_err(|source| {
@@ -37,8 +55,19 @@ pub fn lower(manifest: &Manifest) -> Result<ExportModel> {
                 source,
             }
         })?;
+        // Unreachable while the pass above holds: it refuses every process
+        // before this loop runs. Kept as the type-level guard rather than
+        // replaced by a panic, so that a future kind that is not a container
+        // either is refused here instead of silently skipped.
+        let spec = resolved
+            .spec
+            .as_container()
+            .ok_or_else(|| ExportError::ProcessNotExportable {
+                resources: vec![name.clone()],
+            })?
+            .clone();
         services.push(ExportService {
-            spec: resolved.spec,
+            spec,
             depends_on: kind.depends_on().to_vec(),
         });
     }

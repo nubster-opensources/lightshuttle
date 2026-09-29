@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use lightshuttle_control::{ControlServer, ControlState, Metrics, bind, observe_event_duration};
 use lightshuttle_otel::{CollectorConfig, TracerGuard, augment_manifest, is_enabled};
 use lightshuttle_runtime::{
-    DockerRuntime, LifecycleEvent, LifecycleManager, LifecyclePlan, ManagerHandle,
+    HostRuntime, LifecycleEvent, LifecycleManager, LifecyclePlan, ManagerHandle,
 };
 use owo_colors::OwoColorize;
 use tokio::sync::broadcast::error::RecvError;
@@ -67,7 +67,11 @@ pub(crate) async fn run(
     let env_map = load_env(env_file)?;
 
     let plan = LifecyclePlan::from_manifest(&manifest)?;
-    let runtime = DockerRuntime::connect()?;
+    // The whole machine, not just the daemon: this is the one runtime through
+    // which containers and native processes coexist under a single plan. It does
+    // not contact the daemon here, so a project made only of `process` resources
+    // starts without one running at all.
+    let runtime = HostRuntime::connect(&super::manifest_base_dir(file))?;
     let (manager, _events) = LifecycleManager::new(plan, runtime);
     let manager = manager.with_env(env_map);
     manager.check_required_env()?;
@@ -136,7 +140,7 @@ pub(crate) async fn run(
 /// Prometheus histogram.
 fn spawn_metrics_pump<R>(manager: &Arc<LifecycleManager<R>>)
 where
-    R: lightshuttle_runtime::ContainerRuntime + 'static,
+    R: lightshuttle_runtime::ResourceRuntime + 'static,
 {
     let mut events = manager.subscribe_events();
     tokio::spawn(async move {
