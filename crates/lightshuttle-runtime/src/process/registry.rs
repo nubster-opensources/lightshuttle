@@ -52,8 +52,8 @@ impl ProcessRegistry {
     ///
     /// `root` is the manifest directory, so the state sits beside the
     /// manifest it describes and travels with the project rather than with
-    /// the machine. The directory is listed in the `.gitignore` shipped with
-    /// this change: it names process numbers of one developer's machine, and
+    /// the machine. The directory is already listed in the repository's
+    /// `.gitignore`: it names process numbers of one developer's machine, and
     /// a committed record would designate processes on someone else's.
     #[must_use]
     pub fn for_project(root: &Path, project: &str) -> Self {
