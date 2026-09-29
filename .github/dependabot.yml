@@ -10,6 +10,20 @@ updates:
       timezone: "Europe/Paris"
     open-pull-requests-limit: 10
     groups:
+      # The OpenTelemetry crate family shares one API contract; bumping a
+      # single crate on its own breaks the build (see #355-#359, replaced by
+      # #360). Keep this group ahead of cargo-minor-and-patch so dependabot's
+      # first-match-wins rule routes these crates here. These crates are
+      # pre-1.0, so breaking changes ship as minor releases: major is
+      # included too so every update type stays grouped together.
+      opentelemetry:
+        patterns:
+          - "opentelemetry*"
+          - "tracing-opentelemetry"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
       cargo-minor-and-patch:
         update-types:
           - "minor"
