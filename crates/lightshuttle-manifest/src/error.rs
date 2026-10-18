@@ -129,4 +129,63 @@ pub enum ManifestError {
         /// The offending `src:target` mapping, verbatim.
         mapping: String,
     },
+
+    /// A relative `working_dir` on a `process` resource escapes the manifest
+    /// base directory through a `..` component.
+    ///
+    /// Refused for the same reason as [`Self::InvalidVolumePath`], and named
+    /// separately because it is not a volume: a process's `working_dir` is a
+    /// path on the developer's machine, whereas a container's names a
+    /// directory inside the image.
+    #[error(
+        "invalid working directory `{path}` on resource `{resource}`: a relative path must not escape the manifest directory with `..`"
+    )]
+    InvalidWorkingDirectory {
+        /// Resource whose `working_dir` is in error.
+        resource: String,
+        /// The offending path, verbatim.
+        path: String,
+    },
+
+    /// A `process` resource declared an empty `command`.
+    #[error("`command` on process resource `{resource}` is empty: name the program to run")]
+    EmptyProcessCommand {
+        /// The resource whose configuration is in error.
+        resource: String,
+    },
+
+    /// A resource references the address of a `process` that declares no
+    /// `port`.
+    ///
+    /// Refused rather than guessed at runtime. A companion process that
+    /// listens on nothing is a legitimate resource, so the port is optional;
+    /// what is not possible is rendering an address for something that has
+    /// none.
+    #[error(
+        "resource `{consumer}` references `{property}` of process `{target}`, which declares no `port`: add `port` to `{target}` or drop the reference"
+    )]
+    ProcessReferenceWithoutPort {
+        /// Resource making the reference.
+        consumer: String,
+        /// Referenced `process` resource.
+        target: String,
+        /// Property the reference asked for (`host`, `url` or `port`).
+        property: String,
+    },
+
+    /// A `process` resource depends on a container that publishes no port.
+    ///
+    /// A process reaches a container through a port published on the host
+    /// loopback, so a container publishing nothing offers no address for the
+    /// process to use, and waiting for it could only ever be a wait for
+    /// nothing reachable.
+    #[error(
+        "process `{process}` depends on `{container}`, which publishes no port: a process reaches a container through a published host port, so there is no address to hand it"
+    )]
+    ProcessDependencyWithoutPublishedPort {
+        /// The `process` resource declaring the dependency.
+        process: String,
+        /// The depended-on resource that publishes nothing.
+        container: String,
+    },
 }

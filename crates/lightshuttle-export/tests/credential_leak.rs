@@ -150,11 +150,24 @@ fn file<'a>(artifacts: &'a ExportArtifacts, name: &str) -> &'a str {
 /// That is the enforcement the issue asked for: an added variant breaks
 /// this test's compilation rather than silently expanding the leak
 /// surface this oracle does not know to check.
+#[allow(
+    clippy::match_same_arms,
+    reason = "the `None` arms are kept apart because they are `None` for different reasons: a \
+              container has no managed credential to leak, a process is never exported at all. \
+              Merging them would put this function's whole purpose, one deliberate decision per \
+              variant, behind a single unexplained arm"
+)]
 fn expected_secret(kind: &ResourceKind) -> Option<&'static str> {
     match kind {
         ResourceKind::Postgres(_) => Some(POSTGRES_SECRET),
         ResourceKind::Redis(_) => Some(REDIS_SECRET),
         ResourceKind::Container(_) | ResourceKind::Dockerfile(_) => None,
+        // A process carries an `env` that may well hold credentials, but no
+        // export ever renders one: a manifest declaring a `process` is
+        // refused whole, before anything is emitted. There is therefore no
+        // artifact for this oracle to search, and `None` here states that
+        // absence rather than an absence of secrets.
+        ResourceKind::Process(_) => None,
     }
 }
 

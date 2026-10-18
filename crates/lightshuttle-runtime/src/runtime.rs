@@ -1,17 +1,18 @@
 //! Container runtime abstraction and its supporting domain types.
 //!
-//! Defines the [`ContainerRuntime`] trait and the value types it operates on:
-//! [`ContainerId`], [`ContainerStatus`], [`LogChunk`], [`LogStream`], and the
+//! Defines the [`ResourceRuntime`] trait and the value types it operates on:
+//! [`ResourceId`], [`ContainerStatus`], [`LogChunk`], [`LogStream`], and the
 //! [`LogChunkStream`] type alias. Concrete implementations (e.g.
 //! [`crate::DockerRuntime`]) live in sibling modules.
 
+use std::net::IpAddr;
 use std::pin::Pin;
 use std::time::{Duration, SystemTime};
 
 use futures::stream::Stream;
 
 use crate::error::Result;
-use lightshuttle_spec::ContainerSpec;
+use lightshuttle_spec::ResourceSpec;
 
 /// Opaque identifier for a container managed by the runtime.
 ///
@@ -19,10 +20,10 @@ use lightshuttle_spec::ContainerSpec;
 /// uses (Docker returns 64-character hexadecimal hashes); callers must
 /// not depend on the format.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ContainerId(String);
+pub struct ResourceId(String);
 
-impl ContainerId {
-    /// Build a [`ContainerId`] from a daemon-supplied string.
+impl ResourceId {
+    /// Build a [`ResourceId`] from a daemon-supplied string.
     #[must_use]
     pub fn new(id: impl Into<String>) -> Self {
         Self(id.into())
@@ -35,7 +36,7 @@ impl ContainerId {
     }
 }
 
-impl std::fmt::Display for ContainerId {
+impl std::fmt::Display for ResourceId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
     }
@@ -87,33 +88,38 @@ pub struct LogChunk {
 
 /// Boxed, pinned stream of [`LogChunk`] items for a single container.
 ///
-/// Returned by [`ContainerRuntime::logs`]. The stream is `Send` so it can be
+/// Returned by [`ResourceRuntime::logs`]. The stream is `Send` so it can be
 /// forwarded across async task boundaries (e.g. from a worker task to an HTTP
 /// response body or a WebSocket session).
 pub type LogChunkStream = Pin<Box<dyn Stream<Item = Result<LogChunk>> + Send>>;
 
-/// Container runtime abstraction.
+/// Resource runtime abstraction.
 ///
 /// The trait is intentionally narrow: it exposes only the operations
 /// that the lifecycle manager needs. Daemon-specific capabilities
 /// (network inspection, image management) stay private to each
 /// implementation.
 ///
+/// It returns `impl Future` rather than boxed futures, so it is not
+/// object safe. Two runtimes therefore never coexist behind a `dyn`: a
+/// build that drives both containers and native processes does so through
+/// one type that routes on [`ResourceSpec`], not through dynamic dispatch.
+///
 /// Implementations live in submodules such as [`crate::DockerRuntime`].
-pub trait ContainerRuntime: Send + Sync {
-    /// Start a container according to `spec`. Pulls the image if not
-    /// already present locally.
+pub trait ResourceRuntime: Send + Sync {
+    /// Start a resource according to `spec`. For a container, pulls the
+    /// image if it is not already present locally.
     fn start(
         &self,
-        spec: &ContainerSpec,
-    ) -> impl std::future::Future<Output = Result<ContainerId>> + Send;
+        spec: &ResourceSpec,
+    ) -> impl std::future::Future<Output = Result<ResourceId>> + Send;
 
     /// Stop a container, sending `SIGTERM` and then `SIGKILL` after
     /// `grace`. Idempotent: stopping an already stopped container is a
     /// no-op.
     fn stop(
         &self,
-        id: &ContainerId,
+        id: &ResourceId,
         grace: Duration,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
@@ -129,7 +135,7 @@ pub trait ContainerRuntime: Send + Sync {
     /// Report the current status of a container.
     fn inspect(
         &self,
-        id: &ContainerId,
+        id: &ResourceId,
     ) -> impl std::future::Future<Output = Result<ContainerStatus>> + Send;
 
     /// Block until the container reports a healthy status or `timeout`
@@ -137,7 +143,7 @@ pub trait ContainerRuntime: Send + Sync {
     /// case.
     fn wait_healthy(
         &self,
-        id: &ContainerId,
+        id: &ResourceId,
         timeout: Duration,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
@@ -146,7 +152,7 @@ pub trait ContainerRuntime: Send + Sync {
     /// stream completes after the existing logs are drained.
     fn logs(
         &self,
-        id: &ContainerId,
+        id: &ResourceId,
         follow: bool,
     ) -> impl std::future::Future<Output = Result<LogChunkStream>> + Send;
 
@@ -169,4 +175,21 @@ pub trait ContainerRuntime: Send + Sync {
         &self,
         project: &str,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    /// Address a native process of `project` must bind to, so that the
+    /// containers of that project can reach it.
+    ///
+    /// Only the runtime can answer: the value depends on the daemon and on
+    /// what the project holds, never on the manifest. Under a Docker Desktop
+    /// daemon it is the loopback address, which containers reach through the
+    /// host alias; under a Linux engine it is the project network gateway,
+    /// because a process bound to loopback is unreachable from a container
+    /// there. When the project holds no container at all, no network exists
+    /// and no container is asking, so it is the loopback address again:
+    /// binding wider would publish a development service to the local
+    /// network for nobody.
+    fn process_bind_address(
+        &self,
+        project: &str,
+    ) -> impl std::future::Future<Output = Result<IpAddr>> + Send;
 }

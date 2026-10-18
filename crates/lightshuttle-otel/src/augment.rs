@@ -1,12 +1,18 @@
 //! Manifest-level wiring of the bundled OpenTelemetry collector.
 //!
 //! This module adds the collector as a `container` resource to the manifest
-//! and injects standard `OTel` environment keys into every existing `container`
-//! and `dockerfile` resource without overriding user-defined values.
+//! and injects standard `OTel` environment keys into every existing
+//! application resource, `container`, `dockerfile` and `process` alike,
+//! without overriding user-defined values.
+//!
+//! A `process` receives a different endpoint from a container, and that
+//! difference is the whole reason this module has a `process` arm at all. See
+//! [`inject_into_resources`].
 
 use indexmap::IndexMap;
 use lightshuttle_manifest::model::{ContainerConfig, ResourceKind};
 use lightshuttle_manifest::{Manifest, ObservabilityConfig};
+use lightshuttle_runtime::LOOPBACK_ADDRESS;
 
 use crate::config::{CollectorConfig, SYNTHETIC_RESOURCE_NAME};
 
@@ -110,6 +116,15 @@ fn inject_into_resources(manifest: &mut Manifest, config: &CollectorConfig) {
         host = config.hostname(project),
         port = config.otlp_grpc_port,
     );
+    // The collector publishes its OTLP ports on the host loopback, under the
+    // same numbers, so a native process reaches it there. The constant is
+    // taken from the crate that owns the reference-rendering table rather than
+    // written again here, so the two cannot drift.
+    let process_endpoint = format!(
+        "http://{host}:{port}",
+        host = LOOPBACK_ADDRESS,
+        port = config.otlp_grpc_port,
+    );
 
     for (resource_name, kind) in &mut manifest.resources {
         match kind {
@@ -123,6 +138,19 @@ fn inject_into_resources(manifest: &mut Manifest, config: &CollectorConfig) {
             }
             // postgres/redis use canned commands and ignore `OTel` env.
             ResourceKind::Postgres(_) | ResourceKind::Redis(_) => {}
+            // A process is application code and does emit traces, so it is
+            // injected like a container. Not with this endpoint, though: it
+            // names the collector through the project network's DNS, which a
+            // native process does not resolve. It reaches the collector on
+            // the loopback address and the published OTLP port instead. The
+            // distinction matters because the failure is silent: an OTLP
+            // exporter that cannot reach its collector drops its batches
+            // without bringing the program down, so the developer would see
+            // the process run and the traces never arrive.
+            ResourceKind::Process(cfg) => {
+                inject_env(&mut cfg.env, &process_endpoint, resource_name);
+                push_dep(&mut cfg.depends_on, SYNTHETIC_RESOURCE_NAME.to_owned());
+            }
         }
     }
 }

@@ -5,7 +5,8 @@
 use std::time::Duration;
 
 use lightshuttle_runtime::testkit::MockRuntime;
-use lightshuttle_runtime::{ContainerRuntime, ContainerSpec, ImageSource};
+use lightshuttle_runtime::{ContainerSpec, ImageSource, ResourceRuntime};
+use lightshuttle_spec::ResourceSpec;
 
 fn spec(name: &str) -> ContainerSpec {
     ContainerSpec::new(
@@ -20,10 +21,14 @@ fn spec(name: &str) -> ContainerSpec {
 async fn starting_a_duplicate_name_is_rejected() {
     let runtime = MockRuntime::new();
     let s = spec("app_cache");
+    let resource_spec = ResourceSpec::Container(s.clone());
 
-    runtime.start(&s).await.expect("first start succeeds");
+    runtime
+        .start(&resource_spec)
+        .await
+        .expect("first start succeeds");
     let err = runtime
-        .start(&s)
+        .start(&resource_spec)
         .await
         .expect_err("second start with the same name is rejected");
 
@@ -37,14 +42,18 @@ async fn starting_a_duplicate_name_is_rejected() {
 async fn remove_then_start_recreates_the_container() {
     let runtime = MockRuntime::new();
     let s = spec("app_cache");
+    let resource_spec = ResourceSpec::Container(s.clone());
 
-    runtime.start(&s).await.expect("first start succeeds");
+    runtime
+        .start(&resource_spec)
+        .await
+        .expect("first start succeeds");
     runtime
         .remove(&s.name)
         .await
         .expect("remove of an existing container succeeds");
     runtime
-        .start(&s)
+        .start(&resource_spec)
         .await
         .expect("start after remove succeeds");
 }
@@ -65,15 +74,19 @@ async fn stop_alone_does_not_free_the_name() {
     // behaviour the manager relies on.
     let runtime = MockRuntime::new();
     let s = spec("app_cache");
+    let resource_spec = ResourceSpec::Container(s.clone());
 
-    let id = runtime.start(&s).await.expect("first start succeeds");
+    let id = runtime
+        .start(&resource_spec)
+        .await
+        .expect("first start succeeds");
     runtime
         .stop(&id, Duration::from_secs(1))
         .await
         .expect("stop succeeds");
 
     let err = runtime
-        .start(&s)
+        .start(&resource_spec)
         .await
         .expect_err("re-start without remove still collides after stop");
     assert!(err.to_string().contains("already in use"), "got: {err}");

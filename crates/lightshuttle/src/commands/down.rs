@@ -4,7 +4,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use anyhow::Result;
-use lightshuttle_runtime::{DockerRuntime, SweepFailure, SweepPolicy, SweepReport, sweep_project};
+use lightshuttle_runtime::{HostRuntime, SweepFailure, SweepPolicy, SweepReport, sweep_project};
 use tracing::{info, warn};
 
 use super::{ExitOutcome, load_manifest};
@@ -23,16 +23,43 @@ pub(crate) async fn run(file: &Path, grace: Duration) -> Result<ExitOutcome> {
     let manifest = load_manifest(file)?;
     let project = &manifest.project.name;
 
-    let runtime = DockerRuntime::connect()?;
+    let runtime = HostRuntime::connect(&super::manifest_base_dir(file))?;
     let report = sweep_project(&runtime, project, SweepPolicy::with_grace(grace)).await;
 
     render_report(project, &report);
+
+    // Containers are found by asking the daemon what it holds. Nothing plays
+    // that role for a native process: under Unix a process group outlives the
+    // death of its leader, so a supervisor that was killed leaves a server
+    // still holding its port. The registry written beside the manifest is what
+    // lets this `down`, run from any terminal, reclaim them.
+    let skipped = runtime.processes().reclaim_project(project, grace).await?;
+    render_skipped_records(project, &skipped);
 
     Ok(if report.is_clean() {
         ExitOutcome::Success
     } else {
         ExitOutcome::RuntimeError
     })
+}
+
+/// Reports the registry entries that were passed over rather than acted on.
+///
+/// An entry is skipped when its process number no longer names the process it
+/// was recorded for: the process ended, or the operating system handed the
+/// number to something else. Saying so matters more than it looks. The
+/// alternative to skipping is killing a stranger's process, so a silent skip
+/// would hide the one decision that keeps `down` from being dangerous.
+fn render_skipped_records(project: &str, skipped: &[String]) {
+    for resource in skipped {
+        warn!(
+            project,
+            resource, "process record was stale and was left alone"
+        );
+        println!(
+            "skipped: `{resource}` was recorded for project `{project}` but its process is gone"
+        );
+    }
 }
 
 /// Prints and logs the outcome of a sweep in the same spirit as the previous

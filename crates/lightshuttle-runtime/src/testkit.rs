@@ -1,6 +1,6 @@
 //! Test helpers for downstream crates and integration tests.
 //!
-//! Provides [`MockRuntime`](crate::testkit::MockRuntime), an in-memory [`crate::ContainerRuntime`] that
+//! Provides [`MockRuntime`](crate::testkit::MockRuntime), an in-memory [`crate::ResourceRuntime`] that
 //! requires no Docker daemon. Use it to test lifecycle logic, control-plane
 //! handlers, and any code that depends on [`crate::LifecycleManager`] without
 //! involving real containers.
@@ -39,6 +39,7 @@
 //! ```
 
 use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -46,10 +47,10 @@ use std::time::{Duration, Instant};
 use futures::stream::{Stream, StreamExt};
 
 use crate::error::RuntimeError;
-use crate::runtime::{ContainerId, ContainerRuntime, ContainerStatus, LogChunk, LogChunkStream};
-use lightshuttle_spec::ContainerSpec;
+use crate::runtime::{ContainerStatus, LogChunk, LogChunkStream, ResourceId, ResourceRuntime};
+use lightshuttle_spec::{ContainerSpec, ProcessSpec, ResourceSpec};
 
-/// In-memory [`ContainerRuntime`] for tests.
+/// In-memory [`ResourceRuntime`] for tests.
 ///
 /// Every container becomes [`ContainerStatus::Healthy`] 30 ms after
 /// `start`, unless its name is configured as a failure target via
@@ -62,6 +63,27 @@ pub struct MockRuntime {
     stop_order: Arc<Mutex<Vec<String>>>,
     remove_order: Arc<Mutex<Vec<String>>>,
     started_specs: Arc<Mutex<Vec<ContainerSpec>>>,
+    started_processes: Arc<Mutex<Vec<ProcessSpec>>>,
+    ensured_networks: Arc<Mutex<Vec<String>>>,
+    daemon: Arc<Mutex<DaemonKind>>,
+}
+
+/// Which kind of container daemon a [`MockRuntime`] stands in for.
+///
+/// The distinction exists because the two answer differently on one precise
+/// question: where a native process must bind for containers to reach it. A
+/// process bound to loopback is reachable from a container under Docker
+/// Desktop and unreachable under a Linux engine, which was measured rather
+/// than assumed. Tests need to exercise both without two machines.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DaemonKind {
+    /// A Docker Desktop daemon, running containers inside a virtual machine.
+    DockerDesktop,
+    /// A native Linux engine, reachable through the project network gateway.
+    Linux {
+        /// Gateway address of the project network.
+        gateway: IpAddr,
+    },
 }
 
 struct MockContainer {
@@ -82,7 +104,24 @@ impl MockRuntime {
             stop_order: Arc::new(Mutex::new(Vec::new())),
             remove_order: Arc::new(Mutex::new(Vec::new())),
             started_specs: Arc::new(Mutex::new(Vec::new())),
+            started_processes: Arc::new(Mutex::new(Vec::new())),
+            ensured_networks: Arc::new(Mutex::new(Vec::new())),
+            daemon: Arc::new(Mutex::new(DaemonKind::DockerDesktop)),
         }
+    }
+
+    /// Make this runtime stand in for `kind` of daemon.
+    ///
+    /// Only affects answers that genuinely differ between the two, which for
+    /// now means [`ResourceRuntime::process_bind_address`].
+    pub fn simulate_daemon(&self, kind: DaemonKind) {
+        *self.daemon.lock().expect("daemon mutex poisoned") = kind;
+    }
+
+    /// The daemon this runtime currently stands in for.
+    #[must_use]
+    pub fn simulated_daemon(&self) -> DaemonKind {
+        *self.daemon.lock().expect("daemon mutex poisoned")
     }
 
     /// Configure the runtime to reject `start` for the resource whose
@@ -112,7 +151,7 @@ impl MockRuntime {
             .clone()
     }
 
-    /// Names passed to [`ContainerRuntime::remove`] that matched a live
+    /// Names passed to [`ResourceRuntime::remove`] that matched a live
     /// container, in call order.
     ///
     /// Only effective removals are recorded: the pre-start cleanup that
@@ -134,6 +173,71 @@ impl MockRuntime {
             .expect("started_specs mutex poisoned")
             .clone()
     }
+
+    /// Projects this runtime was asked to create a bridge network for.
+    ///
+    /// Observed rather than merely accepted, because the interesting assertion
+    /// is the negative one: a project made only of `process` resources must
+    /// never ask, and a mock that silently answered yes would let that stay
+    /// true in the code and false in the product without a test noticing.
+    #[must_use]
+    pub fn ensured_networks(&self) -> Vec<String> {
+        self.ensured_networks
+            .lock()
+            .expect("ensured_networks mutex poisoned")
+            .clone()
+    }
+
+    /// Snapshot of every process spec the runtime has accepted.
+    ///
+    /// Kept apart from [`Self::started_specs`] rather than folded into it, so
+    /// each accessor's name stays exactly true and no existing caller has to
+    /// learn about a kind it does not handle.
+    #[must_use]
+    pub fn started_processes(&self) -> Vec<ProcessSpec> {
+        self.started_processes
+            .lock()
+            .expect("started_processes mutex poisoned")
+            .clone()
+    }
+
+    /// Records `spec` as started and reports it running.
+    ///
+    /// A mock process needs no grace before being healthy: there is nothing to
+    /// probe, which is also true of the real thing in this lot.
+    fn start_process(&self, spec: &ProcessSpec) -> ResourceId {
+        let id = ResourceId::new(spec.name.clone());
+        self.start_order
+            .lock()
+            .expect("start_order mutex poisoned")
+            .push(spec.name.clone());
+        self.started_processes
+            .lock()
+            .expect("started_processes mutex poisoned")
+            .push(spec.clone());
+        self.state.lock().expect("state mutex poisoned").insert(
+            id.as_str().to_owned(),
+            MockContainer {
+                name: spec.name.clone(),
+                status: ContainerStatus::Running,
+                started_at: Instant::now(),
+                healthy_after: Duration::ZERO,
+            },
+        );
+        id
+    }
+
+    /// Whether any container of `project` has been started on this runtime.
+    ///
+    /// This is what stands in for the existence of a project network, which is
+    /// how the real runtime reads the same fact.
+    fn project_holds_a_container(&self, project: &str) -> bool {
+        self.started_specs
+            .lock()
+            .expect("started_specs mutex poisoned")
+            .iter()
+            .any(|spec| spec.project == project)
+    }
 }
 
 impl Default for MockRuntime {
@@ -142,8 +246,16 @@ impl Default for MockRuntime {
     }
 }
 
-impl ContainerRuntime for MockRuntime {
-    async fn start(&self, spec: &ContainerSpec) -> Result<ContainerId, RuntimeError> {
+impl ResourceRuntime for MockRuntime {
+    async fn start(&self, spec: &ResourceSpec) -> Result<ResourceId, RuntimeError> {
+        let spec = match spec {
+            ResourceSpec::Container(spec) => spec,
+            // A process is accepted and observed, not refused. The mock exists
+            // so the lifecycle manager can be driven without a daemon, and a
+            // manager that can no longer be driven over a mixed project would
+            // leave exactly the routing this lot adds untested.
+            ResourceSpec::Process(process) => return Ok(self.start_process(process)),
+        };
         if self
             .fail_on
             .lock()
@@ -156,7 +268,7 @@ impl ContainerRuntime for MockRuntime {
                 spec.name
             )));
         }
-        let id = ContainerId::new(format!("mock-{}", spec.name));
+        let id = ResourceId::new(format!("mock-{}", spec.name));
         if self
             .state
             .lock()
@@ -188,7 +300,7 @@ impl ContainerRuntime for MockRuntime {
         Ok(id)
     }
 
-    async fn stop(&self, id: &ContainerId, _grace: Duration) -> Result<(), RuntimeError> {
+    async fn stop(&self, id: &ResourceId, _grace: Duration) -> Result<(), RuntimeError> {
         let mut state = self.state.lock().expect("state mutex poisoned");
         if let Some(c) = state.get_mut(id.as_str()) {
             c.status = ContainerStatus::Stopped { exit_code: Some(0) };
@@ -216,7 +328,7 @@ impl ContainerRuntime for MockRuntime {
         Ok(())
     }
 
-    async fn inspect(&self, id: &ContainerId) -> Result<ContainerStatus, RuntimeError> {
+    async fn inspect(&self, id: &ResourceId) -> Result<ContainerStatus, RuntimeError> {
         let state = self.state.lock().expect("state mutex poisoned");
         let c = state
             .get(id.as_str())
@@ -224,7 +336,7 @@ impl ContainerRuntime for MockRuntime {
         Ok(c.status.clone())
     }
 
-    async fn wait_healthy(&self, id: &ContainerId, timeout: Duration) -> Result<(), RuntimeError> {
+    async fn wait_healthy(&self, id: &ResourceId, timeout: Duration) -> Result<(), RuntimeError> {
         let start = Instant::now();
         while start.elapsed() < timeout {
             {
@@ -244,17 +356,36 @@ impl ContainerRuntime for MockRuntime {
         })
     }
 
-    async fn logs(&self, _id: &ContainerId, _follow: bool) -> Result<LogChunkStream, RuntimeError> {
+    async fn logs(&self, _id: &ResourceId, _follow: bool) -> Result<LogChunkStream, RuntimeError> {
         let empty: Pin<Box<dyn Stream<Item = Result<LogChunk, RuntimeError>> + Send>> =
             Box::pin(futures::stream::empty::<Result<LogChunk, RuntimeError>>().map(|x| x));
         Ok(empty)
     }
 
-    async fn ensure_project_network(&self, _project: &str) -> Result<(), RuntimeError> {
+    async fn ensure_project_network(&self, project: &str) -> Result<(), RuntimeError> {
+        self.ensured_networks
+            .lock()
+            .expect("ensured_networks mutex poisoned")
+            .push(project.to_owned());
         Ok(())
     }
 
     async fn teardown_project_network(&self, _project: &str) -> Result<(), RuntimeError> {
         Ok(())
+    }
+
+    async fn process_bind_address(&self, project: &str) -> Result<IpAddr, RuntimeError> {
+        // The table of the process networking design, made answerable without a
+        // daemon. Docker Desktop proxies the host loopback into every container
+        // itself, so it answers loopback whatever the project holds. A Linux
+        // engine does not, so a container can only reach a process through the
+        // project gateway, and that gateway is only worth binding when a
+        // container exists to use it.
+        if let DaemonKind::Linux { gateway } = self.simulated_daemon()
+            && self.project_holds_a_container(project)
+        {
+            return Ok(gateway);
+        }
+        Ok(IpAddr::V4(Ipv4Addr::LOCALHOST))
     }
 }

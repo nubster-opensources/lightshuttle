@@ -20,6 +20,7 @@ Each `resources` entry selects exactly one kind:
 - [redis](redis.md)
 - [container](container.md)
 - [dockerfile](dockerfile.md)
+- [process](process.md)
 
 ## Shared types
 

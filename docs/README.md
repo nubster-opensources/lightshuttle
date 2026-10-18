@@ -26,7 +26,7 @@ they version with the code.
 
 - [The crate architecture](book/src/explanation/architecture.md): the layered
   flow from manifest to runtime to CLI, with the dependency rule and the
-  `ContainerRuntime` boundary.
+  `ResourceRuntime` boundary.
 - [The resource lifecycle](book/src/explanation/lifecycle.md) and
   [networking and service discovery](book/src/explanation/networking.md).
 - Per-feature specifications: [manifest](spec/manifest-v0.md),

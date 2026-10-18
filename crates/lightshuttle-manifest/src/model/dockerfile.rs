@@ -21,7 +21,7 @@ pub struct DockerfileConfig {
     /// Build context path, relative to the manifest file.
     ///
     /// Resolved to an absolute path by
-    /// [`crate::Manifest::resolve_host_volume_paths`] before it is handed to the
+    /// [`crate::Manifest::resolve_host_paths`] before it is handed to the
     /// runtime.
     ///
     /// Symbolic links are sent as links, never followed, as `docker build`
@@ -64,7 +64,7 @@ pub struct DockerfileConfig {
     /// Volume mappings in `"host:container"` or `"named:container"` form.
     ///
     /// Relative host paths are resolved by
-    /// [`crate::Manifest::resolve_host_volume_paths`].
+    /// [`crate::Manifest::resolve_host_paths`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub volumes: Vec<String>,
 

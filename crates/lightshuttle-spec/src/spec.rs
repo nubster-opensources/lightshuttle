@@ -7,15 +7,19 @@
 //! point is [`from_resource`].
 
 use std::collections::{BTreeSet, HashMap};
+use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::consumer::HOST_GATEWAY_NAME;
+use crate::process_spec::ProcessSpec;
+use crate::resource_spec::ResourceSpec;
 use indexmap::IndexMap;
 use lightshuttle_manifest::canonical::{
     MappingSource, VolumeMapping, encode_path_segment, encode_userinfo,
 };
 use lightshuttle_manifest::{
     Command, ContainerConfig, DockerfileConfig, Healthcheck, PortMapping, PostgresConfig,
-    RedisConfig, ResourceKind, Volume,
+    ProcessConfig, RedisConfig, ResourceKind, Volume,
 };
 
 use crate::error::{Result, SpecError};
@@ -77,15 +81,15 @@ pub const SENSITIVE_OUTPUTS: &[&str] = &["password", "url"];
 /// let resolved = from_resource("myproject", "db", &kind).unwrap();
 ///
 /// // The spec carries the container description.
-/// assert_eq!(resolved.spec.resource, "db");
+/// assert_eq!(resolved.spec.resource(), "db");
 /// // The outputs expose the connection URL to dependents.
 /// assert!(resolved.outputs.contains_key("url"));
 /// ```
 #[derive(Debug, Clone)]
 pub struct ResolvedResource {
-    /// Container specification consumed by the runtime and the export
-    /// pipeline to describe the container to launch.
-    pub spec: ContainerSpec,
+    /// Specification consumed by the runtime and the export pipeline to
+    /// describe what to launch, by nature of resource.
+    pub spec: ResourceSpec,
     /// Key/value properties exposed to dependents, resolved into
     /// `LSH_*` env vars and substituted into
     /// `${resources.<name>.<property>}` expressions.
@@ -418,7 +422,7 @@ pub struct HealthcheckSpec {
 /// let resolved = from_resource("acme", "db", &kind).unwrap();
 ///
 /// // Container name follows the `<project>_<resource>` convention.
-/// assert_eq!(resolved.spec.name, "acme_db");
+/// assert_eq!(resolved.spec.name(), "acme_db");
 /// // A connection URL is always present for postgres.
 /// assert!(resolved.outputs["url"].starts_with("postgres://"));
 /// ```
@@ -475,7 +479,54 @@ fn resolve(
         ResourceKind::Dockerfile(c) => {
             spec_dockerfile(name, project, resource_name, c, output_host)
         }
+        ResourceKind::Process(c) => spec_process(name, project, resource_name, c),
     }
+}
+
+/// Lowers a `process` declaration to its [`ProcessSpec`] and the outputs a
+/// container dependent sees.
+///
+/// `output_host` from [`resolve`] is deliberately not used. For every other
+/// kind it is the hostname a dependent reaches the resource through, and the
+/// export pipeline overrides it per deployment target. A process has no such
+/// freedom: a container reaches it through the host gateway alias and nothing
+/// else, and the export pipeline refuses a manifest holding a process rather
+/// than rendering one, so no other value can ever be asked for here.
+///
+/// The outputs are empty when the process declares no port. That is not a
+/// failure: a companion that listens on nothing starts normally, it simply
+/// exposes no address, and [`crate::outputs_for_consumer`] is what refuses a
+/// reference to it.
+#[allow(clippy::needless_pass_by_value)]
+fn spec_process(
+    name: String,
+    project: &str,
+    resource_name: &str,
+    c: &ProcessConfig,
+) -> Result<ResolvedResource> {
+    let spec = ProcessSpec {
+        name,
+        project: project.to_owned(),
+        resource: resource_name.to_owned(),
+        command: c.command.clone(),
+        working_dir: c.working_dir.as_ref().map(PathBuf::from),
+        env: c.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+        // `ProcessConfig` carries no `secrets` map: `env` covers the need of
+        // this lot, and the sensitive-value classification of #295 applies to
+        // it without a new field.
+        secret_env_keys: BTreeSet::new(),
+        port: c.port,
+    };
+
+    let outputs = match c.port {
+        Some(_) => crate::consumer::process_outputs(resource_name, HOST_GATEWAY_NAME, c.port)?,
+        None => ResourceOutputs::new(),
+    };
+
+    Ok(ResolvedResource {
+        spec: spec.into(),
+        outputs,
+    })
 }
 
 /// Display image label for a resource, derived without lowering the full
@@ -505,6 +556,16 @@ pub fn image_label(project: &str, resource_name: &str, kind: &ResourceKind) -> S
                 c.version.as_deref().unwrap_or(DEFAULT_REDIS_VERSION)
             )
         }),
+        // A process has no image, so this label names the program instead:
+        // `npm`, `cargo`, `python`. It is what actually runs, which is the
+        // question the dashboard column answers for every other kind, even
+        // though the field's name stops being literal here. An empty string
+        // would be indistinguishable from a value missing by mistake, and the
+        // word `process` only repeats the kind column.
+        //
+        // The first element always exists: `Manifest::validate` refuses an
+        // empty `command`.
+        ResourceKind::Process(c) => c.command.first().cloned().unwrap_or_default(),
     }
 }
 
@@ -599,7 +660,10 @@ fn spec_postgres(
         ),
     );
 
-    Ok(ResolvedResource { spec, outputs })
+    Ok(ResolvedResource {
+        spec: spec.into(),
+        outputs,
+    })
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -682,7 +746,10 @@ fn spec_redis(
     };
     outputs.insert("url".to_owned(), url);
 
-    Ok(ResolvedResource { spec, outputs })
+    Ok(ResolvedResource {
+        spec: spec.into(),
+        outputs,
+    })
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -741,7 +808,10 @@ fn spec_container(
     outputs.insert("host".to_owned(), output_host.to_owned());
     outputs.insert("ports".to_owned(), ports_csv);
 
-    Ok(ResolvedResource { spec, outputs })
+    Ok(ResolvedResource {
+        spec: spec.into(),
+        outputs,
+    })
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -814,7 +884,10 @@ fn spec_dockerfile(
     outputs.insert("host".to_owned(), output_host.to_owned());
     outputs.insert("ports".to_owned(), ports_csv);
 
-    Ok(ResolvedResource { spec, outputs })
+    Ok(ResolvedResource {
+        spec: spec.into(),
+        outputs,
+    })
 }
 
 fn volume_to_binding(volume: Option<&Volume>, target: &str) -> Vec<VolumeBinding> {
@@ -1090,11 +1163,19 @@ resources:
         let resolved =
             from_resource("app", "svc", &manifest.resources["svc"]).expect("resolution succeeds");
         assert_eq!(
-            resolved.spec.entrypoint,
+            resolved
+                .spec
+                .as_container()
+                .expect("resolved to a container")
+                .entrypoint,
             Some(vec![Argument::literal("sh"), Argument::literal("-c")])
         );
         assert_eq!(
-            resolved.spec.command,
+            resolved
+                .spec
+                .as_container()
+                .expect("resolved to a container")
+                .command,
             Some(vec![Argument::literal("echo hi")]),
             "resolving an entrypoint must not disturb the command"
         );
@@ -1115,7 +1196,11 @@ resources:
         let resolved =
             from_resource("app", "svc", &manifest.resources["svc"]).expect("resolution succeeds");
         assert_eq!(
-            resolved.spec.entrypoint,
+            resolved
+                .spec
+                .as_container()
+                .expect("resolved to a container")
+                .entrypoint,
             Some(vec![
                 Argument::literal("sh"),
                 Argument::literal("-c"),
@@ -1123,7 +1208,12 @@ resources:
             ])
         );
         assert_eq!(
-            resolved.spec.command, None,
+            resolved
+                .spec
+                .as_container()
+                .expect("resolved to a container")
+                .command,
+            None,
             "entrypoint alone must not synthesise a command: the image CMD, not the manifest, decides what runs"
         );
     }
@@ -1142,7 +1232,12 @@ resources:
         let resolved =
             from_resource("app", "svc", &manifest.resources["svc"]).expect("resolution succeeds");
         assert_eq!(
-            resolved.spec.entrypoint, None,
+            resolved
+                .spec
+                .as_container()
+                .expect("resolved to a container")
+                .entrypoint,
+            None,
             "existing manifests must be unaffected"
         );
     }
@@ -1165,14 +1260,23 @@ resources:
             let resolved =
                 from_resource("app", name, &manifest.resources[name]).expect("resolution succeeds");
             assert_eq!(
-                resolved.spec.entrypoint, None,
+                resolved
+                    .spec
+                    .as_container()
+                    .expect("resolved to a container")
+                    .entrypoint,
+                None,
                 "{name} must keep the image entrypoint"
             );
         }
         let cache = from_resource("app", "cache", &manifest.resources["cache"])
             .expect("resolution succeeds");
         assert_eq!(
-            cache.spec.command,
+            cache
+                .spec
+                .as_container()
+                .expect("resolved to a container")
+                .command,
             Some(vec![Argument::literal("redis-server")]),
             "the redis command must be untouched"
         );

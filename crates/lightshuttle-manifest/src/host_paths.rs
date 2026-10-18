@@ -1,13 +1,16 @@
-//! Resolution of relative host volume paths against the manifest directory.
+//! Resolution of relative host paths against the manifest directory.
 //!
-//! This module provides [`Manifest::resolve_host_volume_paths`], which
-//! rewrites relative `src` paths in `container` and `dockerfile` volume
-//! mappings to absolute paths so the container runtime receives unambiguous
-//! paths regardless of the process working directory.
+//! This module provides [`Manifest::resolve_host_paths`], which rewrites
+//! every path a manifest declares on the developer's machine to an absolute
+//! one, so the runtime receives unambiguous paths regardless of the directory
+//! the command was invoked from. Two kinds of field qualify: the `src` half
+//! of a `container` or `dockerfile` volume mapping, and the `working_dir` of
+//! a `process`.
 //!
-//! Security: a relative `src` containing a `..` component is rejected with
-//! [`ManifestError::InvalidVolumePath`], not silently dropped, so a directory
-//! traversal attempt fails loudly instead of surviving in the manifest.
+//! Security: a relative path containing a `..` component is rejected, not
+//! silently dropped, so a directory traversal attempt fails loudly instead of
+//! surviving in the manifest. See [`ManifestError::InvalidVolumePath`] and
+//! [`ManifestError::InvalidWorkingDirectory`].
 
 use std::path::{Component, Path};
 
@@ -31,6 +34,11 @@ impl Manifest {
     /// `postgres` and `redis` use the typed [`crate::Volume`] enum instead and are
     /// not touched by this method.
     ///
+    /// A `process` resource carries no volumes, but its `working_dir` is a
+    /// path on the developer's machine and is resolved here too. That is what
+    /// distinguishes it from a container's `working_dir`, which names a
+    /// directory inside the image and must be left exactly as written.
+    ///
     /// Call this method after [`Manifest::parse`] and before handing the
     /// manifest to the runtime or export layers. Typically `base_dir` is the
     /// directory containing the `lightshuttle.yml` file.
@@ -38,13 +46,30 @@ impl Manifest {
     /// # Errors
     ///
     /// Returns [`ManifestError::InvalidVolumePath`] when a relative host mount
-    /// tries to escape `base_dir` through a `..` component.
-    pub fn resolve_host_volume_paths(&mut self, base_dir: &Path) -> Result<(), ManifestError> {
-        for kind in self.resources.values_mut() {
+    /// tries to escape `base_dir` through a `..` component, or
+    /// [`ManifestError::InvalidWorkingDirectory`] when a process working
+    /// directory does.
+    pub fn resolve_host_paths(&mut self, base_dir: &Path) -> Result<(), ManifestError> {
+        for (name, kind) in &mut self.resources {
             let volumes = match kind {
                 ResourceKind::Container(c) => &mut c.volumes,
                 ResourceKind::Dockerfile(c) => &mut c.volumes,
                 ResourceKind::Postgres(_) | ResourceKind::Redis(_) => continue,
+                ResourceKind::Process(c) => {
+                    if let Some(working_dir) = c.working_dir.as_mut() {
+                        match classify_host_path(working_dir, base_dir) {
+                            HostPath::Unchanged => {}
+                            HostPath::Resolved(absolute) => *working_dir = absolute,
+                            HostPath::Escaping => {
+                                return Err(ManifestError::InvalidWorkingDirectory {
+                                    resource: name.clone(),
+                                    path: working_dir.clone(),
+                                });
+                            }
+                        }
+                    }
+                    continue;
+                }
             };
             for mapping in volumes.iter_mut() {
                 if let Some(resolved) = resolve_mapping(mapping, base_dir)? {
@@ -54,6 +79,53 @@ impl Manifest {
         }
         Ok(())
     }
+
+    /// Resolve relative host paths in volume mappings against `base_dir`.
+    ///
+    /// # Errors
+    ///
+    /// See [`Manifest::resolve_host_paths`].
+    #[deprecated(
+        since = "0.6.0",
+        note = "renamed to `resolve_host_paths`: the pass also resolves a `process` working directory, which is not a volume"
+    )]
+    pub fn resolve_host_volume_paths(&mut self, base_dir: &Path) -> Result<(), ManifestError> {
+        self.resolve_host_paths(base_dir)
+    }
+}
+
+/// What examining one declared host path found.
+///
+/// Three outcomes, not two, and the third is the reason this is an enum and
+/// not an `Option`: a path that escapes the base directory must be
+/// distinguishable from one that simply needed no change, or a traversal
+/// attempt would be indistinguishable from an absolute path and survive.
+enum HostPath {
+    /// Nothing to rewrite: an absolute host path, or a named volume.
+    Unchanged,
+    /// The relative path, expanded against the manifest directory.
+    Resolved(String),
+    /// The relative path leaves the manifest directory through `..`.
+    Escaping,
+}
+
+/// Classify `path` as declared in the manifest, against `base_dir`.
+///
+/// Shared by volume mappings and by a `process` working directory so the two
+/// cannot disagree on what counts as relative, or on what counts as an
+/// escape. They differ only in the error each one reports.
+fn classify_host_path(path: &str, base_dir: &Path) -> HostPath {
+    if !path.starts_with('.') {
+        return HostPath::Unchanged;
+    }
+    let relative = path.strip_prefix("./").unwrap_or(path);
+    if Path::new(relative)
+        .components()
+        .any(|c| c == Component::ParentDir)
+    {
+        return HostPath::Escaping;
+    }
+    HostPath::Resolved(base_dir.join(relative).display().to_string())
 }
 
 /// Rewrite a `src:target` mapping whose `src` is a relative host path,
@@ -68,23 +140,15 @@ fn resolve_mapping(mapping: &str, base_dir: &Path) -> Result<Option<String>, Man
     let Some((src, target)) = mapping.split_once(':') else {
         return Ok(None);
     };
-    if !src.starts_with('.') {
-        return Ok(None);
-    }
-    let relative = src.strip_prefix("./").unwrap_or(src);
-    // Reject any path that contains '..' to prevent directory traversal. The
-    // rejection is propagated as an error rather than dropped, so the caller
-    // cannot mistake it for a mapping that was deliberately left unchanged.
-    if Path::new(relative)
-        .components()
-        .any(|c| c == Component::ParentDir)
-    {
-        return Err(ManifestError::InvalidVolumePath {
+    match classify_host_path(src, base_dir) {
+        HostPath::Unchanged => Ok(None),
+        HostPath::Resolved(absolute) => Ok(Some(format!("{absolute}:{target}"))),
+        // Propagated as an error rather than dropped, so the caller cannot
+        // mistake it for a mapping that was deliberately left unchanged.
+        HostPath::Escaping => Err(ManifestError::InvalidVolumePath {
             mapping: mapping.to_string(),
-        });
+        }),
     }
-    let absolute = base_dir.join(relative);
-    Ok(Some(format!("{}:{target}", absolute.display())))
 }
 
 #[cfg(test)]
@@ -170,7 +234,7 @@ resources:
 ";
         let mut manifest = Manifest::parse(yaml).expect("parses");
         manifest
-            .resolve_host_volume_paths(&base())
+            .resolve_host_paths(&base())
             .expect("no traversal in this manifest");
 
         let ResourceKind::Container(svc) = &manifest.resources["svc"] else {
@@ -195,7 +259,7 @@ resources:
 ";
         let mut manifest = Manifest::parse(yaml).expect("parses");
         let error = manifest
-            .resolve_host_volume_paths(&base())
+            .resolve_host_paths(&base())
             .expect_err("a traversal mount must be rejected, not left in the manifest");
         assert!(
             matches!(error, ManifestError::InvalidVolumePath { .. }),

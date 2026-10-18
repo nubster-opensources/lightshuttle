@@ -90,6 +90,27 @@ pub enum ExportError {
         variables: Vec<String>,
     },
 
+    /// The manifest declares one or more `process` resources, which no export
+    /// target can represent.
+    ///
+    /// A `process` runs a command on the developer's own machine. Compose,
+    /// Kubernetes and Helm all describe containers on some other machine, so
+    /// there is nothing honest to emit: silently dropping the resource would
+    /// hand back a stack missing a service, and inventing a container for it
+    /// would deploy something the manifest never asked for.
+    ///
+    /// Every offending resource is named at once, sorted, so one pass over
+    /// the manifest is enough to fix it. This follows the refusal shape
+    /// settled in #283.
+    #[error(
+        "`process` resource(s) cannot be exported: {}",
+        resources.join(", ")
+    )]
+    ProcessNotExportable {
+        /// Sorted list of every `process` resource in the manifest.
+        resources: Vec<String>,
+    },
+
     /// A `${resources.<name>.<property>}` reference resolves to a sensitive
     /// property (see [`lightshuttle_spec::SENSITIVE_OUTPUTS`]) outside of an
     /// environment variable, where it would otherwise land in clear text.
