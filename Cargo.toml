@@ -50,7 +50,7 @@ tower = "0.5"
 owo-colors = "4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tokio-tungstenite = "0.29"
-askama = "0.16"
+askama = { version = "0.16", default-features = false, features = ["derive", "std", "urlencode"] }
 humantime-serde = "1"
 opentelemetry = "0.33"
 opentelemetry_sdk = { version = "0.33", features = ["trace"] }
