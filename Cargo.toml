@@ -42,7 +42,7 @@ tar = "0.4"
 ignore = "0.4"
 bytes = "1"
 humantime = "2"
-rand = "0.9"
+rand = "0.10"
 url = "2"
 jiff = { version = "0.2", default-features = false, features = ["std"] }
 axum = "0.8"
