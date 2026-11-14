@@ -13,7 +13,7 @@ use serde::ser::{Serialize, SerializeMap, Serializer};
 
 use super::{
     Command, container::ContainerConfig, dockerfile::DockerfileConfig, healthcheck::Healthcheck,
-    postgres::PostgresConfig, redis::RedisConfig,
+    postgres::PostgresConfig, process::ProcessConfig, redis::RedisConfig,
 };
 use crate::interpolate::{InterpolationContext, Interpolator};
 
@@ -51,6 +51,9 @@ pub enum ResourceKind {
 
     /// Container built locally from a Dockerfile. Configuration carried by [`DockerfileConfig`].
     Dockerfile(DockerfileConfig),
+
+    /// Native command executed on the host. Configuration carried by [`ProcessConfig`].
+    Process(ProcessConfig),
 }
 
 impl ResourceKind {
@@ -67,6 +70,7 @@ impl ResourceKind {
             Self::Redis(c) => &c.depends_on,
             Self::Container(c) => &c.depends_on,
             Self::Dockerfile(c) => &c.depends_on,
+            Self::Process(c) => &c.depends_on,
         }
     }
 
@@ -74,6 +78,10 @@ impl ResourceKind {
     ///
     /// A `None` result means the runtime falls back to its built-in default
     /// for the resource kind. See [`Healthcheck`] for field semantics.
+    ///
+    /// Always `None` for a `process`: [`ProcessConfig`] declares no
+    /// healthcheck field. Accepting one and then ignoring it would be worse
+    /// than not offering it, and adding it later is additive.
     #[must_use]
     pub fn healthcheck(&self) -> Option<&Healthcheck> {
         match self {
@@ -81,11 +89,12 @@ impl ResourceKind {
             Self::Redis(c) => c.healthcheck.as_ref(),
             Self::Container(c) => c.healthcheck.as_ref(),
             Self::Dockerfile(c) => c.healthcheck.as_ref(),
+            Self::Process(_) => None,
         }
     }
 
     /// Returns the YAML key that identifies this variant (`"postgres"`,
-    /// `"redis"`, `"container"`, or `"dockerfile"`).
+    /// `"redis"`, `"container"`, `"dockerfile"`, or `"process"`).
     ///
     /// Used in diagnostic messages and export target logic.
     #[must_use]
@@ -95,6 +104,7 @@ impl ResourceKind {
             Self::Redis(_) => "redis",
             Self::Container(_) => "container",
             Self::Dockerfile(_) => "dockerfile",
+            Self::Process(_) => "process",
         }
     }
 
@@ -196,6 +206,17 @@ impl ResourceKind {
                     out.extend(healthcheck.test.iter_mut());
                 }
             }
+            Self::Process(c) => {
+                // The command is a plain list of strings, not a `Command`:
+                // a process is never handed to a shell, so the single-string
+                // form that `command_fields_mut` also accepts has no meaning
+                // here.
+                out.extend(c.command.iter_mut());
+                out.extend(c.env.values_mut());
+                if let Some(working_dir) = c.working_dir.as_mut() {
+                    out.push(working_dir);
+                }
+            }
         }
         out
     }
@@ -234,6 +255,10 @@ impl ResourceKind {
             }
             Self::Redis(c) => {
                 out.extend(c.password.clone());
+            }
+            Self::Process(c) => {
+                out.extend(c.env.values().cloned());
+                out.extend(c.command.iter().cloned());
             }
         }
         out
@@ -335,6 +360,7 @@ impl Serialize for ResourceKind {
             Self::Redis(c) => map.serialize_entry("redis", c)?,
             Self::Container(c) => map.serialize_entry("container", c)?,
             Self::Dockerfile(c) => map.serialize_entry("dockerfile", c)?,
+            Self::Process(c) => map.serialize_entry("process", c)?,
         }
         map.end()
     }
@@ -371,6 +397,13 @@ impl<'de> Deserialize<'de> for ResourceKind {
                 .map_err(|e| DeError::custom(e.to_string())),
             "dockerfile" => serde_norway::from_value(value)
                 .map(Self::Dockerfile)
+                .map_err(|e| DeError::custom(e.to_string())),
+            // This match compares strings, so the compiler does not list it
+            // when a variant is added. It is the one enumeration site in the
+            // workspace with no compiler guard, which is why the round-trip
+            // suite names it explicitly.
+            "process" => serde_norway::from_value(value)
+                .map(Self::Process)
                 .map_err(|e| DeError::custom(e.to_string())),
             other => Err(DeError::custom(format!("unknown resource kind `{other}`"))),
         }

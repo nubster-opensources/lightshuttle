@@ -35,6 +35,7 @@
   - [redis](reference/manifest/redis.md)
   - [container](reference/manifest/container.md)
   - [dockerfile](reference/manifest/dockerfile.md)
+  - [process](reference/manifest/process.md)
   - [Common types](reference/manifest/common-types.md)
 - [CLI reference](reference/cli/index.md)
   - [up](reference/cli/up.md)

@@ -9,8 +9,9 @@ mod common;
 use std::time::Duration;
 
 use lightshuttle_runtime::{
-    Argument, ContainerRuntime, ContainerSpec, DockerRuntime, ImageSource, LifecycleEvent,
+    Argument, ContainerSpec, DockerRuntime, ImageSource, LifecycleEvent, ResourceRuntime,
 };
+use lightshuttle_spec::ResourceSpec;
 use tokio::sync::broadcast;
 
 #[test]
@@ -108,10 +109,8 @@ async fn project_cleanup_removes_managed_containers() {
 
     {
         let _guard = common::ProjectCleanup::new(project.clone());
-        let _id = runtime
-            .start(&probe_spec(&project))
-            .await
-            .expect("probe container starts");
+        let spec = ResourceSpec::Container(probe_spec(&project));
+        let _id = runtime.start(&spec).await.expect("probe container starts");
 
         let managed = runtime
             .list_managed(&project)

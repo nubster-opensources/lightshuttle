@@ -57,13 +57,13 @@ impl ExitOutcome {
 pub(crate) fn load_manifest(path: &Path) -> Result<lightshuttle_manifest::Manifest> {
     let yaml = std::fs::read_to_string(path)?;
     let mut manifest = lightshuttle_manifest::Manifest::parse(&yaml)?;
-    manifest.resolve_host_volume_paths(&manifest_base_dir(path))?;
+    manifest.resolve_host_paths(&manifest_base_dir(path))?;
     Ok(manifest)
 }
 
 /// Absolute directory containing the manifest at `path`. Used to resolve
 /// relative host volume paths against the manifest location.
-fn manifest_base_dir(path: &Path) -> std::path::PathBuf {
+pub(crate) fn manifest_base_dir(path: &Path) -> std::path::PathBuf {
     let dir = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())

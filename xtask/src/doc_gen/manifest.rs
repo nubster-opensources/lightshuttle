@@ -36,6 +36,7 @@ const KINDS: &[(&str, &str, &str)] = &[
     ("redis", "RedisConfig", "redis"),
     ("container", "ContainerConfig", "container"),
     ("dockerfile", "DockerfileConfig", "dockerfile"),
+    ("process", "ProcessConfig", "process"),
 ];
 
 /// Generate (or verify with `--check`) the manifest reference pages.
@@ -274,7 +275,8 @@ fn render_index() -> String {
          - [postgres](postgres.md)\n\
          - [redis](redis.md)\n\
          - [container](container.md)\n\
-         - [dockerfile](dockerfile.md)\n\n\
+         - [dockerfile](dockerfile.md)\n\
+         - [process](process.md)\n\n\
          ## Shared types\n\n\
          - [Common types](common-types.md)\n"
     )

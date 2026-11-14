@@ -1,7 +1,7 @@
 //! Docker container runtime backed by the `bollard` crate.
 //!
 //! Exposes [`DockerRuntime`], the first concrete implementation of
-//! [`crate::ContainerRuntime`]. All Docker I/O is async and goes through a
+//! [`crate::ResourceRuntime`]. All Docker I/O is async and goes through a
 //! single `bollard::Docker` client stored in the struct.
 //!
 //! ## Network model
@@ -37,6 +37,7 @@
 //! relying on in-memory state.
 
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -61,10 +62,10 @@ use lightshuttle_manifest::{DnsName, ImageReference};
 use crate::error::{Result, RuntimeError};
 use crate::project_sweep::ProjectInventory;
 use crate::runtime::{
-    ContainerId, ContainerRuntime, ContainerStatus, LogChunk, LogChunkStream, LogStream,
+    ContainerStatus, LogChunk, LogChunkStream, LogStream, ResourceId, ResourceRuntime,
 };
 use lightshuttle_spec::{
-    Argument, ContainerSpec, HealthcheckSpec, ImageSource, PortBinding, VolumeBinding, VolumeSource,
+    Argument, HealthcheckSpec, ImageSource, PortBinding, ResourceSpec, VolumeBinding, VolumeSource,
 };
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
@@ -79,7 +80,7 @@ const NETWORK_PREFIX: &str = "lightshuttle-";
 ///
 /// Connects to the local Docker daemon using the platform default transport
 /// (Unix socket on Linux and macOS, named pipe on Windows). Implements
-/// [`crate::ContainerRuntime`] so it can be passed to [`crate::LifecycleManager`].
+/// [`crate::ResourceRuntime`] so it can be passed to [`crate::LifecycleManager`].
 ///
 /// # Example
 ///
@@ -178,7 +179,7 @@ impl DockerRuntime {
                 .unwrap_or_else(|| "<unknown>".to_owned());
             let status = parse_summary_state(summary.state.as_ref());
             out.push(ManagedContainer {
-                id: ContainerId::new(id),
+                id: ResourceId::new(id),
                 resource,
                 status,
             });
@@ -337,7 +338,7 @@ impl ProjectInventory for DockerRuntime {
     }
 }
 
-impl ContainerRuntime for DockerRuntime {
+impl ResourceRuntime for DockerRuntime {
     async fn ensure_project_network(&self, project: &str) -> Result<()> {
         let name = network_name(project)?;
 
@@ -392,7 +393,61 @@ impl ContainerRuntime for DockerRuntime {
         }
     }
 
-    async fn start(&self, spec: &ContainerSpec) -> Result<ContainerId> {
+    async fn process_bind_address(&self, project: &str) -> Result<IpAddr> {
+        let name = network_name(project)?;
+
+        // No project network means the project holds no container, so nothing
+        // is asking to reach the process. The loopback is then the most closed
+        // address that meets the need, which is the same reasoning that refused
+        // `0.0.0.0` outright.
+        let gateway = match self.client.inspect_network(&name, None).await {
+            Ok(existing) => project_network_gateway(&existing),
+            Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 404, ..
+            }) => return Ok(LOOPBACK),
+            Err(source) => return Err(RuntimeError::NetworkCreate { name, source }),
+        };
+
+        // Measured on 2026-09-26: a Docker Desktop daemon reports
+        // `Docker Desktop` here, on Windows as on macOS. `OSType` does not
+        // discriminate, because Desktop runs a Linux virtual machine and
+        // reports `linux` too.
+        //
+        // Desktop proxies the host loopback into every container by itself, and
+        // its project gateway is not an address the host can bind to, so
+        // loopback is both sufficient and the only thing that works. A daemon
+        // that does not identify itself as Desktop is treated as a bare Linux
+        // engine: binding the gateway there is required for a container to
+        // reach the process, and if that guess is wrong the bind fails loudly
+        // instead of leaving the process quietly unreachable.
+        let info = self.client.info().await.map_err(RuntimeError::Connect)?;
+        let is_docker_desktop = info
+            .operating_system
+            .as_deref()
+            .is_some_and(|system| system.contains("Docker Desktop"));
+
+        if is_docker_desktop {
+            return Ok(LOOPBACK);
+        }
+        gateway.ok_or_else(|| {
+            RuntimeError::InvalidSpec(format!(
+                "the project network `{name}` reports no gateway address, so a native process has nothing to bind to that a container could reach"
+            ))
+        })
+    }
+
+    async fn start(&self, spec: &ResourceSpec) -> Result<ResourceId> {
+        let ResourceSpec::Container(spec) = spec else {
+            // Reaching this arm means something routed a `process` to the
+            // container daemon. That is a routing defect in the caller, not a
+            // manifest the user can fix, so it is reported as an invalid spec
+            // rather than dressed up as a daemon failure. `HostRuntime` is the
+            // type that routes, and it never sends a process here.
+            return Err(RuntimeError::InvalidSpec(
+                "a `process` resource is supervised by the host, not started by the container daemon"
+                    .to_owned(),
+            ));
+        };
         let image_ref = match &spec.image {
             ImageSource::Pull(image) => {
                 self.ensure_image(image).await?;
@@ -471,10 +526,10 @@ impl ContainerRuntime for DockerRuntime {
             .await
             .map_err(RuntimeError::Start)?;
 
-        Ok(ContainerId::new(created.id))
+        Ok(ResourceId::new(created.id))
     }
 
-    async fn stop(&self, id: &ContainerId, grace: Duration) -> Result<()> {
+    async fn stop(&self, id: &ResourceId, grace: Duration) -> Result<()> {
         #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
         let options = StopContainerOptionsBuilder::default()
             .t(grace.as_secs() as i32)
@@ -506,7 +561,7 @@ impl ContainerRuntime for DockerRuntime {
         }
     }
 
-    async fn inspect(&self, id: &ContainerId) -> Result<ContainerStatus> {
+    async fn inspect(&self, id: &ResourceId) -> Result<ContainerStatus> {
         let info = self
             .client
             .inspect_container(id.as_str(), None)
@@ -550,7 +605,7 @@ impl ContainerRuntime for DockerRuntime {
         Ok(ContainerStatus::Starting)
     }
 
-    async fn wait_healthy(&self, id: &ContainerId, timeout: Duration) -> Result<()> {
+    async fn wait_healthy(&self, id: &ResourceId, timeout: Duration) -> Result<()> {
         let deadline = Instant::now() + timeout;
         loop {
             match self.inspect(id).await? {
@@ -580,7 +635,7 @@ impl ContainerRuntime for DockerRuntime {
         }
     }
 
-    async fn logs(&self, id: &ContainerId, follow: bool) -> Result<LogChunkStream> {
+    async fn logs(&self, id: &ResourceId, follow: bool) -> Result<LogChunkStream> {
         let options = LogsOptionsBuilder::default()
             .follow(follow)
             .stdout(true)
@@ -665,7 +720,7 @@ pub const LABEL_RESOURCE: &str = "lightshuttle.resource";
 #[derive(Debug, Clone)]
 pub struct ManagedContainer {
     /// Container identifier.
-    pub id: ContainerId,
+    pub id: ResourceId,
     /// Resource name as declared in the manifest.
     pub resource: String,
     /// Current lifecycle status.
@@ -697,6 +752,40 @@ fn build_exposed_ports(ports: &[PortBinding]) -> Vec<String> {
 /// the `address:host:container` port mapping form.
 const DEFAULT_HOST_BIND_ADDRESS: &str = "127.0.0.1";
 
+/// Host alias entry giving every managed container a route back to the
+/// developer's machine, and therefore to the native `process` resources
+/// running on it.
+///
+/// Set unconditionally, on every container, including in projects that
+/// declare no `process` resource at all. Docker Desktop wires this alias in
+/// by itself, a bare Linux engine does not, and conditioning it on the
+/// composition of the project would mean two code paths where one suffices.
+/// The cost is accepted: the configuration of every started container gains
+/// this entry.
+const HOST_GATEWAY_ALIAS: &str = "host.docker.internal:host-gateway";
+
+/// Address a native process binds to when no container needs to reach it, and
+/// the only one a Docker Desktop daemon makes reachable from a container.
+const LOOPBACK: IpAddr = IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
+
+/// Gateway address of a project network, as the daemon reports it.
+///
+/// A bridge network carries one IPAM configuration per address family. The
+/// first entry that declares an IPv4 gateway is the one a container uses to
+/// leave the network, and therefore the one a process must bind to for a
+/// container to reach it.
+fn project_network_gateway(network: &bollard::models::NetworkInspect) -> Option<IpAddr> {
+    network
+        .ipam
+        .as_ref()?
+        .config
+        .as_ref()?
+        .iter()
+        .filter_map(|config| config.gateway.as_deref())
+        .filter_map(|gateway| gateway.parse::<IpAddr>().ok())
+        .find(IpAddr::is_ipv4)
+}
+
 fn build_host_config(ports: &[PortBinding], volumes: &[VolumeBinding]) -> HostConfig {
     let port_bindings = ports
         .iter()
@@ -725,6 +814,7 @@ fn build_host_config(ports: &[PortBinding], volumes: &[VolumeBinding]) -> HostCo
     HostConfig {
         port_bindings: Some(port_bindings),
         binds: if binds.is_empty() { None } else { Some(binds) },
+        extra_hosts: Some(vec![HOST_GATEWAY_ALIAS.to_owned()]),
         ..Default::default()
     }
 }
@@ -798,8 +888,8 @@ fn timestamp_to_system_time(ts: jiff::Timestamp) -> Option<SystemTime> {
 #[cfg(test)]
 mod tests {
     use super::{
-        LABEL_PROJECT, PortBinding, build_host_config, ensure_network_ownership, network_name,
-        resolve_arguments, split_image_ref,
+        HOST_GATEWAY_ALIAS, LABEL_PROJECT, PortBinding, build_host_config,
+        ensure_network_ownership, network_name, resolve_arguments, split_image_ref,
     };
     use lightshuttle_spec::Argument;
     use std::collections::HashMap;
@@ -947,6 +1037,46 @@ mod tests {
             host_port: 8080,
         }];
         assert_eq!(host_ip_for(&ports, "80/tcp").as_deref(), Some("0.0.0.0"));
+    }
+
+    /// Every container this runtime starts must be able to reach a native
+    /// `process` resource on the developer's machine. Docker only resolves
+    /// `host.docker.internal` inside a container whose configuration carries
+    /// the alias explicitly: Docker Desktop adds it on its own, a bare Linux
+    /// engine does not.
+    ///
+    /// `build_host_config` is the single place that configuration is built,
+    /// and `start` calls it for every container without exception, so this is
+    /// the whole of the guarantee, provable without a daemon.
+    #[test]
+    fn a_container_host_config_carries_the_host_gateway_alias() {
+        let ports = vec![PortBinding {
+            container_port: 5432,
+            host_address: None,
+            host_port: 5432,
+        }];
+        let config = build_host_config(&ports, &[]);
+        assert_eq!(
+            config.extra_hosts.as_deref(),
+            Some([HOST_GATEWAY_ALIAS.to_owned()].as_slice())
+        );
+    }
+
+    /// The alias is not conditioned on the project declaring a `process`
+    /// resource: it is set on the barest container there is, in a project
+    /// this function knows nothing about.
+    ///
+    /// That ignorance is the point. `build_host_config` receives ports and
+    /// volumes and nothing else, so a condition on what else the project
+    /// holds is not expressible here at all. A version that tried would have
+    /// to take a new parameter, which this test would stop compiling.
+    #[test]
+    fn the_alias_is_set_on_a_container_with_no_ports_and_no_volumes() {
+        let config = build_host_config(&[], &[]);
+        assert_eq!(
+            config.extra_hosts.as_deref(),
+            Some([HOST_GATEWAY_ALIAS.to_owned()].as_slice())
+        );
     }
 
     #[test]

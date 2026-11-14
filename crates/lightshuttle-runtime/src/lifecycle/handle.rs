@@ -7,7 +7,7 @@
 //! trait stays generic so callers pay zero allocation per call.
 //!
 //! The indirection also makes it possible to inject a test double for the
-//! entire control plane without requiring a real [`crate::ContainerRuntime`].
+//! entire control plane without requiring a real [`crate::ResourceRuntime`].
 //!
 //! # Example
 //!
@@ -38,7 +38,7 @@ use crate::error::RuntimeError;
 use crate::lifecycle::manager::{LifecycleManager, RestartPermit};
 use crate::lifecycle::status::LifecycleEvent;
 use crate::lifecycle::view::{ResourceStatus, ResourceView, last_error_from};
-use crate::runtime::{ContainerRuntime, LogChunkStream};
+use crate::runtime::{LogChunkStream, ResourceRuntime};
 
 /// Errors returned by [`LifecycleHandle`] operations.
 #[derive(Debug, Error)]
@@ -162,14 +162,14 @@ fn map_restart_error(err: crate::LifecycleError) -> LifecycleHandleError {
 
 /// Newtype adapter turning an `Arc<LifecycleManager<R>>` into a
 /// [`LifecycleHandle`].
-pub struct ManagerHandle<R: ContainerRuntime + 'static> {
+pub struct ManagerHandle<R: ResourceRuntime + 'static> {
     inner: Arc<LifecycleManager<R>>,
 }
 
 // Manual `Clone` impl: the derived one would require `R: Clone`, but
 // the only field is an `Arc`, so cloning a `ManagerHandle` never has
 // to clone `R` itself.
-impl<R: ContainerRuntime + 'static> Clone for ManagerHandle<R> {
+impl<R: ResourceRuntime + 'static> Clone for ManagerHandle<R> {
     fn clone(&self) -> Self {
         Self {
             inner: Arc::clone(&self.inner),
@@ -177,7 +177,7 @@ impl<R: ContainerRuntime + 'static> Clone for ManagerHandle<R> {
     }
 }
 
-impl<R: ContainerRuntime + 'static> ManagerHandle<R> {
+impl<R: ResourceRuntime + 'static> ManagerHandle<R> {
     /// Wrap a shared [`LifecycleManager`] in a [`ManagerHandle`].
     ///
     /// The handle is cheaply cloneable: cloning it increments the `Arc` reference
@@ -194,7 +194,7 @@ impl<R: ContainerRuntime + 'static> ManagerHandle<R> {
     }
 }
 
-impl<R: ContainerRuntime + 'static> LifecycleHandle for ManagerHandle<R> {
+impl<R: ResourceRuntime + 'static> LifecycleHandle for ManagerHandle<R> {
     async fn list(&self) -> Result<Vec<ResourceView>, LifecycleHandleError> {
         let plan = self.inner.plan_arc();
         let mut out: Vec<ResourceView> = Vec::with_capacity(plan.nodes().len());

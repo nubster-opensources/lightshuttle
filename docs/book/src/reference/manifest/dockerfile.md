@@ -11,7 +11,7 @@ resulting image as it would for a [`crate::ContainerConfig`].
 | --- | --- | --- | --- | --- |
 | `build_args` | map of string | no |  | Build-time `ARG` values passed to `docker build --build-arg`. |
 | `command` | [Command](common-types.md#command) | no |  | Optional override for the image default `CMD`. The image `ENTRYPOINT` is preserved. See [`Command`] for the accepted forms and for what this means against an image whose entrypoint is a binary rather than a shell. |
-| `context` | string | yes |  | Build context path, relative to the manifest file. Resolved to an absolute path by [`crate::Manifest::resolve_host_volume_paths`] before it is handed to the runtime. Symbolic links are sent as links, never followed, as `docker build` sends them. The daemon resolves a link within the context, so a link whose target is outside it, absolute or missing is copied as a link but cannot be used as a `COPY` source. `COPY .` keeps each link, and so the target path it names, in the image. |
+| `context` | string | yes |  | Build context path, relative to the manifest file. Resolved to an absolute path by [`crate::Manifest::resolve_host_paths`] before it is handed to the runtime. Symbolic links are sent as links, never followed, as `docker build` sends them. The daemon resolves a link within the context, so a link whose target is outside it, absolute or missing is copied as a link but cannot be used as a `COPY` source. `COPY .` keeps each link, and so the target path it names, in the image. |
 | `depends_on` | array of string | no |  | Names of other resources this build must wait for before starting. Validated by [`crate::Manifest::validate`]. |
 | `dockerfile` | string | no | `"Dockerfile"` | Path to the Dockerfile within `context`. Defaults to `"Dockerfile"`. |
 | `entrypoint` | [Command](common-types.md#command) | no |  | Optional override for the image `ENTRYPOINT`, the executable the container runs. See [`Command`] for the accepted forms. Setting this discards the image `CMD`: every target (the Engine API, Compose and Kubernetes) ignores the image default command once an entrypoint is overridden. Set `command` as well to supply arguments. An empty list or a blank string is rejected; omit the field to keep the image entrypoint. |
@@ -20,6 +20,6 @@ resulting image as it would for a [`crate::ContainerConfig`].
 | `ports` | array of [PortMapping](common-types.md#portmapping) | no |  | Port mappings between the host and the container. See [`PortMapping`]. |
 | `secrets` | map of string | no |  | Sensitive environment variables injected at runtime. Exporters preserve each key but replace its value with a placeholder, preventing credentials from being baked into generated artifacts. |
 | `target` | string | no |  | Multi-stage build target passed to `docker build --target`. |
-| `volumes` | array of string | no |  | Volume mappings in `"host:container"` or `"named:container"` form. Relative host paths are resolved by [`crate::Manifest::resolve_host_volume_paths`]. |
+| `volumes` | array of string | no |  | Volume mappings in `"host:container"` or `"named:container"` form. Relative host paths are resolved by [`crate::Manifest::resolve_host_paths`]. |
 | `working_dir` | string | no |  | Optional working directory override inside the container. |
 

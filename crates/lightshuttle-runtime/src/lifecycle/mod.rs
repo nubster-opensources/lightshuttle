@@ -5,7 +5,7 @@
 //! - [`LifecyclePlan`] / [`PlanNode`]: topologically sorted execution plan
 //!   derived from a parsed manifest.
 //! - [`LifecycleManager`]: orchestrates startup, supervision, and shutdown
-//!   on top of any [`crate::ContainerRuntime`].
+//!   on top of any [`crate::ResourceRuntime`].
 //! - [`LifecycleHandle`] / [`ManagerHandle`]: backend-agnostic handle used by
 //!   the control plane to query and control a running stack.
 //! - [`LifecycleEvent`] / [`NodeStatus`]: status types broadcast to subscribers.

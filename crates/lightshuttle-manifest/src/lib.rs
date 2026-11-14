@@ -18,8 +18,9 @@
 //! - [`Manifest::to_yaml`]: lossless round-trip serialisation back to YAML.
 //! - [`Manifest::validate`]: the semantic validation pass in isolation,
 //!   callable after building a manifest programmatically.
-//! - [`Manifest::resolve_host_volume_paths`]: rewrites relative `src` paths
-//!   in volume mappings to absolute paths anchored on the manifest directory.
+//! - [`Manifest::resolve_host_paths`]: rewrites the relative host paths a
+//!   manifest declares, volume sources and a `process` working directory, to
+//!   absolute paths anchored on the manifest directory.
 //! - [`Interpolator`] + [`InterpolationContext`]: resolution of `${...}`
 //!   expressions in string fields, supporting `${env.NAME}` and
 //!   `${resources.name.property}` references.
@@ -62,7 +63,8 @@ pub use crate::model::{
     Command, ComposeExport, ComposeResourceExport, ContainerConfig, DashboardConfig,
     DockerfileConfig, ExportConfig, Healthcheck, HelmExport, HelmResourceExport, ImagePullPolicy,
     KubernetesExport, KubernetesResourceExport, Manifest, ObservabilityConfig, OtelConfig,
-    PortMapping, PostgresConfig, Project, RedisConfig, ResourceKind, Version, Volume,
+    PortMapping, PostgresConfig, ProcessConfig, Project, RedisConfig, ResourceKind, Version,
+    Volume,
 };
 pub use crate::schema::schema;
 
